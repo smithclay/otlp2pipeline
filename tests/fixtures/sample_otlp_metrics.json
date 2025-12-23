@@ -1,0 +1,86 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": { "stringValue": "test-service" }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "test-meter",
+            "version": "1.0.0"
+          },
+          "metrics": [
+            {
+              "name": "cpu.usage",
+              "description": "CPU usage percentage",
+              "unit": "1",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1703318400000000000",
+                    "startTimeUnixNano": "1703318390000000000",
+                    "asDouble": 0.75,
+                    "attributes": [
+                      {
+                        "key": "host",
+                        "value": { "stringValue": "server-1" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "active.connections",
+              "description": "Number of active connections",
+              "unit": "1",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1703318400000000000",
+                    "startTimeUnixNano": "1703318390000000000",
+                    "asInt": "42",
+                    "attributes": [
+                      {
+                        "key": "host",
+                        "value": { "stringValue": "server-1" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.requests",
+              "description": "HTTP request count",
+              "unit": "1",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1703318400000000000",
+                    "startTimeUnixNano": "1703318300000000000",
+                    "asInt": "1234",
+                    "attributes": [
+                      {
+                        "key": "method",
+                        "value": { "stringValue": "GET" }
+                      }
+                    ]
+                  }
+                ],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

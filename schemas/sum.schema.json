@@ -1,0 +1,22 @@
+{
+  "fields": [
+    { "name": "timestamp", "type": "timestamp", "required": true },
+    { "name": "start_timestamp", "type": "int64", "required": false },
+    { "name": "metric_name", "type": "string", "required": true },
+    { "name": "metric_description", "type": "string", "required": false },
+    { "name": "metric_unit", "type": "string", "required": false },
+    { "name": "value", "type": "float64", "required": true },
+    { "name": "service_name", "type": "string", "required": true },
+    { "name": "service_namespace", "type": "string", "required": false },
+    { "name": "service_instance_id", "type": "string", "required": false },
+    { "name": "resource_attributes", "type": "json", "required": false },
+    { "name": "scope_name", "type": "string", "required": false },
+    { "name": "scope_version", "type": "string", "required": false },
+    { "name": "scope_attributes", "type": "json", "required": false },
+    { "name": "metric_attributes", "type": "json", "required": false },
+    { "name": "flags", "type": "int32", "required": false },
+    { "name": "exemplars_json", "type": "json", "required": false },
+    { "name": "aggregation_temporality", "type": "int32", "required": true },
+    { "name": "is_monotonic", "type": "bool", "required": true }
+  ]
+}

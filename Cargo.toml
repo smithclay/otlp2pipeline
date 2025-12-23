@@ -1,0 +1,57 @@
+[package]
+name = "otlpflare"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+worker = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+once_cell = "1"
+ordered-float = "4"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+chrono-tz = "0.10"
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+async-trait = "0.1"
+opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic-messages", "logs", "trace", "metrics", "with-serde"] }
+prost = "0.14"
+base64 = { version = "0.21", default-features = false, features = ["alloc"] }
+const-hex = "1.17"
+# Using compiler+value only (no stdlib) because stdlib pulls in zstd which requires WASM C toolchain
+# We'll implement a minimal set of custom WASM-compatible functions
+vrl = { version = "0.29", default-features = false, features = ["compiler", "value"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+
+# Tracing
+tracing = "0.1"
+
+# WASM tracing dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tracing-subscriber = { version = "0.3", default-features = false, features = ["json", "fmt", "registry", "time", "ansi"] }
+tracing-web = "0.1"
+time = { version = "0.3", features = ["formatting", "wasm-bindgen"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+# Native-only dependencies (for tests)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+
+[build-dependencies]
+vrl = { version = "0.29", default-features = false, features = ["compiler"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

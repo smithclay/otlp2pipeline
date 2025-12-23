@@ -1,0 +1,34 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "my-service"}},
+          {"key": "service.namespace", "value": {"stringValue": "production"}}
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "my-library",
+            "version": "1.0.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1703265600000000000",
+              "observedTimeUnixNano": "1703265600000000000",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {"stringValue": "Hello from OTLP!"},
+              "attributes": [
+                {"key": "user.id", "value": {"stringValue": "user-123"}}
+              ],
+              "traceId": "0af7651916cd43dd8448eb211c80319c",
+              "spanId": "b7ad6b7169203331"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+# @schema logs
+# @description OTLP logs flattened for Cloudflare Streams
+#
+# timestamp: timestamp, required, "Event timestamp in seconds"
+# observed_timestamp: int64, required, "Observed timestamp in seconds"
+# trace_id: string, "Trace ID hex string"
+# span_id: string, "Span ID hex string"
+# service_name: string, required, "Service name from resource attributes"
+# service_namespace: string
+# service_instance_id: string
+# severity_number: int32, required, "Severity level 0-24"
+# severity_text: string, required, "Severity text label"
+# body: string, "Log body as string or JSON"
+# resource_attributes: json, "Resource attributes blob"
+# scope_name: string, "Instrumentation scope name"
+# scope_version: string, "Instrumentation scope version"
+# scope_attributes: json, "Scope attributes blob"
+# log_attributes: json, "Log record attributes blob"
+# @end
+
+# vrl/otlp_logs.vrl
+# OTLP logs -> flat log event
+# Uses custom WASM-compatible functions (not VRL stdlib)
+
+# Convert nanoseconds to seconds (must be integer for schema)
+.timestamp = to_int(.time_unix_nano) ?? 0
+.timestamp = floor(.timestamp / 1000000000) ?? 0
+
+.observed_timestamp = to_int(.observed_time_unix_nano) ?? 0
+.observed_timestamp = floor(.observed_timestamp / 1000000000) ?? 0
+
+# Extract service info from resource attributes
+# Use explicit null check since get() returns null for missing keys
+.service_name_raw, err = get(.resource.attributes, ["service.name"])
+if err != null || .service_name_raw == null {
+    .service_name = "unknown"
+} else {
+    .service_name = .service_name_raw
+}
+.service_name_raw = null
+
+.service_namespace = get(.resource.attributes, ["service.namespace"]) ?? null
+.service_instance_id = get(.resource.attributes, ["service.instance.id"]) ?? null
+
+# Severity
+if .severity_number == null {
+    .severity_number = 0
+}
+
+.severity_text, err = to_string(.severity_text)
+if err != null {
+    .severity_text = ""
+}
+
+# Body - encode complex types as JSON
+if is_object(.body) || is_array(.body) {
+    .body = encode_json(.body)
+} else {
+    .body, err = to_string(.body)
+    if err != null {
+        .body = null
+    }
+}
+
+# IDs - null if empty
+.trace_id_str, err = to_string(.trace_id)
+if err == null && .trace_id_str != "" {
+    .trace_id = .trace_id_str
+} else {
+    .trace_id = null
+}
+
+.span_id_str, err = to_string(.span_id)
+if err == null && .span_id_str != "" {
+    .span_id = .span_id_str
+} else {
+    .span_id = null
+}
+
+# Encode attribute blobs as JSON
+if !is_empty(.resource.attributes) {
+    .resource_attributes = encode_json(.resource.attributes)
+} else {
+    .resource_attributes = null
+}
+
+.scope_name_str, err = to_string(.scope.name)
+if err == null && .scope_name_str != "" {
+    .scope_name = .scope_name_str
+} else {
+    .scope_name = null
+}
+
+.scope_version_str, err = to_string(.scope.version)
+if err == null && .scope_version_str != "" {
+    .scope_version = .scope_version_str
+} else {
+    .scope_version = null
+}
+
+if !is_empty(.scope.attributes) {
+    .scope_attributes = encode_json(.scope.attributes)
+} else {
+    .scope_attributes = null
+}
+
+if !is_empty(.attributes) {
+    .log_attributes = encode_json(.attributes)
+} else {
+    .log_attributes = null
+}
+
+# Clean up temporary and nested structures
+.trace_id_str = null
+.span_id_str = null
+.scope_name_str = null
+.scope_version_str = null
+.time_unix_nano = null
+.observed_time_unix_nano = null
+.resource = null
+.scope = null
+.attributes = null
+
+# Set routing table
+._table = "logs"

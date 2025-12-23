@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  # Run all CI checks first
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # Full WASM build verification
+  wasm-build:
+    name: WASM Build
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: "false"
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build WASM (release)
+        run: cargo build --target wasm32-unknown-unknown --release
+      - name: Check WASM bundle size
+        run: |
+          WASM_SIZE=$(stat -c%s target/wasm32-unknown-unknown/release/otlpflare.wasm 2>/dev/null || stat -f%z target/wasm32-unknown-unknown/release/otlpflare.wasm)
+          echo "WASM bundle size: $((WASM_SIZE / 1024)) KB"
+          # Fail if over 5MB (Cloudflare Workers limit is 10MB)
+          if [ "$WASM_SIZE" -gt 5242880 ]; then
+            echo "::error::WASM bundle exceeds 5MB limit"
+            exit 1
+          fi
+
+  # Deploy check (validates wrangler config)
+  deploy-check:
+    name: Deploy Check
+    runs-on: ubuntu-latest
+    needs: wasm-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: "false"
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Install wrangler
+        run: npm install -g wrangler
+      - name: Validate wrangler config
+        run: npx wrangler deploy --dry-run

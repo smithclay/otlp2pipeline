@@ -1,0 +1,40 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=100']
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy-fix
+        name: cargo clippy --fix
+        entry: cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --all-targets --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: check-file-length
+        name: Check file length (max 500 lines)
+        entry: python3 scripts/check_file_length.py
+        language: system
+        files: '\.rs$'
+        types: [file]
