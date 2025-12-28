@@ -6,9 +6,13 @@ Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transfor
 
 ```mermaid
 flowchart LR
-    OTLP[OpenTelemetry metrics, logs or traces] --> Worker[Cloudflare Worker]
-    HEC[Splunk HEC] --> Worker
-    Worker --> Pipelines[Cloudflare Pipelines] --> R2[(R2 Data Catalog / Iceberg)]
+    subgraph Ingest["Ingest"]
+        OTLP[OpenTelemetry metrics, logs, traces] --> W[Cloudflare Worker]
+        HEC[Splunk HEC] --> W
+        W -->|transform + route| P[Cloudflare Pipelines]
+        P --> R2[(R2 Data Catalog / Iceberg)]
+        W -->|cache write| DO[("Durable Objects: recent telemetry cache")]
+    end
 ```
 
 ## Setup

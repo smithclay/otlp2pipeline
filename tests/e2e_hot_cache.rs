@@ -267,6 +267,125 @@ fn test_parquet_empty_batch() {
 }
 
 #[test]
+fn test_parquet_gauge_conversion() {
+    use otlpflare::cache::arrow_convert::json_to_gauge_batch;
+    use otlpflare::cache::parquet::write_parquet;
+    use serde_json::json;
+
+    let gauge_records = vec![
+        json!({
+            "timestamp": 1703001600000_i64,
+            "service_name": "test-service",
+            "metric_name": "cpu_usage",
+            "value": 0.75,
+            "metric_unit": "ratio",
+            "metric_attributes": "{\"host\":\"server1\"}",
+        }),
+        json!({
+            "timestamp": 1703001601000_i64,
+            "service_name": "test-service",
+            "metric_name": "memory_usage",
+            "value": 0.5,
+            "metric_unit": "ratio",
+            "metric_attributes": "{\"host\":\"server1\"}",
+        }),
+    ];
+
+    let batch =
+        json_to_gauge_batch(&gauge_records).expect("Failed to convert gauge to Arrow batch");
+    assert_eq!(batch.num_rows(), 2);
+    assert_eq!(batch.num_columns(), 17);
+
+    let parquet_data = write_parquet(&batch).expect("Failed to write gauge Parquet");
+
+    // Validate Parquet format
+    assert!(parquet_data.len() > 8, "Parquet file should have data");
+    assert_eq!(&parquet_data[0..4], b"PAR1");
+    assert_eq!(&parquet_data[parquet_data.len() - 4..], b"PAR1");
+
+    // Verify round-trip
+    use bytes::Bytes;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    let bytes = Bytes::from(parquet_data);
+    let builder = ParquetRecordBatchReaderBuilder::try_new(bytes).expect("Failed to create reader");
+    let schema = builder.schema();
+    assert!(schema.column_with_name("metric_name").is_some());
+    assert!(schema.column_with_name("value").is_some());
+
+    // Read the batch back
+    let mut reader = builder.build().expect("Failed to build reader");
+    let read_batch = reader
+        .next()
+        .expect("Should have at least one batch")
+        .expect("Failed to read batch");
+
+    assert_eq!(read_batch.num_rows(), 2);
+    assert_eq!(read_batch.num_columns(), 17);
+}
+
+#[test]
+fn test_parquet_sum_conversion() {
+    use otlpflare::cache::arrow_convert::json_to_sum_batch;
+    use otlpflare::cache::parquet::write_parquet;
+    use serde_json::json;
+
+    let sum_records = vec![
+        json!({
+            "timestamp": 1703001600000_i64,
+            "service_name": "test-service",
+            "metric_name": "requests_total",
+            "value": 1000.0,
+            "metric_unit": "1",
+            "is_monotonic": true,
+            "aggregation_temporality": 2,
+            "metric_attributes": "{\"endpoint\":\"/api\"}",
+        }),
+        json!({
+            "timestamp": 1703001601000_i64,
+            "service_name": "test-service",
+            "metric_name": "errors_total",
+            "value": 50.0,
+            "metric_unit": "1",
+            "is_monotonic": true,
+            "aggregation_temporality": 2,
+            "metric_attributes": "{\"endpoint\":\"/api\"}",
+        }),
+    ];
+
+    let batch = json_to_sum_batch(&sum_records).expect("Failed to convert sum to Arrow batch");
+    assert_eq!(batch.num_rows(), 2);
+    assert_eq!(batch.num_columns(), 19);
+
+    let parquet_data = write_parquet(&batch).expect("Failed to write sum Parquet");
+
+    // Validate Parquet format
+    assert!(parquet_data.len() > 8, "Parquet file should have data");
+    assert_eq!(&parquet_data[0..4], b"PAR1");
+    assert_eq!(&parquet_data[parquet_data.len() - 4..], b"PAR1");
+
+    // Verify round-trip
+    use bytes::Bytes;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    let bytes = Bytes::from(parquet_data);
+    let builder = ParquetRecordBatchReaderBuilder::try_new(bytes).expect("Failed to create reader");
+    let schema = builder.schema();
+    assert!(schema.column_with_name("is_monotonic").is_some());
+    assert!(schema.column_with_name("aggregation_temporality").is_some());
+
+    // Read the batch back
+    let mut reader = builder.build().expect("Failed to build reader");
+    let read_batch = reader
+        .next()
+        .expect("Should have at least one batch")
+        .expect("Failed to read batch");
+
+    assert_eq!(read_batch.num_rows(), 2);
+    assert_eq!(read_batch.num_columns(), 19);
+}
+
+#[test]
 fn test_parquet_duckdb_compatibility() {
     use otlpflare::cache::arrow_convert::json_to_logs_batch;
     use otlpflare::cache::parquet::write_parquet;
