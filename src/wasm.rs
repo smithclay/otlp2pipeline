@@ -46,6 +46,13 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         (Method::Post, "/v1/metrics") => handle_metrics_worker(req, env).await,
         (Method::Post, "/services/collector/event") => handle_hec_logs_worker(req, env).await,
         (Method::Get, "/health") => Response::ok("ok"),
+        // Parquet export endpoints
+        (Method::Get, "/logs") => crate::cache::parquet::handle_logs_export(req, env).await,
+        (Method::Get, "/traces") => crate::cache::parquet::handle_traces_export(req, env).await,
+        (Method::Get, "/metrics/gauge") => {
+            crate::cache::parquet::handle_gauge_export(req, env).await
+        }
+        (Method::Get, "/metrics/sum") => crate::cache::parquet::handle_sum_export(req, env).await,
         _ => Response::error("Not Found", 404),
     }
 }
@@ -60,11 +67,15 @@ async fn handle_signal_worker<H: handler::SignalHandler>(
     let decode_format = override_format.unwrap_or(decode_format);
     let client = PipelineClient::from_worker_env(&env)?;
 
-    match handler::handle_signal::<H, _>(
+    // Initialize hot cache sender for dual-write
+    let cache = crate::cache::WasmHotCacheSender::new(env.clone());
+
+    match handler::handle_signal_with_cache::<H, _, _>(
         Bytes::from(body_bytes),
         is_gzipped,
         decode_format,
         &client,
+        Some(&cache),
     )
     .await
     {
@@ -99,3 +110,8 @@ fn parse_worker_headers(req: &Request) -> (bool, DecodeFormat) {
             .map(|s| s.to_string())
     })
 }
+
+// Re-export HotCacheDO from cache module to make it available at this module level
+// Note: This is required for the #[durable_object] macro to work properly
+#[allow(unused_imports)]
+pub use crate::cache::HotCacheDO;

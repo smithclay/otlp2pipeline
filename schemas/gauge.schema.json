@@ -1,5 +1,6 @@
 {
   "fields": [
+    { "name": "_signal", "type": "string", "required": true },
     { "name": "timestamp", "type": "timestamp", "required": true },
     { "name": "start_timestamp", "type": "int64", "required": false },
     { "name": "metric_name", "type": "string", "required": true },

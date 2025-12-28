@@ -1,0 +1,431 @@
+openapi: 3.0.3
+info:
+  title: OTLPFlare API
+  description: |
+    OTLP ingestion worker that receives OpenTelemetry data and forwards it to
+    Cloudflare Pipelines. Provides hot cache with Parquet export for recent data.
+  version: 0.2.0
+  license:
+    name: MIT
+
+servers:
+  - url: https://{worker}.{account}.workers.dev
+    description: Cloudflare Workers deployment
+    variables:
+      worker:
+        default: otlpflare
+      account:
+        default: your-account
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /v1/logs:
+    post:
+      summary: Ingest OpenTelemetry logs
+      operationId: ingestLogs
+      tags: [Ingestion]
+      description: |
+        Accepts OTLP ExportLogsServiceRequest in protobuf or JSON format.
+        Supports gzip compression.
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportLogsServiceRequest protobuf
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportLogsServiceRequest'
+      responses:
+        '200':
+          description: Logs ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v1/traces:
+    post:
+      summary: Ingest OpenTelemetry traces
+      operationId: ingestTraces
+      tags: [Ingestion]
+      description: |
+        Accepts OTLP ExportTraceServiceRequest in protobuf or JSON format.
+        Supports gzip compression.
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportTraceServiceRequest protobuf
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportTraceServiceRequest'
+      responses:
+        '200':
+          description: Traces ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v1/metrics:
+    post:
+      summary: Ingest OpenTelemetry metrics
+      operationId: ingestMetrics
+      tags: [Ingestion]
+      description: |
+        Accepts OTLP ExportMetricsServiceRequest in protobuf or JSON format.
+        Supports gauge and sum metric types. Supports gzip compression.
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportMetricsServiceRequest protobuf
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportMetricsServiceRequest'
+      responses:
+        '200':
+          description: Metrics ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /services/collector/event:
+    post:
+      summary: Ingest Splunk HEC logs
+      operationId: ingestHecLogs
+      tags: [Ingestion]
+      description: |
+        Accepts Splunk HTTP Event Collector format (JSON or NDJSON).
+        Converts to OTLP log format internally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/HecEvent'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/HecEvent'
+      responses:
+        '200':
+          description: Logs ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /logs:
+    get:
+      summary: Export logs as Parquet
+      operationId: exportLogs
+      tags: [Export]
+      description: |
+        Query recent logs from hot cache and return as Parquet file.
+        Data is sourced from Durable Objects with SQLite storage.
+      parameters:
+        - $ref: '#/components/parameters/services'
+        - $ref: '#/components/parameters/start'
+        - $ref: '#/components/parameters/end'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/trace_id'
+      responses:
+        '200':
+          description: Parquet file with log records
+          content:
+            application/vnd.apache.parquet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /traces:
+    get:
+      summary: Export traces as Parquet
+      operationId: exportTraces
+      tags: [Export]
+      description: |
+        Query recent traces from hot cache and return as Parquet file.
+        Data is sourced from Durable Objects with SQLite storage.
+      parameters:
+        - $ref: '#/components/parameters/services'
+        - $ref: '#/components/parameters/start'
+        - $ref: '#/components/parameters/end'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/trace_id'
+      responses:
+        '200':
+          description: Parquet file with span records
+          content:
+            application/vnd.apache.parquet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /metrics/gauge:
+    get:
+      summary: Export gauge metrics as Parquet
+      operationId: exportGaugeMetrics
+      tags: [Export]
+      description: |
+        Query recent gauge metrics from hot cache and return as Parquet file.
+      parameters:
+        - $ref: '#/components/parameters/services'
+        - $ref: '#/components/parameters/start'
+        - $ref: '#/components/parameters/end'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/metric_name'
+        - $ref: '#/components/parameters/labels'
+      responses:
+        '200':
+          description: Parquet file with gauge metric records
+          content:
+            application/vnd.apache.parquet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /metrics/sum:
+    get:
+      summary: Export sum metrics as Parquet
+      operationId: exportSumMetrics
+      tags: [Export]
+      description: |
+        Query recent sum (counter) metrics from hot cache and return as Parquet file.
+      parameters:
+        - $ref: '#/components/parameters/services'
+        - $ref: '#/components/parameters/start'
+        - $ref: '#/components/parameters/end'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/metric_name'
+        - $ref: '#/components/parameters/labels'
+      responses:
+        '200':
+          description: Parquet file with sum metric records
+          content:
+            application/vnd.apache.parquet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  parameters:
+    services:
+      name: services
+      in: query
+      required: true
+      description: Comma-separated list of service names (max 50)
+      schema:
+        type: string
+      example: my-service,other-service
+
+    start:
+      name: start
+      in: query
+      required: false
+      description: Start time as Unix timestamp in seconds
+      schema:
+        type: number
+        format: double
+      example: 1703721600
+
+    end:
+      name: end
+      in: query
+      required: false
+      description: End time as Unix timestamp in seconds
+      schema:
+        type: number
+        format: double
+      example: 1703808000
+
+    limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum rows to return (default 1000, max 10000)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 10000
+        default: 1000
+
+    trace_id:
+      name: trace_id
+      in: query
+      required: false
+      description: Filter by trace ID (logs/traces only)
+      schema:
+        type: string
+      example: abc123def456
+
+    metric_name:
+      name: metric_name
+      in: query
+      required: false
+      description: Filter by metric name (metrics only)
+      schema:
+        type: string
+      example: http_requests_total
+
+    labels:
+      name: labels
+      in: query
+      required: false
+      description: Label filters as key=value pairs, comma-separated (metrics only)
+      schema:
+        type: string
+      example: host=server1,env=prod
+
+  schemas:
+    HandleResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, partial]
+          description: Overall status of the request
+        records:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Count of records processed per signal type
+          example:
+            logs: 42
+        errors:
+          type: object
+          additionalProperties:
+            type: string
+          description: Errors encountered per signal type (omitted if empty)
+      required:
+        - status
+        - records
+
+    ExportLogsServiceRequest:
+      type: object
+      description: OTLP logs request (see opentelemetry-proto)
+      externalDocs:
+        url: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/logs/v1/logs_service.proto
+
+    ExportTraceServiceRequest:
+      type: object
+      description: OTLP traces request (see opentelemetry-proto)
+      externalDocs:
+        url: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/trace/v1/trace_service.proto
+
+    ExportMetricsServiceRequest:
+      type: object
+      description: OTLP metrics request (see opentelemetry-proto)
+      externalDocs:
+        url: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/metrics/v1/metrics_service.proto
+
+    HecEvent:
+      type: object
+      description: Splunk HTTP Event Collector event
+      properties:
+        event:
+          oneOf:
+            - type: string
+            - type: object
+          description: The event data (required)
+        time:
+          type: number
+          format: double
+          description: Event timestamp as Unix epoch seconds
+        host:
+          type: string
+          description: Hostname
+        source:
+          type: string
+          description: Event source
+        sourcetype:
+          type: string
+          description: Event source type
+        index:
+          type: string
+          description: Target index
+        fields:
+          type: object
+          additionalProperties: true
+          description: Additional indexed fields
+      required:
+        - event
+
+tags:
+  - name: Health
+    description: Service health endpoints
+  - name: Ingestion
+    description: Telemetry data ingestion (OTLP and HEC)
+  - name: Export
+    description: Hot cache data export as Parquet

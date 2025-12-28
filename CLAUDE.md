@@ -73,12 +73,39 @@ Parallel structure for each signal:
 ### VRL Transformation (`src/transform/`)
 
 VRL scripts in `vrl/*.vrl` are compiled at build time (`build.rs`):
-- `otlp_logs.vrl`: Flatten log records
-- `otlp_traces.vrl`: Flatten span records
+- `otlp_logs.vrl`: Flatten log records (16 fields)
+- `otlp_traces.vrl`: Flatten span records (26 fields)
 
 Custom VRL functions in `src/transform/functions.rs` (minimal set for WASM compatibility).
 
-Scripts assign `._table` to route records to the correct pipeline.
+Scripts assign:
+- `._table` to route records to the correct pipeline
+- `._signal` for deterministic sorting ("logs" or "traces")
+
+### Schema Unification (`build.rs`)
+
+VRL `# @schema` comments are the **single source of truth** for all schemas. The build script parses these annotations and generates:
+
+- `schemas/*.schema.json` - Cloudflare Pipeline schemas
+- `$OUT_DIR/arrow_schemas.rs` - Arrow schema functions (`logs_schema()`, `spans_schema()`)
+- `$OUT_DIR/sqlite_ddl.rs` - SQLite CREATE TABLE statements (`LOGS_DDL`, `TRACES_DDL`)
+- `$OUT_DIR/insert_helpers.rs` - Type-safe insert helpers (`logs_insert_sql()`, `logs_values()`)
+
+Schema field types: `timestamp`, `int64`, `int32`, `float64`, `bool`, `string`, `json`
+
+Timestamps are stored as **milliseconds** (Int64).
+
+### Hot Cache (`src/cache/`)
+
+Durable Objects provide low-latency access to recent telemetry via SQLite:
+
+- `durable_object.rs`: `HotCacheDO` with SQLite storage per {service}:{signal}
+- `arrow_convert.rs`: JSON → Arrow RecordBatch conversion (uses generated schemas)
+- `insert_helpers.rs`: Wraps generated insert helpers with transaction batching
+- `query.rs`: Query API with fanout to multiple DOs
+- `sender.rs`: Routes records to appropriate DO instances
+
+Query responses support JSON and Arrow IPC formats via content negotiation.
 
 ### Pipeline Client (`src/pipeline/`)
 

@@ -1,73 +1,76 @@
 # otlpflare
 
-Cloudflare Worker for telemetry ingestion to Cloudflare Pipelines.
+Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Catalog (Apache Iceberg).
 
-Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transforms them via [VRL](https://crates.io/crates/vrl) and forwards to [Cloudflare Pipelines](https://developers.cloudflare.com/pipelines/) for storage in [R2 Data Catalog](https://developers.cloudflare.com/r2/data-catalog/) using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
+Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transforms them via [VRL](https://crates.io/crates/vrl) and forwards to [Cloudflare Pipelines](https://developers.cloudflare.com/pipelines/) for storage in [R2 Data Catalog](https://developers.cloudflare.com/r2/data-catalog/) tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
 ```mermaid
 flowchart LR
     OTLP[OpenTelemetry metrics, logs or traces] --> Worker[Cloudflare Worker]
     HEC[Splunk HEC] --> Worker
-    Worker --> Pipelines[Cloudflare Pipelines] --> R2[(R2 Iceberg)]
+    Worker --> Pipelines[Cloudflare Pipelines] --> R2[(R2 Data Catalog / Iceberg)]
 ```
 
 ## Setup
 
-### 1. Create R2 bucket with data catalog
+### 1. Create R2 API token
 
-```bash
-npx wrangler r2 bucket create otlpflare-logs
-npx wrangler r2 bucket catalog enable otlpflare-logs
-```
-
-### 2. Create R2 API token
-
-Go to **R2 → Manage R2 API Tokens → Create API Token**:
+Go to **[R2 API Tokens](https://dash.cloudflare.com/?to=/:account/r2/api-tokens) → Create API Token**:
 - Permissions: `Admin Read & Write`
-- Specify bucket: `otlpflare-logs`
+- Scope: All buckets (or specify after bucket creation)
+- Note: The R2 API Token is **different** from a regular Cloudflare API token.
 
-Save the **Token value** for sink creation.
+Save the **Token value** for the next step.
 
-### 3. Create Pipeline components
+### 2. Create pipeline environment
+
+The setup script creates the R2 bucket, streams, sinks, and pipelines for all signal types (logs, traces, gauge, sum):
 
 ```bash
-# Stream with schema
-npx wrangler pipelines streams create otlpflare --schema-file schema.json
-
-# Sink (R2 Data Catalog)
-npx wrangler pipelines sinks create otlpflare_sink \
-  --type r2-data-catalog \
-  --bucket otlpflare-logs \
-  --namespace default \
-  --table logs \
-  --catalog-token "<YOUR_R2_API_TOKEN>" \
-  --format parquet \
-  --compression zstd
-
-# Pipeline
-npx wrangler pipelines create otlpflare \
-  --sql "INSERT INTO otlpflare_sink SELECT * FROM otlpflare"
+./scripts/pipeline-env.sh create <env-name> --token <R2_API_TOKEN>
 ```
 
-### 4. Configure wrangler.toml
-
-Set the stream endpoint (shown after stream creation):
-```toml
-[vars]
-PIPELINE_ENDPOINT = "https://<stream-id>.ingest.cloudflare.com"
+For example:
+```bash
+./scripts/pipeline-env.sh create prod --token r2_xxxxx
 ```
 
-### 5. Set auth secret
+This creates:
+- R2 bucket: `otlpflare-<env-name>` with Data Catalog enabled
+- Streams with schemas for each signal type
+- Sinks targeting R2 Data Catalog tables
+- Pipelines connecting streams to sinks
+- Catalog maintenance (compaction + snapshot expiration)
+
+The script generates a complete `wrangler.toml` with the stream endpoints configured.
+
+### 3. Set auth secret
 
 Create a Cloudflare API token with `Pipelines: Edit` permission:
 ```bash
 npx wrangler secret put PIPELINE_AUTH_TOKEN
 ```
 
-### 6. Deploy
+### 4. Deploy
 
 ```bash
 npx wrangler deploy
+```
+
+### Other commands
+
+```bash
+# Check environment status
+./scripts/pipeline-env.sh status <env-name>
+
+# Preview what would be created
+./scripts/pipeline-env.sh dry-run <env-name>
+
+# Query tables with DuckDB
+./scripts/pipeline-env.sh query <env-name>
+
+# Delete environment
+./scripts/pipeline-env.sh delete <env-name>
 ```
 
 ## Usage
@@ -104,29 +107,15 @@ HEC supports NDJSON (multiple events per request) and gzip compression.
 
 Supports `Content-Type: application/x-protobuf` and `Content-Encoding: gzip`.
 
-## Query Data
+## Performance
 
-Query with R2 SQL:
-```bash
-npx wrangler r2 sql query otlpflare-logs "SELECT * FROM default.logs LIMIT 10"
-```
-
-Or connect with PyIceberg, Spark, or other Iceberg tools:
-```
-https://catalog.cloudflarestorage.com/<account-id>/otlpflare-logs
-```
+R2 Data Catalog features like [automatic compaction and snapshot expiration](https://developers.cloudflare.com/r2/data-catalog/table-maintenance/) are enabled by default for performance reasons.
 
 ## Security
 
 ### Authentication
 
-This worker does **not** implement application-level authentication. Instead, rely on infrastructure-level access controls:
-
-- **Cloudflare Access**: Protect endpoints with Zero Trust policies
-- **Cloudflare WAF**: Rate limiting and IP allowlisting
-- **mTLS**: Client certificate authentication via Cloudflare
-
-For Splunk HEC compatibility, the `Authorization: Splunk <token>` header is accepted but **not validated**. Use network-level controls to restrict access.
+This worker does **not** implement application-level authentication.
 
 ### Input Validation
 

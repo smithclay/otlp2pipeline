@@ -5,6 +5,7 @@ use decode::DecodeFormat;
 #[cfg(not(target_arch = "wasm32"))]
 pub use bytes::Bytes;
 
+pub mod cache;
 mod convert;
 mod decode;
 mod handler;

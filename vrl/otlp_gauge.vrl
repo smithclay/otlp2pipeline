@@ -1,6 +1,7 @@
 # @schema gauge
 # @description OTLP gauge metrics flattened for Cloudflare Streams
 #
+# _signal: string, required, "Signal type for deterministic sorting"
 # timestamp: timestamp, required, "Observation time in seconds"
 # start_timestamp: int64, "Start time in seconds"
 # metric_name: string, required, "Metric name"
@@ -24,12 +25,12 @@
 # Uses custom WASM-compatible functions (not VRL stdlib)
 # Note: Records are pre-partitioned by _metric_type in Rust before reaching VRL
 
-# Convert nanoseconds to seconds (must be integer for schema)
+# Convert nanoseconds to milliseconds (must be integer for schema)
 .timestamp = to_int(.time_unix_nano) ?? 0
-.timestamp = floor(.timestamp / 1000000000) ?? 0
+.timestamp = floor(.timestamp / 1000000) ?? 0
 
 .start_timestamp = to_int(.start_time_unix_nano) ?? 0
-.start_timestamp = floor(.start_timestamp / 1000000000) ?? 0
+.start_timestamp = floor(.start_timestamp / 1000000) ?? 0
 
 # Extract metric name
 .metric_name, err = to_string(.metric_name)
@@ -119,5 +120,6 @@ if .flags == null {
 .exemplars = null
 ._metric_type = null
 
-# Set routing table
+# Set signal type and routing table
+._signal = "gauge"
 ._table = "gauge"

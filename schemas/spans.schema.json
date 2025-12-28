@@ -1,5 +1,7 @@
 {
   "fields": [
+    { "name": "_signal", "type": "string", "required": true },
+    { "name": "_timestamp_nanos", "type": "int64", "required": false },
     { "name": "timestamp", "type": "timestamp", "required": true },
     { "name": "end_timestamp", "type": "int64", "required": true },
     { "name": "duration", "type": "int64", "required": true },

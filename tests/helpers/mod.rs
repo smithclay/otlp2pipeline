@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Test helpers appear unused when compiled independently
+
 use axum::{
     body::Bytes,
     extract::State,
