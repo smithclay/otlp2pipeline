@@ -222,31 +222,11 @@ impl HotCacheDO {
             )?
             .rows_written();
 
-        // Check if there are remaining records
-        let remaining_logs: Vec<CountRow> = sql
-            .exec("SELECT COUNT(*) as count FROM logs", None)?
-            .to_array()
-            .unwrap_or_default();
-
-        let remaining_traces: Vec<CountRow> = sql
-            .exec("SELECT COUNT(*) as count FROM traces", None)?
-            .to_array()
-            .unwrap_or_default();
-
-        let remaining_gauge: Vec<CountRow> = sql
-            .exec("SELECT COUNT(*) as count FROM gauge", None)?
-            .to_array()
-            .unwrap_or_default();
-
-        let remaining_sum: Vec<CountRow> = sql
-            .exec("SELECT COUNT(*) as count FROM sum", None)?
-            .to_array()
-            .unwrap_or_default();
-
-        let total_remaining = remaining_logs.first().map(|r| r.count).unwrap_or(0)
-            + remaining_traces.first().map(|r| r.count).unwrap_or(0)
-            + remaining_gauge.first().map(|r| r.count).unwrap_or(0)
-            + remaining_sum.first().map(|r| r.count).unwrap_or(0);
+        // Check if there are remaining records (propagate errors instead of defaulting to 0)
+        let total_remaining = Self::get_table_count(&sql, "logs")?
+            + Self::get_table_count(&sql, "traces")?
+            + Self::get_table_count(&sql, "gauge")?
+            + Self::get_table_count(&sql, "sum")?;
 
         // Reschedule alarm if records remain
         if total_remaining > 0 {
@@ -279,6 +259,15 @@ impl HotCacheDO {
         self.state.storage().set_alarm(alarm_time_ms).await?;
 
         Ok(())
+    }
+
+    /// Safely extract count from SQL result, returning error instead of defaulting to 0.
+    fn get_table_count(sql: &worker::SqlStorage, table: &str) -> Result<i64> {
+        let query = format!("SELECT COUNT(*) as count FROM {}", table);
+        let rows: Vec<CountRow> = sql.exec(&query, None)?.to_array().map_err(|e| {
+            worker::Error::RustError(format!("Failed to count {} records: {}", table, e))
+        })?;
+        Ok(rows.first().map(|r| r.count).unwrap_or(0))
     }
 }
 
