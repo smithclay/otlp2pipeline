@@ -411,7 +411,7 @@ PIPELINE_LOGS = "${logs_endpoint}"
 PIPELINE_TRACES = "${traces_endpoint}"
 PIPELINE_GAUGE = "${gauge_endpoint}"
 PIPELINE_SUM = "${sum_endpoint}"
-HOT_CACHE_ENABLED = "false"
+HOT_CACHE_ENABLED = "true"
 HOT_CACHE_RETENTION_SECONDS = "3600"
 
 [observability]

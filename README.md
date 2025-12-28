@@ -1,6 +1,8 @@
 # otlpflare
 
-Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Catalog (Apache Iceberg).
+Experimental Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Catalog (Apache Iceberg).
+
+## What it does
 
 Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transforms them via [VRL](https://crates.io/crates/vrl) and forwards to [Cloudflare Pipelines](https://developers.cloudflare.com/pipelines/) for storage in [R2 Data Catalog](https://developers.cloudflare.com/r2/data-catalog/) tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
@@ -14,6 +16,15 @@ flowchart LR
         W -->|cache write| DO[("Durable Objects: recent telemetry cache")]
     end
 ```
+
+## Why?
+
+There are dozens on excellent open-source and paid monitoring tools and products to choose from, including many that store observerability data in parquet format in object storage.
+
+The purpose of this project is to explore:
+
+1. How advanced of a telemetry platform can we build, for cheap, using emerging services from Cloudflare like Pipelines, Durable Objects, and R2 Data Catalog?
+2. How can we make long-term observability data easily accessible from analytics tools that support Apache Iceberg like duckdb, pandas, Trino, Anthena, etc?
 
 ## Setup
 

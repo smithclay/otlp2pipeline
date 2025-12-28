@@ -32,13 +32,21 @@ impl WasmHotCacheSender {
     }
 
     /// Group records by DO name ({service}:{table}).
+    /// Adds _table field back to each record since VRL transform strips it.
     fn group_by_do(&self, grouped: HashMap<String, Vec<Value>>) -> HashMap<String, Vec<Value>> {
         let mut by_do: HashMap<String, Vec<Value>> = HashMap::new();
+        let table_key: KeyString = "_table".into();
 
         for (table_name, records) in grouped {
-            for record in records {
+            for mut record in records {
                 let service = get_service_name(&record);
                 let do_name = build_do_name(&service, &table_name);
+
+                // Add _table back to record - DO expects it for routing
+                if let Value::Object(ref mut map) = record {
+                    map.insert(table_key.clone(), Value::from(table_name.as_str()));
+                }
+
                 by_do.entry(do_name).or_default().push(record);
             }
         }
