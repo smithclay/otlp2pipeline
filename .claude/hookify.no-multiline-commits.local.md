@@ -25,4 +25,4 @@ EOF
 git commit -m "Single line commit message"
 ```
 
-Keep commit messages concise and on a single line (under 100 characters).
+Keep commit messages concise and on a single line (under 250 characters).
