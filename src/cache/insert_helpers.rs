@@ -7,6 +7,9 @@
 #[cfg(target_arch = "wasm32")]
 use worker::{Result, SqlStorage};
 
+#[cfg(target_arch = "wasm32")]
+use tracing::error;
+
 // Include generated insert helpers from build.rs
 // These provide:
 // - logs_insert_sql() / logs_values(record)
@@ -45,7 +48,14 @@ pub fn insert_logs(sql: &SqlStorage, records: &[serde_json::Value]) -> Result<us
             Ok(count)
         }
         Err(e) => {
-            let _ = sql.exec("ROLLBACK", vec![]);
+            if let Err(rollback_err) = sql.exec("ROLLBACK", vec![]) {
+                error!(
+                    original_error = %e,
+                    rollback_error = %rollback_err,
+                    table = "logs",
+                    "Transaction rollback failed after insert error"
+                );
+            }
             Err(e)
         }
     }
@@ -80,7 +90,14 @@ pub fn insert_traces(sql: &SqlStorage, records: &[serde_json::Value]) -> Result<
             Ok(count)
         }
         Err(e) => {
-            let _ = sql.exec("ROLLBACK", vec![]);
+            if let Err(rollback_err) = sql.exec("ROLLBACK", vec![]) {
+                error!(
+                    original_error = %e,
+                    rollback_error = %rollback_err,
+                    table = "traces",
+                    "Transaction rollback failed after insert error"
+                );
+            }
             Err(e)
         }
     }
@@ -115,7 +132,14 @@ pub fn insert_gauge(sql: &SqlStorage, records: &[serde_json::Value]) -> Result<u
             Ok(count)
         }
         Err(e) => {
-            let _ = sql.exec("ROLLBACK", vec![]);
+            if let Err(rollback_err) = sql.exec("ROLLBACK", vec![]) {
+                error!(
+                    original_error = %e,
+                    rollback_error = %rollback_err,
+                    table = "gauge",
+                    "Transaction rollback failed after insert error"
+                );
+            }
             Err(e)
         }
     }
@@ -150,7 +174,14 @@ pub fn insert_sum(sql: &SqlStorage, records: &[serde_json::Value]) -> Result<usi
             Ok(count)
         }
         Err(e) => {
-            let _ = sql.exec("ROLLBACK", vec![]);
+            if let Err(rollback_err) = sql.exec("ROLLBACK", vec![]) {
+                error!(
+                    original_error = %e,
+                    rollback_error = %rollback_err,
+                    table = "sum",
+                    "Transaction rollback failed after insert error"
+                );
+            }
             Err(e)
         }
     }
