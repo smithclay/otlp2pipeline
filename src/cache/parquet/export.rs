@@ -4,6 +4,7 @@
 
 use futures::future::join_all;
 use serde_json::Value;
+use tracing::warn;
 use worker::{Env, Method, Request, RequestInit, Response, Result};
 
 use super::convert::write_parquet;
@@ -150,8 +151,12 @@ async fn fanout_query(
     for (do_name, result) in do_names.iter().zip(results.into_iter()) {
         match result {
             Ok(rows) => all_rows.extend(rows),
-            Err(_e) => {
-                // Track failed sources but don't fail entire request
+            Err(e) => {
+                warn!(
+                    do_name = %do_name,
+                    error = %e,
+                    "Durable Object query failed during fanout"
+                );
                 failed_sources.push(do_name.clone());
             }
         }

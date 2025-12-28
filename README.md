@@ -107,6 +107,12 @@ HEC supports NDJSON (multiple events per request) and gzip compression.
 
 Supports `Content-Type: application/x-protobuf` and `Content-Encoding: gzip`.
 
+## Schema
+
+See the `vrl/` directory, the schema written to R2 data catalog is defined inline the VRL transformation scripts.
+
+If you'd like to change how data is stored in Iceberg, just modify the appropriate VRL files, recompile, and redeploy to a new Cloudflare Pipeline.
+
 ## Performance
 
 R2 Data Catalog features like [automatic compaction and snapshot expiration](https://developers.cloudflare.com/r2/data-catalog/table-maintenance/) are enabled by default for performance reasons.
