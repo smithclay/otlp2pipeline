@@ -53,6 +53,10 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             crate::cache::parquet::handle_gauge_export(req, env).await
         }
         (Method::Get, "/metrics/sum") => crate::cache::parquet::handle_sum_export(req, env).await,
+        // Stats API endpoints
+        (Method::Get, path) if path.starts_with("/v1/services/") => {
+            handle_stats_query(path, req, env).await
+        }
         _ => Response::error("Not Found", 404),
     }
 }
@@ -109,6 +113,39 @@ fn parse_worker_headers(req: &Request) -> (bool, DecodeFormat) {
             .flatten()
             .map(|s| s.to_string())
     })
+}
+
+async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Response> {
+    // Parse path: /v1/services/:service/:signal/stats
+    let parts: Vec<&str> = path
+        .trim_start_matches("/v1/services/")
+        .split('/')
+        .collect();
+    if parts.len() < 3 || parts[2] != "stats" {
+        return Response::error("Invalid path. Use /v1/services/:service/:signal/stats", 400);
+    }
+
+    let service = parts[0];
+    let signal = parts[1];
+
+    // Validate signal
+    if signal != "logs" && signal != "traces" {
+        return Response::error("Signal must be 'logs' or 'traces'", 400);
+    }
+
+    let do_name = format!("{}:{}", service, signal);
+
+    let namespace = env.durable_object("AGGREGATOR")?;
+    let id = namespace.id_from_name(&do_name)?;
+    let stub = id.get_stub()?;
+
+    // Forward request to DO (preserving query string)
+    let url = req.url()?;
+    let query = url.query().map(|q| format!("?{}", q)).unwrap_or_default();
+    let do_url = format!("http://do/stats{}", query);
+
+    let request = worker::Request::new(&do_url, worker::Method::Get)?;
+    stub.fetch_with_request(request).await
 }
 
 // Re-export HotCacheDO from cache module to make it available at this module level
