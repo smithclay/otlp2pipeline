@@ -67,8 +67,8 @@ async fn handle_signal_worker<H: handler::SignalHandler>(
     let decode_format = override_format.unwrap_or(decode_format);
     let client = PipelineClient::from_worker_env(&env)?;
 
-    // Initialize hot cache sender for dual-write
-    let cache = crate::cache::WasmHotCacheSender::new(env.clone());
+    // Initialize aggregator sender for dual-write
+    let cache = crate::aggregator::WasmAggregatorSender::new(env.clone());
 
     match handler::handle_signal_with_cache::<H, _, _>(
         Bytes::from(body_bytes),

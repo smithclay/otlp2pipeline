@@ -218,11 +218,11 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
     Ok(HandleResponse::from_result(result))
 }
 
-/// Handle signal with optional hot cache dual-write.
+/// Handle signal with optional aggregator dual-write.
 ///
 /// This function extends handle_signal to support dual-writing telemetry to both:
 /// 1. Pipeline (cold storage: R2/Iceberg) - required, failures fail the request
-/// 2. Hot Cache (Durable Objects) - optional best-effort, failures are logged but don't fail the request
+/// 2. Aggregator (Durable Objects) - optional best-effort, failures are logged but don't fail the request
 #[cfg(target_arch = "wasm32")]
 #[tracing::instrument(
     name = "ingest_dual",
@@ -246,7 +246,7 @@ pub async fn handle_signal_with_cache<H, S, C>(
 where
     H: SignalHandler,
     S: PipelineSender,
-    C: crate::cache::HotCacheSender,
+    C: crate::aggregator::AggregatorSender,
 {
     debug!(
         body_size = body.len(),
@@ -290,26 +290,26 @@ where
     let total_records: usize = grouped.values().map(|v| v.len()).sum();
     let table_names: String = grouped.keys().cloned().collect::<Vec<_>>().join(",");
 
-    // Dual-write: pipeline is primary (required), cache is best-effort (optional)
+    // Dual-write: pipeline is primary (required), aggregator is best-effort (optional)
     let pipeline_result = if let Some(cache) = cache {
-        // Clone grouped data for cache write
+        // Clone grouped data for aggregator write
         let grouped_clone = grouped.clone();
 
         // Send to pipeline first (takes ownership)
         let p_result = sender.send_all(grouped).await;
 
-        // Send to cache (best-effort, don't block on failure)
-        let c_result = cache.send_all(grouped_clone).await;
+        // Send to aggregator (best-effort, don't block on failure)
+        let a_result = cache.send_to_aggregator(grouped_clone).await;
 
-        // Log cache errors but don't fail the request
-        if !c_result.failed.is_empty() {
-            for (table, error) in &c_result.failed {
-                warn!(table = %table, error = %error, "hot cache write failed");
+        // Log aggregator errors but don't fail the request
+        if !a_result.failed.is_empty() {
+            for (do_name, error) in &a_result.failed {
+                warn!(do_name = %do_name, error = %error, "aggregator write failed");
             }
         } else {
             debug!(
-                succeeded = c_result.succeeded.len(),
-                "hot cache write succeeded"
+                succeeded = a_result.succeeded.len(),
+                "aggregator write succeeded"
             );
         }
 
