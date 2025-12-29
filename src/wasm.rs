@@ -115,3 +115,7 @@ fn parse_worker_headers(req: &Request) -> (bool, DecodeFormat) {
 // Note: This is required for the #[durable_object] macro to work properly
 #[allow(unused_imports)]
 pub use crate::cache::HotCacheDO;
+
+// Re-export AggregatorDO from aggregator module
+#[allow(unused_imports)]
+pub use crate::aggregator::AggregatorDO;
