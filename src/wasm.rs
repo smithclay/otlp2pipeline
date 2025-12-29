@@ -46,13 +46,6 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         (Method::Post, "/v1/metrics") => handle_metrics_worker(req, env).await,
         (Method::Post, "/services/collector/event") => handle_hec_logs_worker(req, env).await,
         (Method::Get, "/health") => Response::ok("ok"),
-        // Parquet export endpoints
-        (Method::Get, "/logs") => crate::cache::parquet::handle_logs_export(req, env).await,
-        (Method::Get, "/traces") => crate::cache::parquet::handle_traces_export(req, env).await,
-        (Method::Get, "/metrics/gauge") => {
-            crate::cache::parquet::handle_gauge_export(req, env).await
-        }
-        (Method::Get, "/metrics/sum") => crate::cache::parquet::handle_sum_export(req, env).await,
         // Stats API endpoints
         (Method::Get, path) if path.starts_with("/v1/services/") => {
             handle_stats_query(path, req, env).await
@@ -147,11 +140,6 @@ async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Respon
     let request = worker::Request::new(&do_url, worker::Method::Get)?;
     stub.fetch_with_request(request).await
 }
-
-// Re-export HotCacheDO from cache module to make it available at this module level
-// Note: This is required for the #[durable_object] macro to work properly
-#[allow(unused_imports)]
-pub use crate::cache::HotCacheDO;
 
 // Re-export AggregatorDO from aggregator module
 #[allow(unused_imports)]

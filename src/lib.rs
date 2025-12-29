@@ -6,7 +6,6 @@ use decode::DecodeFormat;
 pub use bytes::Bytes;
 
 pub mod aggregator;
-pub mod cache;
 mod convert;
 mod decode;
 mod handler;
