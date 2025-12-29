@@ -51,7 +51,9 @@ HTTP POST /v1/{logs,traces}
         → decompress_if_gzipped
         → H::decode (OTLP → VRL Values)
         → VrlTransformer::transform_batch (run VRL program)
-        → PipelineSender::send_all (forward to Cloudflare Pipeline)
+        → Dual-write:
+            → PipelineSender::send_all (required - forward to Cloudflare Pipeline)
+            → AggregatorSender::send_to_aggregator (best-effort - RED metrics)
 ```
 
 ### SignalHandler Trait
@@ -95,17 +97,19 @@ Schema field types: `timestamp`, `int64`, `int32`, `float64`, `bool`, `string`, 
 
 Timestamps are stored as **milliseconds** (Int64).
 
-### Hot Cache (`src/cache/`)
+### Aggregator (`src/aggregator/`)
 
-Durable Objects provide low-latency access to recent telemetry via SQLite:
+Durable Objects compute baseline RED metrics (Rate, Errors, Duration) per service:
 
-- `durable_object.rs`: `HotCacheDO` with SQLite storage per {service}:{signal}
-- `arrow_convert.rs`: JSON → Arrow RecordBatch conversion (uses generated schemas)
-- `insert_helpers.rs`: Wraps generated insert helpers with transaction batching
-- `query.rs`: Query API with fanout to multiple DOs
-- `sender.rs`: Routes records to appropriate DO instances
+- `stats.rs`: `LogAggregates` and `TraceAggregates` types for in-memory accumulation
+- `durable_object.rs`: `AggregatorDO` with SQLite storage per {service}:{signal}
+- `sender.rs`: Routes logs/traces to appropriate DO instances (metrics skip aggregator)
 
-Query responses support JSON and Arrow IPC formats via content negotiation.
+Each DO stores one row per minute with aggregated counts:
+- Logs: `count`, `error_count` (severity >= 17)
+- Traces: `count`, `error_count` (status_code == 2), `latency_sum_us`, `latency_min_us`, `latency_max_us`
+
+Query via `GET /v1/services/:service/:signal/stats?from=X&to=Y`.
 
 ### Pipeline Client (`src/pipeline/`)
 

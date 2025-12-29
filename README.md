@@ -13,7 +13,7 @@ flowchart LR
         HEC[Splunk HEC] --> W
         W -->|transform + route| P[Cloudflare Pipelines]
         P --> R2[(R2 Data Catalog / Iceberg)]
-        W -->|cache write| DO[("Durable Objects: recent telemetry cache")]
+        W -->|aggregate| DO[("Durable Objects: per-minute RED metrics")]
     end
 ```
 
@@ -121,6 +121,17 @@ curl -X POST https://otlpflare.<subdomain>.workers.dev/services/collector/event 
 HEC supports NDJSON (multiple events per request) and gzip compression.
 
 Supports `Content-Type: application/x-protobuf` and `Content-Encoding: gzip`.
+
+Query aggregated stats (per-minute RED metrics):
+```bash
+# Get log stats for a service
+curl https://otlpflare.<subdomain>.workers.dev/v1/services/my-service/logs/stats
+
+# Get trace stats with time filter (minutes since epoch)
+curl https://otlpflare.<subdomain>.workers.dev/v1/services/my-service/traces/stats?from=29000000&to=29000060
+```
+
+Stats include count, error_count, and latency metrics (traces only).
 
 ## Schema
 
