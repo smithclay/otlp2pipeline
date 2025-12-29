@@ -13,8 +13,8 @@ PIPELINE_LOGS = "https://<stream-id>.ingest.cloudflare.com"
 PIPELINE_TRACES = "https://<stream-id>.ingest.cloudflare.com"
 PIPELINE_GAUGE = "https://<stream-id>.ingest.cloudflare.com"
 PIPELINE_SUM = "https://<stream-id>.ingest.cloudflare.com"
-HOT_CACHE_ENABLED = "false"
-HOT_CACHE_RETENTION_SECONDS = "3600"
+AGGREGATOR_ENABLED = "true"
+AGGREGATOR_RETENTION_MINUTES = "60"
 
 [observability]
 enabled = true
@@ -27,9 +27,14 @@ head_sampling_rate = 0.1
 enabled = false
 
 [[durable_objects.bindings]]
-name = "HOT_CACHE"
-class_name = "HotCacheDO"
+name = "AGGREGATOR"
+class_name = "AggregatorDO"
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["HotCacheDO"]
+
+[[migrations]]
+tag = "v2"
+deleted_classes = ["HotCacheDO"]
+new_sqlite_classes = ["AggregatorDO"]
