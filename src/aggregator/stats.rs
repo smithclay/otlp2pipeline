@@ -3,6 +3,14 @@
 
 use serde_json::Value;
 
+/// OpenTelemetry severity numbers: values 17-24 represent error-level events
+/// https://opentelemetry.io/docs/specs/otel/logs/data-model/
+const SEVERITY_ERROR_THRESHOLD: i64 = 17;
+
+/// OpenTelemetry span status codes: 0=Unset, 1=Ok, 2=Error
+/// https://opentelemetry.io/docs/specs/otel/trace/api/#set-status
+const STATUS_CODE_ERROR: i64 = 2;
+
 /// Log aggregates: count and error count (severity >= 17).
 #[derive(Default, Debug)]
 pub struct LogAggregates {
@@ -14,7 +22,7 @@ impl LogAggregates {
     pub fn accumulate(&mut self, record: &Value) {
         self.count += 1;
         if let Some(severity) = record.get("severity_number").and_then(|v| v.as_i64()) {
-            if severity >= 17 {
+            if severity >= SEVERITY_ERROR_THRESHOLD {
                 self.error_count += 1;
             }
         }
@@ -37,7 +45,7 @@ impl TraceAggregates {
 
         // Error: status_code == 2
         if let Some(status) = record.get("status_code").and_then(|v| v.as_i64()) {
-            if status == 2 {
+            if status == STATUS_CODE_ERROR {
                 self.error_count += 1;
             }
         }
@@ -88,5 +96,30 @@ mod tests {
         assert_eq!(agg.latency_sum_us, 8000); // 1000 + 5000 + 2000
         assert_eq!(agg.latency_min_us, Some(1000));
         assert_eq!(agg.latency_max_us, Some(5000));
+    }
+
+    #[test]
+    fn log_aggregates_handles_missing_severity() {
+        let mut agg = LogAggregates::default();
+        agg.accumulate(&json!({"body": "test"})); // no severity_number
+        assert_eq!(agg.count, 1);
+        assert_eq!(agg.error_count, 0);
+    }
+
+    #[test]
+    fn log_aggregates_severity_boundary() {
+        let mut agg = LogAggregates::default();
+        agg.accumulate(&json!({"severity_number": 16})); // WARN (not error)
+        agg.accumulate(&json!({"severity_number": 17})); // ERROR
+        assert_eq!(agg.error_count, 1);
+    }
+
+    #[test]
+    fn trace_aggregates_handles_missing_duration() {
+        let mut agg = TraceAggregates::default();
+        agg.accumulate(&json!({"status_code": 0})); // no duration_ns
+        assert_eq!(agg.count, 1);
+        assert_eq!(agg.latency_sum_us, 0);
+        assert_eq!(agg.latency_min_us, None);
     }
 }
