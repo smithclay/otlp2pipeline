@@ -216,16 +216,19 @@ impl AggregatorDO {
         Response::from_json(&rows)
     }
 
+    const MAX_RETENTION_MINUTES: i64 = 10080; // 7 days
+
     fn get_retention_minutes(&self) -> i64 {
         self.env
             .var("AGGREGATOR_RETENTION_MINUTES")
             .map(|v| v.to_string().parse::<i64>().unwrap_or(60))
             .unwrap_or(60)
+            .min(Self::MAX_RETENTION_MINUTES)
     }
 
     async fn handle_cleanup(&self) -> Result<Response> {
         let retention = self.get_retention_minutes();
-        let cutoff = Self::now_minute() - retention;
+        let cutoff = Self::now_minute().saturating_sub(retention);
 
         let sql = self.state.storage().sql();
         let deleted = sql
@@ -258,7 +261,7 @@ impl AggregatorDO {
         }
 
         let now_ms = worker::Date::now().as_millis() as i64;
-        let alarm_time_ms = now_ms + 60_000; // 1 minute from now
+        let alarm_time_ms = now_ms.saturating_add(60_000); // 1 minute from now
         self.state.storage().set_alarm(alarm_time_ms).await?;
         Ok(())
     }
