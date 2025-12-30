@@ -8,7 +8,7 @@ action: block
 
 **Multiline commit message detected!**
 
-You attempted to use a HEREDOC for a multiline commit message. This project requires single-line commit messages.
+You attempted to use a multiline commit message. This project requires single-line commit messages.
 
 **Instead of:**
 ```bash

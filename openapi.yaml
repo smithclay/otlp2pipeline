@@ -3,7 +3,8 @@ info:
   title: OTLPFlare API
   description: |
     OTLP ingestion worker that receives OpenTelemetry data and forwards it to
-    Cloudflare Pipelines. Provides hot cache with Parquet export for recent data.
+    Cloudflare Pipelines. Provides per-service RED metrics aggregation via
+    Durable Objects with SQLite storage.
   version: 0.2.0
   license:
     name: MIT
@@ -39,7 +40,8 @@ paths:
       tags: [Ingestion]
       description: |
         Accepts OTLP ExportLogsServiceRequest in protobuf or JSON format.
-        Supports gzip compression.
+        Supports gzip compression. Logs are dual-written to Cloudflare Pipeline
+        and aggregated in Durable Objects for RED metrics.
       requestBody:
         required: true
         content:
@@ -72,7 +74,8 @@ paths:
       tags: [Ingestion]
       description: |
         Accepts OTLP ExportTraceServiceRequest in protobuf or JSON format.
-        Supports gzip compression.
+        Supports gzip compression. Traces are dual-written to Cloudflare Pipeline
+        and aggregated in Durable Objects for RED metrics (including latency).
       requestBody:
         required: true
         content:
@@ -106,6 +109,7 @@ paths:
       description: |
         Accepts OTLP ExportMetricsServiceRequest in protobuf or JSON format.
         Supports gauge and sum metric types. Supports gzip compression.
+        Metrics are forwarded to Cloudflare Pipeline (no aggregation).
       requestBody:
         required: true
         content:
@@ -138,7 +142,8 @@ paths:
       tags: [Ingestion]
       description: |
         Accepts Splunk HTTP Event Collector format (JSON or NDJSON).
-        Converts to OTLP log format internally.
+        Converts to OTLP log format internally. Dual-written to Pipeline
+        and aggregated like standard OTLP logs.
       requestBody:
         required: true
         content:
@@ -163,214 +168,134 @@ paths:
               schema:
                 type: string
 
-  /logs:
+  /v1/services/{service}/{signal}/stats:
     get:
-      summary: Export logs as Parquet
-      operationId: exportLogs
-      tags: [Export]
+      summary: Query aggregated RED metrics
+      operationId: getServiceStats
+      tags: [Stats]
       description: |
-        Query recent logs from hot cache and return as Parquet file.
-        Data is sourced from Durable Objects with SQLite storage.
+        Query per-minute aggregated statistics for a service and signal type.
+        Data is stored in Durable Objects with SQLite backend.
+        Default retention is 7 days.
       parameters:
-        - $ref: '#/components/parameters/services'
-        - $ref: '#/components/parameters/start'
-        - $ref: '#/components/parameters/end'
-        - $ref: '#/components/parameters/limit'
-        - $ref: '#/components/parameters/trace_id'
+        - name: service
+          in: path
+          required: true
+          description: Service name
+          schema:
+            type: string
+          example: my-service
+        - name: signal
+          in: path
+          required: true
+          description: Signal type (logs or traces)
+          schema:
+            type: string
+            enum: [logs, traces]
+        - name: from
+          in: query
+          required: false
+          description: Start minute (Unix timestamp in minutes)
+          schema:
+            type: integer
+            format: int64
+          example: 28395360
+        - name: to
+          in: query
+          required: false
+          description: End minute (Unix timestamp in minutes)
+          schema:
+            type: integer
+            format: int64
+          example: 28395420
       responses:
         '200':
-          description: Parquet file with log records
+          description: Array of per-minute statistics
           content:
-            application/vnd.apache.parquet:
+            application/json:
               schema:
-                type: string
-                format: binary
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatsRow'
         '400':
-          description: Invalid parameters
+          description: Invalid signal type
           content:
             text/plain:
               schema:
                 type: string
-
-  /traces:
-    get:
-      summary: Export traces as Parquet
-      operationId: exportTraces
-      tags: [Export]
-      description: |
-        Query recent traces from hot cache and return as Parquet file.
-        Data is sourced from Durable Objects with SQLite storage.
-      parameters:
-        - $ref: '#/components/parameters/services'
-        - $ref: '#/components/parameters/start'
-        - $ref: '#/components/parameters/end'
-        - $ref: '#/components/parameters/limit'
-        - $ref: '#/components/parameters/trace_id'
-      responses:
-        '200':
-          description: Parquet file with span records
-          content:
-            application/vnd.apache.parquet:
-              schema:
-                type: string
-                format: binary
-        '400':
-          description: Invalid parameters
-          content:
-            text/plain:
-              schema:
-                type: string
-
-  /metrics/gauge:
-    get:
-      summary: Export gauge metrics as Parquet
-      operationId: exportGaugeMetrics
-      tags: [Export]
-      description: |
-        Query recent gauge metrics from hot cache and return as Parquet file.
-      parameters:
-        - $ref: '#/components/parameters/services'
-        - $ref: '#/components/parameters/start'
-        - $ref: '#/components/parameters/end'
-        - $ref: '#/components/parameters/limit'
-        - $ref: '#/components/parameters/metric_name'
-        - $ref: '#/components/parameters/labels'
-      responses:
-        '200':
-          description: Parquet file with gauge metric records
-          content:
-            application/vnd.apache.parquet:
-              schema:
-                type: string
-                format: binary
-        '400':
-          description: Invalid parameters
-          content:
-            text/plain:
-              schema:
-                type: string
-
-  /metrics/sum:
-    get:
-      summary: Export sum metrics as Parquet
-      operationId: exportSumMetrics
-      tags: [Export]
-      description: |
-        Query recent sum (counter) metrics from hot cache and return as Parquet file.
-      parameters:
-        - $ref: '#/components/parameters/services'
-        - $ref: '#/components/parameters/start'
-        - $ref: '#/components/parameters/end'
-        - $ref: '#/components/parameters/limit'
-        - $ref: '#/components/parameters/metric_name'
-        - $ref: '#/components/parameters/labels'
-      responses:
-        '200':
-          description: Parquet file with sum metric records
-          content:
-            application/vnd.apache.parquet:
-              schema:
-                type: string
-                format: binary
-        '400':
-          description: Invalid parameters
+        '500':
+          description: Internal error querying Durable Object
           content:
             text/plain:
               schema:
                 type: string
 
 components:
-  parameters:
-    services:
-      name: services
-      in: query
-      required: true
-      description: Comma-separated list of service names (max 50)
-      schema:
-        type: string
-      example: my-service,other-service
-
-    start:
-      name: start
-      in: query
-      required: false
-      description: Start time as Unix timestamp in seconds
-      schema:
-        type: number
-        format: double
-      example: 1703721600
-
-    end:
-      name: end
-      in: query
-      required: false
-      description: End time as Unix timestamp in seconds
-      schema:
-        type: number
-        format: double
-      example: 1703808000
-
-    limit:
-      name: limit
-      in: query
-      required: false
-      description: Maximum rows to return (default 1000, max 10000)
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 10000
-        default: 1000
-
-    trace_id:
-      name: trace_id
-      in: query
-      required: false
-      description: Filter by trace ID (logs/traces only)
-      schema:
-        type: string
-      example: abc123def456
-
-    metric_name:
-      name: metric_name
-      in: query
-      required: false
-      description: Filter by metric name (metrics only)
-      schema:
-        type: string
-      example: http_requests_total
-
-    labels:
-      name: labels
-      in: query
-      required: false
-      description: Label filters as key=value pairs, comma-separated (metrics only)
-      schema:
-        type: string
-      example: host=server1,env=prod
-
   schemas:
     HandleResponse:
       type: object
       properties:
         status:
           type: string
-          enum: [ok, partial]
-          description: Overall status of the request
+          enum: [ok, error, partial]
+          description: |
+            Overall status of the request:
+            - ok: All records processed successfully
+            - partial: Some records failed
+            - error: All records failed
         records:
           type: object
           additionalProperties:
             type: integer
-          description: Count of records processed per signal type
+          description: Count of records processed per table/signal type
           example:
             logs: 42
         errors:
           type: object
           additionalProperties:
             type: string
-          description: Errors encountered per signal type (omitted if empty)
+          description: Errors encountered per table (omitted if empty)
       required:
         - status
         - records
+
+    StatsRow:
+      type: object
+      properties:
+        minute:
+          type: integer
+          format: int64
+          description: Unix timestamp in minutes
+        count:
+          type: integer
+          format: int64
+          description: Total record count for this minute
+        error_count:
+          type: integer
+          format: int64
+          description: |
+            Error count for this minute.
+            For logs: severity_number >= 17 (ERROR+).
+            For traces: status_code == 2 (ERROR).
+        latency_sum_us:
+          type: integer
+          format: int64
+          nullable: true
+          description: Sum of latencies in microseconds (traces only)
+        latency_min_us:
+          type: integer
+          format: int64
+          nullable: true
+          description: Minimum latency in microseconds (traces only)
+        latency_max_us:
+          type: integer
+          format: int64
+          nullable: true
+          description: Maximum latency in microseconds (traces only)
+      required:
+        - minute
+        - count
+        - error_count
 
     ExportLogsServiceRequest:
       type: object
@@ -395,9 +320,6 @@ components:
       description: Splunk HTTP Event Collector event
       properties:
         event:
-          oneOf:
-            - type: string
-            - type: object
           description: The event data (required)
         time:
           type: number
@@ -412,9 +334,6 @@ components:
         sourcetype:
           type: string
           description: Event source type
-        index:
-          type: string
-          description: Target index
         fields:
           type: object
           additionalProperties: true
@@ -427,5 +346,5 @@ tags:
     description: Service health endpoints
   - name: Ingestion
     description: Telemetry data ingestion (OTLP and HEC)
-  - name: Export
-    description: Hot cache data export as Parquet
+  - name: Stats
+    description: Aggregated RED metrics from Durable Objects
