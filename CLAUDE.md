@@ -86,16 +86,13 @@ Scripts assign:
 
 ### Schema Unification (`build.rs`)
 
-VRL `# @schema` comments are the **single source of truth** for all schemas. The build script parses these annotations and generates:
+VRL `# @schema` comments are the **single source of truth** for Cloudflare Pipeline schemas. The build script:
 
-- `schemas/*.schema.json` - Cloudflare Pipeline schemas
-- `$OUT_DIR/arrow_schemas.rs` - Arrow schema functions (`logs_schema()`, `spans_schema()`)
-- `$OUT_DIR/sqlite_ddl.rs` - SQLite CREATE TABLE statements (`LOGS_DDL`, `TRACES_DDL`)
-- `$OUT_DIR/insert_helpers.rs` - Type-safe insert helpers (`logs_insert_sql()`, `logs_values()`)
+- Parses schema annotations from VRL files
+- Generates `schemas/*.schema.json` for Cloudflare Pipeline configuration
+- Embeds VRL source as compile-time constants (`$OUT_DIR/compiled_vrl.rs`)
 
 Schema field types: `timestamp`, `int64`, `int32`, `float64`, `bool`, `string`, `json`
-
-Timestamps are stored as **milliseconds** (Int64).
 
 ### Aggregator (`src/aggregator/`)
 
