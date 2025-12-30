@@ -295,11 +295,11 @@ where
         // Clone grouped data for aggregator write
         let grouped_clone = grouped.clone();
 
-        // Send to pipeline first (takes ownership)
-        let p_result = sender.send_all(grouped).await;
-
-        // Send to aggregator (best-effort, don't block on failure)
-        let a_result = cache.send_to_aggregator(grouped_clone).await;
+        // Send to pipeline and aggregator in parallel
+        let (p_result, a_result) = futures::join!(
+            sender.send_all(grouped),
+            cache.send_to_aggregator(grouped_clone)
+        );
 
         // Log aggregator errors but don't fail the request
         if !a_result.failed.is_empty() {

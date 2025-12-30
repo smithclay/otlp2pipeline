@@ -2,6 +2,7 @@
 
 #[cfg(target_arch = "wasm32")]
 use crate::convert::vrl_value_to_json_lossy;
+use futures::stream::StreamExt;
 use std::collections::HashMap;
 use tracing::warn;
 use vrl::value::{KeyString, Value};
@@ -87,9 +88,20 @@ impl AggregatorSender for WasmAggregatorSender {
         let mut succeeded = HashMap::new();
         let mut failed = HashMap::new();
 
-        for (do_name, records) in by_do {
-            let count = records.len();
-            match self.send_to_do(&do_name, records).await {
+        let results: Vec<_> = stream::iter(by_do)
+            .map(|(do_name, records)| {
+                let count = records.len();
+                async move {
+                    let result = self.send_to_do(&do_name, records).await;
+                    (do_name, count, result)
+                }
+            })
+            .buffer_unordered(10)
+            .collect()
+            .await;
+
+        for (do_name, count, result) in results {
+            match result {
                 Ok(_) => {
                     *succeeded.entry(do_name).or_insert(0) += count;
                 }
