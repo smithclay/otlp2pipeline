@@ -1,8 +1,8 @@
 # @schema logs
 # @description Splunk HEC logs flattened for Cloudflare Streams
 #
-# timestamp: timestamp, required, "Event timestamp in seconds"
-# observed_timestamp: int64, required, "Observed timestamp in seconds"
+# timestamp: timestamp, required, "Event timestamp in milliseconds"
+# observed_timestamp: int64, required, "Observed timestamp in milliseconds"
 # service_name: string, required, "Service name from host or unknown"
 # severity_number: int32, required, "Always 0 for HEC (UNSPECIFIED)"
 # severity_text: string, required, "Always empty for HEC"
@@ -18,7 +18,7 @@
 # service_instance_id: string, "Always null for HEC"
 # @end
 
-# Timestamps are already converted to seconds by decoder
+# Timestamps are already converted to milliseconds by decoder
 # .timestamp and .observed_timestamp are set by decoder
 
 # Service name from host (HEC doesn't have service concept)

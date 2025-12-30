@@ -2,8 +2,8 @@
 # @description OTLP gauge metrics flattened for Cloudflare Streams
 #
 # _signal: string, required, "Signal type for deterministic sorting"
-# timestamp: timestamp, required, "Observation time in seconds"
-# start_timestamp: int64, "Start time in seconds"
+# timestamp: timestamp, required, "Observation time in milliseconds"
+# start_timestamp: int64, "Start time in milliseconds"
 # metric_name: string, required, "Metric name"
 # metric_description: string, "Metric description"
 # metric_unit: string, "Unit (e.g., ms, bytes, 1)"

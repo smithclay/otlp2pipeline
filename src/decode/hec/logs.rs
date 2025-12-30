@@ -60,11 +60,11 @@ pub struct HecEvent {
     pub fields: Option<HashMap<String, serde_json::Value>>,
 }
 
-/// Convert epoch seconds (f64) to integer seconds (i64) with overflow protection.
+/// Convert epoch seconds (f64) to integer milliseconds (i64) with overflow protection.
 ///
-/// HEC timestamps are float epoch seconds. We truncate to integer seconds
-/// for Cloudflare Pipelines timestamp type compatibility.
-pub fn safe_epoch_to_seconds(time: f64) -> Result<i64, HecDecodeError> {
+/// HEC timestamps are float epoch seconds. We convert to milliseconds
+/// to match OTLP timestamp format for Cloudflare Pipelines compatibility.
+pub fn safe_epoch_to_millis(time: f64) -> Result<i64, HecDecodeError> {
     // Reject non-finite values
     if !time.is_finite() {
         return Err(HecDecodeError::InvalidTimestamp("non-finite value".into()));
@@ -77,27 +77,30 @@ pub fn safe_epoch_to_seconds(time: f64) -> Result<i64, HecDecodeError> {
         ));
     }
 
-    // Reject timestamps beyond i64 range (well past year 292 billion)
-    if time > i64::MAX as f64 {
+    // Convert to milliseconds
+    let millis = time * 1000.0;
+
+    // Reject timestamps beyond i64 range
+    if millis > i64::MAX as f64 {
         return Err(HecDecodeError::InvalidTimestamp("exceeds i64 max".into()));
     }
 
-    Ok(time.trunc() as i64)
+    Ok(millis.trunc() as i64)
 }
 
-/// Get current time in seconds (for missing timestamps)
+/// Get current time in milliseconds (for missing timestamps)
 #[cfg(not(target_arch = "wasm32"))]
-fn current_time_seconds() -> i64 {
+fn current_time_millis() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
+        .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
 
 #[cfg(target_arch = "wasm32")]
-fn current_time_seconds() -> i64 {
-    (worker::Date::now().as_millis() / 1000) as i64
+fn current_time_millis() -> i64 {
+    worker::Date::now().as_millis() as i64
 }
 
 /// Convert event body to VRL Value (string pass-through, other types JSON-encoded)
@@ -113,10 +116,10 @@ fn event_to_body(event: serde_json::Value) -> Value {
 fn hec_event_to_vrl(event: HecEvent) -> Result<Value, HecDecodeError> {
     let mut map = ObjectMap::new();
 
-    // Timestamp
+    // Timestamp (milliseconds to match OTLP format)
     let timestamp = match event.time {
-        Some(t) => safe_epoch_to_seconds(t)?,
-        None => current_time_seconds(),
+        Some(t) => safe_epoch_to_millis(t)?,
+        None => current_time_millis(),
     };
     map.insert("timestamp".into(), Value::Integer(timestamp));
     map.insert("observed_timestamp".into(), Value::Integer(timestamp));
@@ -185,33 +188,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_epoch_to_seconds_basic() {
-        assert_eq!(safe_epoch_to_seconds(0.0).unwrap(), 0);
-        assert_eq!(safe_epoch_to_seconds(1.0).unwrap(), 1);
-        assert_eq!(safe_epoch_to_seconds(1.5).unwrap(), 1); // truncates
+    fn test_epoch_to_millis_basic() {
+        assert_eq!(safe_epoch_to_millis(0.0).unwrap(), 0);
+        assert_eq!(safe_epoch_to_millis(1.0).unwrap(), 1000);
+        assert_eq!(safe_epoch_to_millis(1.5).unwrap(), 1500);
     }
 
     #[test]
-    fn test_epoch_to_seconds_truncation() {
-        // Sub-second precision is truncated
-        assert_eq!(safe_epoch_to_seconds(1703265600.123).unwrap(), 1703265600);
-        assert_eq!(safe_epoch_to_seconds(1703265600.999).unwrap(), 1703265600);
+    fn test_epoch_to_millis_preserves_subsecond() {
+        // Sub-second precision is preserved as milliseconds
+        assert_eq!(safe_epoch_to_millis(1703265600.123).unwrap(), 1703265600123);
+        assert_eq!(safe_epoch_to_millis(1703265600.999).unwrap(), 1703265600999);
+        assert_eq!(safe_epoch_to_millis(0.001).unwrap(), 1);
+        assert_eq!(safe_epoch_to_millis(0.5).unwrap(), 500);
     }
 
     #[test]
-    fn test_epoch_to_seconds_rejects_negative() {
-        assert!(safe_epoch_to_seconds(-1.0).is_err());
+    fn test_epoch_to_millis_rejects_negative() {
+        assert!(safe_epoch_to_millis(-1.0).is_err());
     }
 
     #[test]
-    fn test_epoch_to_seconds_rejects_infinity() {
-        assert!(safe_epoch_to_seconds(f64::INFINITY).is_err());
-        assert!(safe_epoch_to_seconds(f64::NEG_INFINITY).is_err());
+    fn test_epoch_to_millis_rejects_infinity() {
+        assert!(safe_epoch_to_millis(f64::INFINITY).is_err());
+        assert!(safe_epoch_to_millis(f64::NEG_INFINITY).is_err());
     }
 
     #[test]
-    fn test_epoch_to_seconds_rejects_nan() {
-        assert!(safe_epoch_to_seconds(f64::NAN).is_err());
+    fn test_epoch_to_millis_rejects_nan() {
+        assert!(safe_epoch_to_millis(f64::NAN).is_err());
     }
 
     #[test]
@@ -279,7 +284,7 @@ mod tests {
         if let Value::Object(map) = &values[0] {
             assert_eq!(
                 map.get("timestamp"),
-                Some(&Value::Integer(1703265600)) // seconds, truncated
+                Some(&Value::Integer(1703265600123)) // milliseconds, preserving sub-second
             );
             assert_eq!(map.get("host"), Some(&Value::Bytes(Bytes::from("web-1"))));
             assert!(map.get("fields").is_some());
@@ -358,9 +363,11 @@ mod tests {
     }
 
     #[test]
-    fn test_epoch_to_seconds_boundary() {
-        // Near-second boundary truncates (doesn't round)
-        assert_eq!(safe_epoch_to_seconds(0.9999999).unwrap(), 0);
-        assert_eq!(safe_epoch_to_seconds(1.0).unwrap(), 1);
+    fn test_epoch_to_millis_boundary() {
+        // Near-millisecond boundary truncates (doesn't round)
+        assert_eq!(safe_epoch_to_millis(0.0009).unwrap(), 0);
+        assert_eq!(safe_epoch_to_millis(0.001).unwrap(), 1);
+        assert_eq!(safe_epoch_to_millis(0.9999).unwrap(), 999);
+        assert_eq!(safe_epoch_to_millis(1.0).unwrap(), 1000);
     }
 }

@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 /// Field type for schema validation
 #[derive(Debug, Clone, Copy)]
 pub enum FieldType {
-    Timestamp, // number (seconds)
+    Timestamp, // number (milliseconds)
     Int32,
     Int64,
     Float64,
