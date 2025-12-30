@@ -411,8 +411,8 @@ PIPELINE_LOGS = "${logs_endpoint}"
 PIPELINE_TRACES = "${traces_endpoint}"
 PIPELINE_GAUGE = "${gauge_endpoint}"
 PIPELINE_SUM = "${sum_endpoint}"
-HOT_CACHE_ENABLED = "true"
-HOT_CACHE_RETENTION_SECONDS = "3600"
+AGGREGATOR_ENABLED = "true"
+AGGREGATOR_RETENTION_MINUTES = "60"
 
 [observability]
 enabled = true
@@ -425,12 +425,12 @@ head_sampling_rate = 0.1
 enabled = false
 
 [[durable_objects.bindings]]
-name = "HOT_CACHE"
-class_name = "HotCacheDO"
+name = "AGGREGATOR"
+class_name = "AggregatorDO"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["HotCacheDO"]
+new_sqlite_classes = ["AggregatorDO"]
 EOF
 
     echo "    Created: wrangler.toml"

@@ -32,9 +32,4 @@ class_name = "AggregatorDO"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["HotCacheDO"]
-
-[[migrations]]
-tag = "v2"
-deleted_classes = ["HotCacheDO"]
 new_sqlite_classes = ["AggregatorDO"]
