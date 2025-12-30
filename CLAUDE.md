@@ -75,14 +75,12 @@ Parallel structure for each signal:
 ### VRL Transformation (`src/transform/`)
 
 VRL scripts in `vrl/*.vrl` are compiled at build time (`build.rs`):
-- `otlp_logs.vrl`: Flatten log records (16 fields)
-- `otlp_traces.vrl`: Flatten span records (26 fields)
+- `otlp_logs.vrl`: Flatten log records (15 fields)
+- `otlp_traces.vrl`: Flatten span records (24 fields)
 
 Custom VRL functions in `src/transform/functions.rs` (minimal set for WASM compatibility).
 
-Scripts assign:
-- `._table` to route records to the correct pipeline
-- `._signal` for deterministic sorting ("logs" or "traces")
+Scripts assign `._table` to route records to the correct pipeline.
 
 ### Schema Unification (`build.rs`)
 

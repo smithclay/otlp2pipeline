@@ -1,7 +1,5 @@
 {
   "fields": [
-    { "name": "_signal", "type": "string", "required": true },
-    { "name": "_timestamp_nanos", "type": "int64", "required": false },
     { "name": "timestamp", "type": "timestamp", "required": true },
     { "name": "observed_timestamp", "type": "int64", "required": true },
     { "name": "trace_id", "type": "string", "required": false },

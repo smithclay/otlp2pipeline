@@ -1,7 +1,6 @@
 # @schema gauge
 # @description OTLP gauge metrics flattened for Cloudflare Streams
 #
-# _signal: string, required, "Signal type for deterministic sorting"
 # timestamp: timestamp, required, "Observation time in milliseconds"
 # start_timestamp: int64, "Start time in milliseconds"
 # metric_name: string, required, "Metric name"
@@ -120,6 +119,5 @@ if .flags == null {
 .exemplars = null
 ._metric_type = null
 
-# Set signal type and routing table
-._signal = "gauge"
+# Set routing table
 ._table = "gauge"

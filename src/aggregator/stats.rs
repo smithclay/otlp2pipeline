@@ -50,9 +50,9 @@ impl TraceAggregates {
             }
         }
 
-        // Latency (duration_ns -> microseconds)
-        if let Some(duration_ns) = record.get("duration_ns").and_then(|v| v.as_i64()) {
-            let duration_us = duration_ns / 1000;
+        // Latency: VRL outputs "duration" in milliseconds, convert to microseconds
+        if let Some(duration_ms) = record.get("duration").and_then(|v| v.as_i64()) {
+            let duration_us = duration_ms * 1000;
             self.latency_sum_us += duration_us;
             self.latency_min_us = Some(
                 self.latency_min_us
@@ -87,15 +87,16 @@ mod tests {
     #[test]
     fn trace_aggregates_tracks_latency() {
         let mut agg = TraceAggregates::default();
-        agg.accumulate(&json!({"status_code": 0, "duration_ns": 1_000_000})); // 1ms
-        agg.accumulate(&json!({"status_code": 2, "duration_ns": 5_000_000})); // 5ms, error
-        agg.accumulate(&json!({"status_code": 1, "duration_ns": 2_000_000})); // 2ms
+        // VRL outputs "duration" in milliseconds (after converting from duration_ns)
+        agg.accumulate(&json!({"status_code": 0, "duration": 1})); // 1ms
+        agg.accumulate(&json!({"status_code": 2, "duration": 5})); // 5ms, error
+        agg.accumulate(&json!({"status_code": 1, "duration": 2})); // 2ms
 
         assert_eq!(agg.count, 3);
         assert_eq!(agg.error_count, 1);
-        assert_eq!(agg.latency_sum_us, 8000); // 1000 + 5000 + 2000
-        assert_eq!(agg.latency_min_us, Some(1000));
-        assert_eq!(agg.latency_max_us, Some(5000));
+        assert_eq!(agg.latency_sum_us, 8000); // 1000 + 5000 + 2000 microseconds
+        assert_eq!(agg.latency_min_us, Some(1000)); // 1ms = 1000μs
+        assert_eq!(agg.latency_max_us, Some(5000)); // 5ms = 5000μs
     }
 
     #[test]
@@ -117,9 +118,52 @@ mod tests {
     #[test]
     fn trace_aggregates_handles_missing_duration() {
         let mut agg = TraceAggregates::default();
-        agg.accumulate(&json!({"status_code": 0})); // no duration_ns
+        agg.accumulate(&json!({"status_code": 0})); // no duration field
         assert_eq!(agg.count, 1);
         assert_eq!(agg.latency_sum_us, 0);
         assert_eq!(agg.latency_min_us, None);
+    }
+
+    #[test]
+    fn trace_aggregates_matches_vrl_output_format() {
+        // This test verifies the aggregator works with VRL's actual output format:
+        // - VRL outputs "duration" in milliseconds (not duration_ns)
+        // - VRL outputs "status_code" as integer
+        // - Aggregator converts ms -> μs for storage
+        let mut agg = TraceAggregates::default();
+
+        // Simulate VRL output: span with 100ms duration (like sample_otlp_traces.json)
+        let vrl_output = json!({
+            "trace_id": "0af7651916cd43dd8448eb211c80319c",
+            "span_id": "b7ad6b7169203331",
+            "span_name": "HTTP GET /api/users",
+            "duration": 100,      // VRL outputs milliseconds
+            "status_code": 1,     // OK
+            "service_name": "my-service"
+        });
+
+        agg.accumulate(&vrl_output);
+
+        assert_eq!(agg.count, 1);
+        assert_eq!(agg.error_count, 0);
+        assert_eq!(agg.latency_sum_us, 100_000); // 100ms = 100,000μs
+        assert_eq!(agg.latency_min_us, Some(100_000));
+        assert_eq!(agg.latency_max_us, Some(100_000));
+    }
+
+    #[test]
+    fn trace_aggregates_error_spans() {
+        let mut agg = TraceAggregates::default();
+
+        // status_code=2 means error in OTLP
+        agg.accumulate(&json!({"status_code": 2, "duration": 50}));
+        agg.accumulate(&json!({"status_code": 1, "duration": 30}));
+        agg.accumulate(&json!({"status_code": 2, "duration": 70}));
+
+        assert_eq!(agg.count, 3);
+        assert_eq!(agg.error_count, 2); // Two spans with status_code=2
+        assert_eq!(agg.latency_sum_us, 150_000); // (50+30+70)ms = 150,000μs
+        assert_eq!(agg.latency_min_us, Some(30_000));
+        assert_eq!(agg.latency_max_us, Some(70_000));
     }
 }

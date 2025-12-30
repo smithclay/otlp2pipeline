@@ -74,6 +74,15 @@ async fn test_otlp_traces_flow() {
     assert!(first.get("events_json").is_some(), "missing events_json");
     assert!(first.get("links_json").is_some(), "missing links_json");
 
+    // Verify duration is correctly converted from nanoseconds to milliseconds
+    // Input: startTimeUnixNano=1703265600000000000, endTimeUnixNano=1703265600100000000
+    // Duration: 100,000,000 ns = 100 ms
+    assert_eq!(
+        first.get("duration").and_then(|v| v.as_i64()),
+        Some(100),
+        "duration should be 100ms (VRL converts from nanoseconds to milliseconds)"
+    );
+
     // Verify new dropped count and flags fields from JSON input
     assert_eq!(
         first
