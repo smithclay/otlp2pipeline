@@ -2,7 +2,8 @@
 
 #[cfg(target_arch = "wasm32")]
 use crate::convert::vrl_value_to_json_lossy;
-use futures::stream::StreamExt;
+#[cfg(target_arch = "wasm32")]
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use tracing::warn;
 use vrl::value::{KeyString, Value};
