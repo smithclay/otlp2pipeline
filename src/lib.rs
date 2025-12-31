@@ -5,10 +5,12 @@ use decode::DecodeFormat;
 #[cfg(not(target_arch = "wasm32"))]
 pub use bytes::Bytes;
 
+pub mod aggregator;
 mod convert;
 mod decode;
 mod handler;
 mod pipeline;
+pub mod registry;
 mod schema;
 mod signal;
 mod transform;

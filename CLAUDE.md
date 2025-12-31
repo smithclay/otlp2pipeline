@@ -51,7 +51,9 @@ HTTP POST /v1/{logs,traces}
         → decompress_if_gzipped
         → H::decode (OTLP → VRL Values)
         → VrlTransformer::transform_batch (run VRL program)
-        → PipelineSender::send_all (forward to Cloudflare Pipeline)
+        → Dual-write:
+            → PipelineSender::send_all (required - forward to Cloudflare Pipeline)
+            → AggregatorSender::send_to_aggregator (best-effort - RED metrics)
 ```
 
 ### SignalHandler Trait
@@ -73,12 +75,48 @@ Parallel structure for each signal:
 ### VRL Transformation (`src/transform/`)
 
 VRL scripts in `vrl/*.vrl` are compiled at build time (`build.rs`):
-- `otlp_logs.vrl`: Flatten log records
-- `otlp_traces.vrl`: Flatten span records
+- `otlp_logs.vrl`: Flatten log records (15 fields)
+- `otlp_traces.vrl`: Flatten span records (24 fields)
 
 Custom VRL functions in `src/transform/functions.rs` (minimal set for WASM compatibility).
 
 Scripts assign `._table` to route records to the correct pipeline.
+
+### Schema Unification (`build.rs`)
+
+VRL `# @schema` comments are the **single source of truth** for Cloudflare Pipeline schemas. The build script:
+
+- Parses schema annotations from VRL files
+- Generates `schemas/*.schema.json` for Cloudflare Pipeline configuration
+- Embeds VRL source as compile-time constants (`$OUT_DIR/compiled_vrl.rs`)
+
+Schema field types: `timestamp`, `int64`, `int32`, `float64`, `bool`, `string`, `json`
+
+### Aggregator (`src/aggregator/`)
+
+Durable Objects compute baseline RED metrics (Rate, Errors, Duration) per service:
+
+- `stats.rs`: `LogAggregates` and `TraceAggregates` types for in-memory accumulation
+- `durable_object.rs`: `AggregatorDO` with SQLite storage per {service}:{signal}
+- `sender.rs`: Routes logs/traces to appropriate DO instances (metrics skip aggregator)
+
+Each DO stores one row per minute with aggregated counts:
+- Logs: `count`, `error_count` (severity >= 17)
+- Traces: `count`, `error_count` (status_code == 2), `latency_sum_us`, `latency_min_us`, `latency_max_us`
+
+Query via `GET /v1/services/:service/:signal/stats?from=X&to=Y`.
+
+### Registry (`src/registry/`)
+
+Singleton Durable Object tracking all services seen:
+
+- `durable_object.rs`: `RegistryDO` with SQLite storage, 10,000 service limit
+- `cache.rs`: Worker-local cache with 3-minute TTL to minimize DO calls
+- `sender.rs`: `RegistrySender` trait for abstraction
+
+Service validation: alphanumeric + hyphens + underscores + dots, max 128 chars.
+
+Query via `GET /v1/services` (returns all services with signal availability).
 
 ### Pipeline Client (`src/pipeline/`)
 

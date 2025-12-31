@@ -1,0 +1,350 @@
+openapi: 3.0.3
+info:
+  title: OTLPFlare API
+  description: |
+    OTLP ingestion worker that receives OpenTelemetry data and forwards it to
+    Cloudflare Pipelines. Provides per-service RED metrics aggregation via
+    Durable Objects with SQLite storage.
+  version: 0.2.0
+  license:
+    name: MIT
+
+servers:
+  - url: https://{worker}.{account}.workers.dev
+    description: Cloudflare Workers deployment
+    variables:
+      worker:
+        default: otlpflare
+      account:
+        default: your-account
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /v1/logs:
+    post:
+      summary: Ingest OpenTelemetry logs
+      operationId: ingestLogs
+      tags: [Ingestion]
+      description: |
+        Accepts OTLP ExportLogsServiceRequest in protobuf or JSON format.
+        Supports gzip compression. Logs are dual-written to Cloudflare Pipeline
+        and aggregated in Durable Objects for RED metrics.
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportLogsServiceRequest protobuf
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportLogsServiceRequest'
+      responses:
+        '200':
+          description: Logs ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v1/traces:
+    post:
+      summary: Ingest OpenTelemetry traces
+      operationId: ingestTraces
+      tags: [Ingestion]
+      description: |
+        Accepts OTLP ExportTraceServiceRequest in protobuf or JSON format.
+        Supports gzip compression. Traces are dual-written to Cloudflare Pipeline
+        and aggregated in Durable Objects for RED metrics (including latency).
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportTraceServiceRequest protobuf
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportTraceServiceRequest'
+      responses:
+        '200':
+          description: Traces ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v1/metrics:
+    post:
+      summary: Ingest OpenTelemetry metrics
+      operationId: ingestMetrics
+      tags: [Ingestion]
+      description: |
+        Accepts OTLP ExportMetricsServiceRequest in protobuf or JSON format.
+        Supports gauge and sum metric types. Supports gzip compression.
+        Metrics are forwarded to Cloudflare Pipeline (no aggregation).
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportMetricsServiceRequest protobuf
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportMetricsServiceRequest'
+      responses:
+        '200':
+          description: Metrics ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /services/collector/event:
+    post:
+      summary: Ingest Splunk HEC logs
+      operationId: ingestHecLogs
+      tags: [Ingestion]
+      description: |
+        Accepts Splunk HTTP Event Collector format (JSON or NDJSON).
+        Converts to OTLP log format internally. Dual-written to Pipeline
+        and aggregated like standard OTLP logs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/HecEvent'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/HecEvent'
+      responses:
+        '200':
+          description: Logs ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandleResponse'
+        '400':
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v1/services/{service}/{signal}/stats:
+    get:
+      summary: Query aggregated RED metrics
+      operationId: getServiceStats
+      tags: [Stats]
+      description: |
+        Query per-minute aggregated statistics for a service and signal type.
+        Data is stored in Durable Objects with SQLite backend.
+        Default retention is 7 days.
+      parameters:
+        - name: service
+          in: path
+          required: true
+          description: Service name
+          schema:
+            type: string
+          example: my-service
+        - name: signal
+          in: path
+          required: true
+          description: Signal type (logs or traces)
+          schema:
+            type: string
+            enum: [logs, traces]
+        - name: from
+          in: query
+          required: false
+          description: Start minute (Unix timestamp in minutes)
+          schema:
+            type: integer
+            format: int64
+          example: 28395360
+        - name: to
+          in: query
+          required: false
+          description: End minute (Unix timestamp in minutes)
+          schema:
+            type: integer
+            format: int64
+          example: 28395420
+      responses:
+        '200':
+          description: Array of per-minute statistics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatsRow'
+        '400':
+          description: Invalid signal type
+          content:
+            text/plain:
+              schema:
+                type: string
+        '500':
+          description: Internal error querying Durable Object
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    HandleResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, error, partial]
+          description: |
+            Overall status of the request:
+            - ok: All records processed successfully
+            - partial: Some records failed
+            - error: All records failed
+        records:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Count of records processed per table/signal type
+          example:
+            logs: 42
+        errors:
+          type: object
+          additionalProperties:
+            type: string
+          description: Errors encountered per table (omitted if empty)
+      required:
+        - status
+        - records
+
+    StatsRow:
+      type: object
+      properties:
+        minute:
+          type: integer
+          format: int64
+          description: Unix timestamp in minutes
+        count:
+          type: integer
+          format: int64
+          description: Total record count for this minute
+        error_count:
+          type: integer
+          format: int64
+          description: |
+            Error count for this minute.
+            For logs: severity_number >= 17 (ERROR+).
+            For traces: status_code == 2 (ERROR).
+        latency_sum_us:
+          type: integer
+          format: int64
+          nullable: true
+          description: Sum of latencies in microseconds (traces only)
+        latency_min_us:
+          type: integer
+          format: int64
+          nullable: true
+          description: Minimum latency in microseconds (traces only)
+        latency_max_us:
+          type: integer
+          format: int64
+          nullable: true
+          description: Maximum latency in microseconds (traces only)
+      required:
+        - minute
+        - count
+        - error_count
+
+    ExportLogsServiceRequest:
+      type: object
+      description: OTLP logs request (see opentelemetry-proto)
+      externalDocs:
+        url: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/logs/v1/logs_service.proto
+
+    ExportTraceServiceRequest:
+      type: object
+      description: OTLP traces request (see opentelemetry-proto)
+      externalDocs:
+        url: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/trace/v1/trace_service.proto
+
+    ExportMetricsServiceRequest:
+      type: object
+      description: OTLP metrics request (see opentelemetry-proto)
+      externalDocs:
+        url: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/metrics/v1/metrics_service.proto
+
+    HecEvent:
+      type: object
+      description: Splunk HTTP Event Collector event
+      properties:
+        event:
+          description: The event data (required)
+        time:
+          type: number
+          format: double
+          description: Event timestamp as Unix epoch seconds
+        host:
+          type: string
+          description: Hostname
+        source:
+          type: string
+          description: Event source
+        sourcetype:
+          type: string
+          description: Event source type
+        fields:
+          type: object
+          additionalProperties: true
+          description: Additional indexed fields
+      required:
+        - event
+
+tags:
+  - name: Health
+    description: Service health endpoints
+  - name: Ingestion
+    description: Telemetry data ingestion (OTLP and HEC)
+  - name: Stats
+    description: Aggregated RED metrics from Durable Objects

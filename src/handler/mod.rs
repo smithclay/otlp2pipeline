@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")]
+use std::collections::HashSet;
 use std::io::Read;
 use tracing::{debug, error, info, warn, Span};
 use vrl::value::Value;
@@ -30,6 +32,7 @@ pub enum HandleError {
     Decompress(String),
     Decode(String),
     Transform(String),
+    SendFailed(String),
 }
 
 impl std::fmt::Display for HandleError {
@@ -38,6 +41,7 @@ impl std::fmt::Display for HandleError {
             HandleError::Decompress(e) => write!(f, "decompress error: {}", e),
             HandleError::Decode(e) => write!(f, "decode error: {}", e),
             HandleError::Transform(e) => write!(f, "transform error: {}", e),
+            HandleError::SendFailed(e) => write!(f, "send failed: {}", e),
         }
     }
 }
@@ -48,6 +52,8 @@ pub struct HandleResponse {
     pub records: HashMap<String, usize>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub errors: HashMap<String, String>,
+    #[serde(skip)]
+    pub service_names: Vec<String>,
 }
 
 impl HandleResponse {
@@ -56,6 +62,7 @@ impl HandleResponse {
             status: "ok",
             records: HashMap::new(),
             errors: HashMap::new(),
+            service_names: Vec::new(),
         }
     }
 
@@ -72,7 +79,13 @@ impl HandleResponse {
             status,
             records: result.succeeded,
             errors: result.failed,
+            service_names: Vec::new(),
         }
+    }
+
+    pub fn with_service_names(mut self, service_names: Vec<String>) -> Self {
+        self.service_names = service_names;
+        self
     }
 }
 
@@ -95,6 +108,26 @@ pub trait SignalHandler {
     ) -> Result<HashMap<String, Vec<Value>>, VrlError> {
         transformer.transform_batch(Self::vrl_program(), values)
     }
+}
+
+/// Extract unique service names from grouped records
+#[cfg(target_arch = "wasm32")]
+fn extract_service_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<String> {
+    let mut service_names = HashSet::new();
+
+    for values in grouped.values() {
+        for value in values {
+            if let Some(obj) = value.as_object() {
+                if let Some(service_name) = obj.get("service_name") {
+                    if let Some(name) = service_name.as_str() {
+                        service_names.insert(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    service_names.into_iter().collect()
 }
 
 pub(crate) fn decompress_if_gzipped(body: Bytes, is_gzipped: bool) -> Result<Bytes, HandleError> {
@@ -214,4 +247,133 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
     Span::current().record("tables", &table_names);
 
     Ok(HandleResponse::from_result(result))
+}
+
+/// Handle signal with optional aggregator dual-write.
+///
+/// This function extends handle_signal to support dual-writing telemetry to both:
+/// 1. Pipeline (cold storage: R2/Iceberg) - required, failures fail the request
+/// 2. Aggregator (Durable Objects) - optional best-effort, failures are logged but don't fail the request
+#[cfg(target_arch = "wasm32")]
+#[tracing::instrument(
+    name = "ingest_dual",
+    skip(body, sender, cache),
+    fields(
+        signal = ?H::SIGNAL,
+        format = ?format,
+        gzipped = is_gzipped,
+        records = tracing::field::Empty,
+        tables = tracing::field::Empty,
+        cache_enabled = cache.is_some(),
+    )
+)]
+pub async fn handle_signal_with_cache<H, S, C>(
+    body: Bytes,
+    is_gzipped: bool,
+    format: DecodeFormat,
+    sender: &S,
+    cache: Option<&C>,
+) -> Result<HandleResponse, HandleError>
+where
+    H: SignalHandler,
+    S: PipelineSender,
+    C: crate::aggregator::AggregatorSender,
+{
+    debug!(
+        body_size = body.len(),
+        is_gzipped,
+        signal = ?H::SIGNAL,
+        cache_enabled = cache.is_some(),
+        "handling signal request with dual-write"
+    );
+
+    // Decompress
+    let body = decompress_if_gzipped(body, is_gzipped)?;
+
+    // Decode
+    let values = H::decode(body, format).map_err(|e| {
+        error!(error = %e, "failed to decode payload");
+        HandleError::Decode(e.0)
+    })?;
+
+    if values.is_empty() {
+        debug!("no records to transform");
+        return Ok(HandleResponse::empty());
+    }
+
+    // Transform
+    debug!(record_count = values.len(), "transforming records");
+    let mut transformer = VrlTransformer::new();
+    let grouped = H::transform_batch(&mut transformer, values).map_err(|e| {
+        error!(error = %e, "VRL transform failed");
+        HandleError::Transform(e.to_string())
+    })?;
+
+    if grouped.is_empty() {
+        debug!("no records to send");
+        return Ok(HandleResponse::empty());
+    }
+
+    let table_counts: Vec<_> = grouped.iter().map(|(k, v)| (k.as_str(), v.len())).collect();
+    debug!(?table_counts, "sending records to pipelines");
+
+    // Calculate span fields before sending (send_all takes ownership)
+    let total_records: usize = grouped.values().map(|v| v.len()).sum();
+    let table_names: String = grouped.keys().cloned().collect::<Vec<_>>().join(",");
+
+    // Extract service names before sending (send_all takes ownership)
+    let service_names = extract_service_names(&grouped);
+
+    // Dual-write: pipeline is primary (required), aggregator is best-effort (optional)
+    let pipeline_result = if let Some(cache) = cache {
+        // Clone grouped data for aggregator write
+        let grouped_clone = grouped.clone();
+
+        // Send to pipeline and aggregator in parallel
+        let (p_result, a_result) = futures::join!(
+            sender.send_all(grouped),
+            cache.send_to_aggregator(grouped_clone)
+        );
+
+        // Log aggregator errors but don't fail the request
+        if !a_result.failed.is_empty() {
+            for (do_name, error) in &a_result.failed {
+                warn!(do_name = %do_name, error = %error, "aggregator write failed");
+            }
+        } else {
+            debug!(
+                succeeded = a_result.succeeded.len(),
+                "aggregator write succeeded"
+            );
+        }
+
+        p_result
+    } else {
+        sender.send_all(grouped).await
+    };
+
+    // Pipeline failure = request failure
+    if !pipeline_result.failed.is_empty() {
+        for (table, err) in &pipeline_result.failed {
+            warn!(table = %table, error = %err, "pipeline send failed");
+        }
+
+        let errors: Vec<String> = pipeline_result
+            .failed
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .collect();
+        return Err(HandleError::SendFailed(errors.join("; ")));
+    }
+
+    info!(
+        succeeded = pipeline_result.succeeded.len(),
+        signal = ?H::SIGNAL,
+        "request complete"
+    );
+
+    Span::current().record("records", total_records);
+    Span::current().record("tables", &table_names);
+
+    Ok(HandleResponse::from_result(pipeline_result).with_service_names(service_names))
 }

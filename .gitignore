@@ -4,3 +4,5 @@
 .wrangler
 .dev.vars
 docs/plans
+wrangler.toml
+.uv-cache

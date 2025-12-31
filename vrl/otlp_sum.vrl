@@ -1,8 +1,8 @@
 # @schema sum
 # @description OTLP sum metrics flattened for Cloudflare Streams
 #
-# timestamp: timestamp, required, "Observation time in seconds"
-# start_timestamp: int64, "Start time in seconds"
+# timestamp: timestamp, required, "Observation time in milliseconds"
+# start_timestamp: int64, "Start time in milliseconds"
 # metric_name: string, required, "Metric name"
 # metric_description: string, "Metric description"
 # metric_unit: string, "Unit (e.g., ms, bytes, 1)"
@@ -26,12 +26,12 @@
 # Uses custom WASM-compatible functions (not VRL stdlib)
 # Note: Records are pre-partitioned by _metric_type in Rust before reaching VRL
 
-# Convert nanoseconds to seconds (must be integer for schema)
+# Convert nanoseconds to milliseconds (must be integer for schema)
 .timestamp = to_int(.time_unix_nano) ?? 0
-.timestamp = floor(.timestamp / 1000000000) ?? 0
+.timestamp = floor(.timestamp / 1000000) ?? 0
 
 .start_timestamp = to_int(.start_time_unix_nano) ?? 0
-.start_timestamp = floor(.start_timestamp / 1000000000) ?? 0
+.start_timestamp = floor(.start_timestamp / 1000000) ?? 0
 
 # Extract metric name
 .metric_name, err = to_string(.metric_name)

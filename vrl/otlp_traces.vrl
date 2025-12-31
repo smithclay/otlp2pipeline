@@ -1,9 +1,9 @@
 # @schema spans
 # @description OTLP trace spans flattened for Cloudflare Streams
 #
-# timestamp: timestamp, required, "Start time in seconds"
-# end_timestamp: int64, required, "End time in seconds"
-# duration: int64, required, "Duration in seconds"
+# timestamp: timestamp, required, "Start time in milliseconds"
+# end_timestamp: int64, required, "End time in milliseconds"
+# duration: int64, required, "Duration in milliseconds"
 # trace_id: string, required, "Trace ID hex string"
 # span_id: string, required, "Span ID hex string"
 # parent_span_id: string, "Parent span ID hex string"
@@ -32,16 +32,16 @@
 # OTLP traces -> flat trace event
 # Uses custom WASM-compatible functions (not VRL stdlib)
 
-# Convert nanoseconds to seconds (must be integer for schema)
+# Convert nanoseconds to milliseconds (must be integer for schema)
 .timestamp = to_int(.start_time_unix_nano) ?? 0
-.timestamp = floor(.timestamp / 1000000000) ?? 0
+.timestamp = floor(.timestamp / 1000000) ?? 0
 
 .end_timestamp = to_int(.end_time_unix_nano) ?? 0
-.end_timestamp = floor(.end_timestamp / 1000000000) ?? 0
+.end_timestamp = floor(.end_timestamp / 1000000) ?? 0
 
-# Duration in seconds (must be integer for schema)
+# Duration in milliseconds (must be integer for schema)
 .duration = to_int(.duration_ns) ?? 0
-.duration = floor(.duration / 1000000000) ?? 0
+.duration = floor(.duration / 1000000) ?? 0
 
 # Extract service info from resource attributes
 # Use explicit null check since get() returns null for missing keys

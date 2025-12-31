@@ -1,8 +1,8 @@
 # @schema logs
 # @description OTLP logs flattened for Cloudflare Streams
 #
-# timestamp: timestamp, required, "Event timestamp in seconds"
-# observed_timestamp: int64, required, "Observed timestamp in seconds"
+# timestamp: timestamp, required, "Event timestamp in milliseconds"
+# observed_timestamp: int64, required, "Observed timestamp in milliseconds"
 # trace_id: string, "Trace ID hex string"
 # span_id: string, "Span ID hex string"
 # service_name: string, required, "Service name from resource attributes"
@@ -22,12 +22,12 @@
 # OTLP logs -> flat log event
 # Uses custom WASM-compatible functions (not VRL stdlib)
 
-# Convert nanoseconds to seconds (must be integer for schema)
+# Convert nanoseconds to milliseconds (must be integer for schema)
 .timestamp = to_int(.time_unix_nano) ?? 0
-.timestamp = floor(.timestamp / 1000000000) ?? 0
+.timestamp = floor(.timestamp / 1000000) ?? 0
 
 .observed_timestamp = to_int(.observed_time_unix_nano) ?? 0
-.observed_timestamp = floor(.observed_timestamp / 1000000000) ?? 0
+.observed_timestamp = floor(.observed_timestamp / 1000000) ?? 0
 
 # Extract service info from resource attributes
 # Use explicit null check since get() returns null for missing keys

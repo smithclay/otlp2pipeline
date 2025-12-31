@@ -387,27 +387,81 @@ create_env() {
         fi
     done
 
-    # Step 7: Summary
+    # Step 7: Generate wrangler.toml
+    echo ""
+    echo "==> Generating wrangler.toml..."
+
+    local logs_endpoint traces_endpoint gauge_endpoint sum_endpoint
+    logs_endpoint=$(grep "^logs=" "$endpoints_file" 2>/dev/null | cut -d= -f2 || echo "")
+    traces_endpoint=$(grep "^traces=" "$endpoints_file" 2>/dev/null | cut -d= -f2 || echo "")
+    gauge_endpoint=$(grep "^gauge=" "$endpoints_file" 2>/dev/null | cut -d= -f2 || echo "")
+    sum_endpoint=$(grep "^sum=" "$endpoints_file" 2>/dev/null | cut -d= -f2 || echo "")
+    rm -f "$endpoints_file"
+
+    cat > wrangler.toml <<EOF
+name = "otlpflare-${ENV_NAME}"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-01-01"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+[vars]
+PIPELINE_LOGS = "${logs_endpoint}"
+PIPELINE_TRACES = "${traces_endpoint}"
+PIPELINE_GAUGE = "${gauge_endpoint}"
+PIPELINE_SUM = "${sum_endpoint}"
+AGGREGATOR_ENABLED = "true"
+AGGREGATOR_RETENTION_MINUTES = "60"
+
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = true
+head_sampling_rate = 0.1
+
+[observability.traces]
+enabled = false
+
+[[durable_objects.bindings]]
+name = "AGGREGATOR"
+class_name = "AggregatorDO"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AggregatorDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RegistryDO"]
+EOF
+
+    echo "    Created: wrangler.toml"
+
+    # Step 8: Summary
     echo ""
     echo "=========================================="
     echo "ENVIRONMENT CREATED"
     echo "=========================================="
     echo ""
-    echo "Add to wrangler.toml [vars]:"
+    echo "Generated wrangler.toml with:"
+    echo "  name = \"otlpflare-${ENV_NAME}\""
+    echo "  PIPELINE_LOGS = \"${logs_endpoint}\""
+    echo "  PIPELINE_TRACES = \"${traces_endpoint}\""
+    echo "  PIPELINE_GAUGE = \"${gauge_endpoint}\""
+    echo "  PIPELINE_SUM = \"${sum_endpoint}\""
     echo ""
-    for signal in "${SIGNAL_NAMES[@]}"; do
-        local signal_upper endpoint
-        signal_upper=$(echo "$signal" | tr '[:lower:]' '[:upper:]')
-        endpoint=$(grep "^${signal}=" "$endpoints_file" 2>/dev/null | cut -d= -f2 || echo "NOT_FOUND")
-        echo "PIPELINE_${signal_upper} = \"${endpoint}\""
-    done
-    rm -f "$endpoints_file"
+    echo "Next steps:"
+    echo "  1. Set pipeline auth token:"
+    echo "     npx wrangler secret put PIPELINE_AUTH_TOKEN"
     echo ""
-    echo "Set pipeline auth token:"
-    echo "  npx wrangler secret put PIPELINE_AUTH_TOKEN"
-    echo ""
-    echo "Deploy:"
-    echo "  npx wrangler deploy"
+    echo "  2. Deploy:"
+    echo "     npx wrangler deploy"
 }
 
 delete_env() {

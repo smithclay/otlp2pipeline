@@ -141,7 +141,7 @@ fn compile_vrl_scripts() {
         let source =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", file, e));
 
-        // Parse and generate schema if annotations present
+        // Parse and generate Cloudflare Pipeline schema if annotations present
         if let Some(schema) = parse_schema_from_vrl(&source) {
             // Skip if we've already processed this schema (multiple VRL files can share a schema)
             if !written_schemas.contains(&schema.name) {
