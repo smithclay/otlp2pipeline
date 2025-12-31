@@ -168,6 +168,32 @@ paths:
               schema:
                 type: string
 
+  /v1/services:
+    get:
+      summary: List all registered services
+      operationId: listServices
+      tags: [Registry]
+      description: |
+        Returns all services that have sent telemetry data, along with their
+        first-seen timestamp and which signal types have been received.
+        Data is stored in a singleton Durable Object with SQLite backend.
+        Maximum 10,000 services are tracked (cardinality protection).
+      responses:
+        '200':
+          description: Array of registered services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceRecord'
+        '500':
+          description: Internal error querying Durable Object
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /v1/services/{service}/{signal}/stats:
     get:
       summary: Query aggregated RED metrics
@@ -259,6 +285,38 @@ components:
         - status
         - records
 
+    ServiceRecord:
+      type: object
+      description: A registered service with signal availability flags
+      properties:
+        name:
+          type: string
+          description: Service name (from service.name resource attribute)
+          example: my-service
+        first_seen_at:
+          type: integer
+          format: int64
+          description: Unix timestamp in milliseconds when service was first seen
+          example: 1704067200000
+        has_logs:
+          type: integer
+          enum: [0, 1]
+          description: Whether logs have been received (0 = no, 1 = yes)
+        has_traces:
+          type: integer
+          enum: [0, 1]
+          description: Whether traces have been received (0 = no, 1 = yes)
+        has_metrics:
+          type: integer
+          enum: [0, 1]
+          description: Whether metrics have been received (0 = no, 1 = yes)
+      required:
+        - name
+        - first_seen_at
+        - has_logs
+        - has_traces
+        - has_metrics
+
     StatsRow:
       type: object
       properties:
@@ -346,5 +404,7 @@ tags:
     description: Service health endpoints
   - name: Ingestion
     description: Telemetry data ingestion (OTLP and HEC)
+  - name: Registry
+    description: Service discovery and registration
   - name: Stats
     description: Aggregated RED metrics from Durable Objects
