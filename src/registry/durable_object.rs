@@ -7,14 +7,14 @@ use worker::*;
 
 /// Service registration request.
 #[cfg(target_arch = "wasm32")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterRequest {
     pub services: Vec<ServiceRegistration>,
 }
 
 /// Single service registration entry.
 #[cfg(target_arch = "wasm32")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ServiceRegistration {
     pub name: String,
     pub signal: String,
