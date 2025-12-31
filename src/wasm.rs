@@ -48,6 +48,7 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Post, "/v1/metrics") => handle_metrics_worker(req, env, ctx).await,
         (Method::Post, "/services/collector/event") => handle_hec_logs_worker(req, env, ctx).await,
         (Method::Get, "/health") => Response::ok("ok"),
+        (Method::Get, "/v1/services") => handle_services_list(env).await,
         // Stats API endpoints
         (Method::Get, path) if path.starts_with("/v1/services/") => {
             handle_stats_query(path, req, env).await
@@ -135,6 +136,15 @@ async fn register_services(env: &Env, service_names: &[String], signal: Signal) 
         .await
     {
         tracing::warn!(error = %e, signal = ?signal, "Failed to register services");
+    }
+}
+
+async fn handle_services_list(env: Env) -> Result<Response> {
+    let sender = WasmRegistrySender::new(env);
+
+    match sender.get_all_services().await {
+        Ok(services) => Response::from_json(&services),
+        Err(e) => Response::error(format!("Failed to get services: {}", e), 500),
     }
 }
 
