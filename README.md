@@ -13,7 +13,8 @@ flowchart LR
         HEC[Splunk HEC] --> W
         W -->|transform + route| P[Cloudflare Pipelines]
         P --> R2[(R2 Data Catalog / Iceberg)]
-        W -->|aggregate| DO[("Durable Objects: per-minute RED metrics")]
+        W -->|aggregate| ADO[("AggregatorDO: per-service RED metrics")]
+        W -->|register| RDO[("RegistryDO: service discovery")]
     end
 ```
 
