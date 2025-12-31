@@ -256,10 +256,8 @@ impl AggregatorDO {
     }
 
     async fn schedule_cleanup_alarm(&self) -> Result<()> {
-        if self.state.storage().get_alarm().await?.is_some() {
-            return Ok(());
-        }
-
+        // Always set alarm - idempotent operation, last write wins.
+        // Avoids check-then-set race where alarm could fire between get_alarm() and set_alarm().
         let now_ms = worker::Date::now().as_millis() as i64;
         let alarm_time_ms = now_ms.saturating_add(60_000); // 1 minute from now
         self.state.storage().set_alarm(alarm_time_ms).await?;
