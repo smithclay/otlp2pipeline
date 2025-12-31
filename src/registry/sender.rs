@@ -55,12 +55,7 @@ impl RegistrySender for WasmRegistrySender {
             return Ok(());
         }
 
-        // Add all new services to local cache
-        for service in &new_services {
-            cache::add_locally(service.clone());
-        }
-
-        // Send to DO for persistence
+        // Send to DO for persistence first
         let stub = self
             .get_stub()
             .map_err(|e| format!("Failed to get RegistryDO stub: {}", e))?;
@@ -78,9 +73,9 @@ impl RegistrySender for WasmRegistrySender {
         };
 
         let registrations: Vec<ServiceRegistration> = new_services
-            .into_iter()
+            .iter()
             .map(|name| ServiceRegistration {
-                name,
+                name: name.clone(),
                 signal: signal_name.to_string(),
             })
             .collect();
@@ -116,6 +111,11 @@ impl RegistrySender for WasmRegistrySender {
                 "RegistryDO returned status {}",
                 response.status_code()
             ));
+        }
+
+        // Only add to local cache after successful DO write
+        for service in &new_services {
+            cache::add_locally(service.clone());
         }
 
         Ok(())
