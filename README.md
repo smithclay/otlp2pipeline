@@ -88,6 +88,60 @@ npx wrangler deploy
 ./scripts/pipeline-env.sh delete <env-name>
 ```
 
+## Breaking Changes & Migrations
+
+### Timestamp Precision Change (December 2025)
+
+**Breaking change:** Timestamp precision changed from seconds to milliseconds in commit `bbaa9cd` (2025-12-28).
+
+**Affected signals:** All signals (logs, traces, gauge metrics, sum metrics)
+
+**What changed:**
+- **Before:** Timestamps stored as Unix epoch seconds (nanoseconds / 1,000,000,000)
+- **After:** Timestamps stored as Unix epoch milliseconds (nanoseconds / 1,000,000)
+- **Impact:** Existing data in R2 Iceberg tables is off by 1000x when queried alongside new data
+
+**Migration options:**
+
+1. **Deploy to new environment (recommended):**
+   ```bash
+   # Create a fresh pipeline environment with correct schema
+   ./scripts/pipeline-env.sh create prod-v2 --token <R2_API_TOKEN>
+
+   # Deploy worker pointing to new environment
+   npx wrangler deploy
+
+   # Old data remains queryable in prod environment
+   # New data goes to prod-v2 with correct timestamps
+   ```
+
+2. **Handle mixed precision in queries:**
+   If you must keep the same environment, adjust timestamps in SQL queries:
+   ```sql
+   -- Detect precision (seconds have values < 10 billion)
+   SELECT
+     CASE
+       WHEN timestamp < 10000000000 THEN timestamp * 1000  -- Convert seconds to millis
+       ELSE timestamp                                       -- Already millis
+     END as timestamp_ms
+   FROM logs;
+   ```
+
+**Verification:**
+
+Check timestamp format in your tables:
+```bash
+./scripts/pipeline-env.sh query <env-name>
+```
+
+```sql
+-- Recent timestamps should be ~1735000000000 (milliseconds)
+-- Old timestamps would be    ~1735000000    (seconds)
+SELECT MIN(timestamp), MAX(timestamp) FROM logs LIMIT 1;
+```
+
+If `MAX(timestamp)` is less than 10 billion, your data uses the old seconds format.
+
 ## Usage
 
 Send OTLP logs:
