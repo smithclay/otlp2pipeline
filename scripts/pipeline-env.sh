@@ -428,9 +428,17 @@ enabled = false
 name = "AGGREGATOR"
 class_name = "AggregatorDO"
 
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AggregatorDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RegistryDO"]
 EOF
 
     echo "    Created: wrangler.toml"
