@@ -196,18 +196,31 @@ impl AggregatorSender for NativeAggregatorSender {
 }
 
 /// Extract service_name from record, defaulting to "unknown".
+/// Validates that service names:
+/// - Contain only alphanumeric characters, hyphens, underscores, or dots
+/// - Are at most 128 characters long
+/// - Are non-empty
+///
+/// Invalid service names are logged and replaced with "unknown" to prevent
+/// conflicts with the `{service}:{signal}` DO naming scheme.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub fn get_service_name(record: &Value) -> String {
     if let Value::Object(ref map) = record {
         let key: KeyString = "service_name".into();
         if let Some(Value::Bytes(b)) = map.get(&key) {
             let s = std::str::from_utf8(b).unwrap_or("");
-            if !s.is_empty() {
+            // Validate: alphanumeric, hyphens, underscores, dots only
+            // Max length 128 to prevent abuse
+            if !s.is_empty()
+                && s.len() <= 128
+                && s.chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+            {
                 return s.to_string();
             }
         }
     }
-    warn!("Record missing service_name, routing to 'unknown'");
+    warn!("Record missing or invalid service_name, routing to 'unknown'");
     "unknown".to_string()
 }
 
@@ -246,6 +259,88 @@ mod tests {
                 .collect(),
         );
         assert_eq!(get_service_name(&record), "unknown");
+    }
+
+    #[test]
+    fn test_get_service_name_with_underscores_and_dots() {
+        let record = Value::Object(
+            [("service_name".into(), Value::from("payment_service.prod"))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), "payment_service.prod");
+    }
+
+    #[test]
+    fn test_get_service_name_with_numbers() {
+        let record = Value::Object(
+            [("service_name".into(), Value::from("service123"))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), "service123");
+    }
+
+    #[test]
+    fn test_get_service_name_with_colon_returns_unknown() {
+        let record = Value::Object(
+            [("service_name".into(), Value::from("payment:service"))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), "unknown");
+    }
+
+    #[test]
+    fn test_get_service_name_with_slash_returns_unknown() {
+        let record = Value::Object(
+            [("service_name".into(), Value::from("payment/service"))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), "unknown");
+    }
+
+    #[test]
+    fn test_get_service_name_with_special_chars_returns_unknown() {
+        let record = Value::Object(
+            [("service_name".into(), Value::from("payment@service#1"))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), "unknown");
+    }
+
+    #[test]
+    fn test_get_service_name_with_spaces_returns_unknown() {
+        let record = Value::Object(
+            [("service_name".into(), Value::from("payment service"))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), "unknown");
+    }
+
+    #[test]
+    fn test_get_service_name_exceeds_max_length_returns_unknown() {
+        let long_name = "a".repeat(129);
+        let record = Value::Object(
+            [("service_name".into(), Value::from(long_name.as_str()))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), "unknown");
+    }
+
+    #[test]
+    fn test_get_service_name_exactly_max_length() {
+        let max_name = "a".repeat(128);
+        let record = Value::Object(
+            [("service_name".into(), Value::from(max_name.as_str()))]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(get_service_name(&record), max_name);
     }
 
     #[test]
