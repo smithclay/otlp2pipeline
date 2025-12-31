@@ -169,8 +169,8 @@ impl AggregatorDO {
                count = count + excluded.count,
                error_count = error_count + excluded.error_count,
                latency_sum_us = latency_sum_us + excluded.latency_sum_us,
-               latency_min_us = COALESCE(MIN(latency_min_us, excluded.latency_min_us), latency_min_us, excluded.latency_min_us),
-               latency_max_us = COALESCE(MAX(latency_max_us, excluded.latency_max_us), latency_max_us, excluded.latency_max_us)",
+               latency_min_us = COALESCE(min(latency_min_us, excluded.latency_min_us), latency_min_us, excluded.latency_min_us),
+               latency_max_us = COALESCE(max(latency_max_us, excluded.latency_max_us), latency_max_us, excluded.latency_max_us)",
             vec![
                 SqlStorageValue::Integer(minute),
                 SqlStorageValue::Integer(stats.count),
