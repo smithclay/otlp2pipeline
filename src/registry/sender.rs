@@ -65,11 +65,23 @@ impl RegistrySender for WasmRegistrySender {
             .get_stub()
             .map_err(|e| format!("Failed to get RegistryDO stub: {}", e))?;
 
+        // Map signal to registry categories (logs, traces, metrics)
+        // All metric signal types (Gauge, Sum, Histogram, etc.) map to "metrics"
+        let signal_name = match signal {
+            Signal::Logs => "logs",
+            Signal::Traces => "traces",
+            Signal::Gauge
+            | Signal::Sum
+            | Signal::Histogram
+            | Signal::ExpHistogram
+            | Signal::Summary => "metrics",
+        };
+
         let registrations: Vec<ServiceRegistration> = new_services
             .into_iter()
             .map(|name| ServiceRegistration {
                 name,
-                signal: signal.table_name().to_string(),
+                signal: signal_name.to_string(),
             })
             .collect();
 
@@ -110,14 +122,8 @@ impl RegistrySender for WasmRegistrySender {
     }
 
     async fn get_all_services(&self) -> Result<Vec<ServiceRecord>, String> {
-        // Check cache first
-        if let Some(_cached_names) = cache::get_all_if_fresh() {
-            // Return cached service names as minimal records
-            // Note: This returns only names, not full ServiceRecord details.
-            // For full details, we need to query the DO.
-            // For now, we'll always query DO to get complete records.
-        }
-
+        // Note: We always query the DO because the cache only stores service names,
+        // not full ServiceRecord objects with metadata (first_seen_at, has_logs, etc.)
         // Query DO for full service records
         let stub = self
             .get_stub()
