@@ -10,6 +10,7 @@ mod convert;
 mod decode;
 mod handler;
 mod pipeline;
+pub mod registry;
 mod schema;
 mod signal;
 mod transform;

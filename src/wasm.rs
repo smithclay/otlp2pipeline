@@ -144,3 +144,7 @@ async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Respon
 // Re-export AggregatorDO from aggregator module
 #[allow(unused_imports)]
 pub use crate::aggregator::AggregatorDO;
+
+// Re-export RegistryDO from registry module
+#[allow(unused_imports)]
+pub use crate::registry::RegistryDO;
