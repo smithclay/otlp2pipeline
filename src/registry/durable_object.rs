@@ -45,9 +45,9 @@ impl DurableObject for RegistryDO {
     fn new(state: State, env: Env) -> Self {
         let do_instance = Self { state, env };
 
-        // Initialize schema on creation
+        // Log but don't panic - Workers will return 500 and retry
         if let Err(e) = do_instance.ensure_schema() {
-            panic!("Failed to initialize SQLite schema: {}", e);
+            worker::console_error!("Failed to initialize SQLite schema: {}", e);
         }
 
         do_instance

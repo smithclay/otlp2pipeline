@@ -57,9 +57,9 @@ impl DurableObject for AggregatorDO {
         let signal = AggregatorSignal::from_key(&id_name);
         let do_instance = Self { state, env, signal };
 
-        // Initialize schema on creation
+        // Log but don't panic - Workers will return 500 and retry
         if let Err(e) = do_instance.ensure_schema() {
-            panic!("Failed to initialize SQLite schema: {}", e);
+            worker::console_error!("Failed to initialize SQLite schema: {}", e);
         }
 
         do_instance
