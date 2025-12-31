@@ -106,6 +106,18 @@ Each DO stores one row per minute with aggregated counts:
 
 Query via `GET /v1/services/:service/:signal/stats?from=X&to=Y`.
 
+### Registry (`src/registry/`)
+
+Singleton Durable Object tracking all services seen:
+
+- `durable_object.rs`: `RegistryDO` with SQLite storage, 10,000 service limit
+- `cache.rs`: Worker-local cache with 3-minute TTL to minimize DO calls
+- `sender.rs`: `RegistrySender` trait for abstraction
+
+Service validation: alphanumeric + hyphens + underscores + dots, max 128 chars.
+
+Query via `GET /v1/services` (returns all services with signal availability).
+
 ### Pipeline Client (`src/pipeline/`)
 
 - `client.rs`: Multi-signal client with per-signal endpoints

@@ -187,6 +187,13 @@ curl https://otlpflare.<subdomain>.workers.dev/v1/services/my-service/traces/sta
 
 Stats include count, error_count, and latency metrics (traces only).
 
+List all registered services:
+```bash
+curl https://otlpflare.<subdomain>.workers.dev/v1/services
+```
+
+Returns services with signal availability (has_logs, has_traces, has_metrics) and first_seen_at timestamp.
+
 ## Schema
 
 See the `vrl/` directory, the schema written to R2 data catalog is defined inline the VRL transformation scripts.
@@ -208,3 +215,5 @@ This worker does **not** implement application-level authentication.
 - Maximum payload size: 10 MB (after decompression)
 - Maximum events per HEC request: 10,000
 - Invalid JSON or timestamps are rejected with 400 errors
+- Service names: alphanumeric, hyphens, underscores, dots only (max 128 chars)
+- Service registry limit: 10,000 unique services (returns 507 if exceeded)
