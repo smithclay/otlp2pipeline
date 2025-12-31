@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")]
+use std::collections::HashSet;
 use std::io::Read;
 use tracing::{debug, error, info, warn, Span};
 use vrl::value::Value;
@@ -50,6 +52,8 @@ pub struct HandleResponse {
     pub records: HashMap<String, usize>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub errors: HashMap<String, String>,
+    #[serde(skip)]
+    pub service_names: Vec<String>,
 }
 
 impl HandleResponse {
@@ -58,6 +62,7 @@ impl HandleResponse {
             status: "ok",
             records: HashMap::new(),
             errors: HashMap::new(),
+            service_names: Vec::new(),
         }
     }
 
@@ -74,7 +79,13 @@ impl HandleResponse {
             status,
             records: result.succeeded,
             errors: result.failed,
+            service_names: Vec::new(),
         }
+    }
+
+    pub fn with_service_names(mut self, service_names: Vec<String>) -> Self {
+        self.service_names = service_names;
+        self
     }
 }
 
@@ -97,6 +108,26 @@ pub trait SignalHandler {
     ) -> Result<HashMap<String, Vec<Value>>, VrlError> {
         transformer.transform_batch(Self::vrl_program(), values)
     }
+}
+
+/// Extract unique service names from grouped records
+#[cfg(target_arch = "wasm32")]
+fn extract_service_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<String> {
+    let mut service_names = HashSet::new();
+
+    for values in grouped.values() {
+        for value in values {
+            if let Some(obj) = value.as_object() {
+                if let Some(service_name) = obj.get("service_name") {
+                    if let Some(name) = service_name.as_str() {
+                        service_names.insert(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    service_names.into_iter().collect()
 }
 
 pub(crate) fn decompress_if_gzipped(body: Bytes, is_gzipped: bool) -> Result<Bytes, HandleError> {
@@ -290,6 +321,9 @@ where
     let total_records: usize = grouped.values().map(|v| v.len()).sum();
     let table_names: String = grouped.keys().cloned().collect::<Vec<_>>().join(",");
 
+    // Extract service names before sending (send_all takes ownership)
+    let service_names = extract_service_names(&grouped);
+
     // Dual-write: pipeline is primary (required), aggregator is best-effort (optional)
     let pipeline_result = if let Some(cache) = cache {
         // Clone grouped data for aggregator write
@@ -341,5 +375,5 @@ where
     Span::current().record("records", total_records);
     Span::current().record("tables", &table_names);
 
-    Ok(HandleResponse::from_result(pipeline_result))
+    Ok(HandleResponse::from_result(pipeline_result).with_service_names(service_names))
 }

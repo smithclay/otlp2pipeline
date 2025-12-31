@@ -83,7 +83,7 @@ pub fn refresh(services: Vec<String>) {
 /// Uses worker::Date::now() on WASM, SystemTime on native.
 #[cfg(target_arch = "wasm32")]
 fn current_time_ms() -> u64 {
-    worker::Date::now().as_millis() as u64
+    worker::Date::now().as_millis()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
