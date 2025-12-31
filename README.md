@@ -92,7 +92,7 @@ npx wrangler deploy
 
 ### Timestamp Precision Change (December 2025)
 
-**Breaking change:** Timestamp precision changed from seconds to milliseconds in commit `bbaa9cd` (2025-12-28).
+**Breaking change:** Timestamp precision changed from seconds to milliseconds in commit `60baeff` (2025-12-29).
 
 **Affected signals:** All signals (logs, traces, gauge metrics, sum metrics)
 
