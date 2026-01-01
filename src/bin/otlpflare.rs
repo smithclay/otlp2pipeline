@@ -1,18 +1,12 @@
 use clap::Parser;
-use otlpflare::cli::{Cli, Commands};
+use otlpflare::cli::{commands, Cli, Commands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Create(args) => {
-            println!("Would create environment: {}", args.name);
-            println!("  token: {}...", &args.token[..8.min(args.token.len())]);
-            println!("  logs: {}", args.logs);
-            println!("  traces: {}", args.traces);
-            println!("  metrics: {}", args.metrics);
-        }
+        Commands::Create(args) => commands::execute_create(args).await?,
         Commands::Destroy(args) => {
             println!("Would destroy environment: {}", args.name);
         }
