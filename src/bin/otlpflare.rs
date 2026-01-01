@@ -7,9 +7,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Create(args) => commands::execute_create(args).await?,
-        Commands::Destroy(args) => {
-            println!("Would destroy environment: {}", args.name);
-        }
+        Commands::Destroy(args) => commands::execute_destroy(args).await?,
         Commands::Status(args) => {
             println!("Would show status for: {}", args.name);
         }
