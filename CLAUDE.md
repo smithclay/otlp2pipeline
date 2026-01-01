@@ -28,6 +28,41 @@ npx wrangler deploy
 npx wrangler dev
 ```
 
+## CLI Tool
+
+The `otlpflare` CLI manages Cloudflare infrastructure (R2, Pipelines). Install with:
+
+```bash
+cargo install --path .
+```
+
+### Commands
+
+```bash
+# Create environment (bucket, streams, sinks, pipelines)
+otlpflare create prod --token $R2_TOKEN --output wrangler.toml
+
+# Check status
+otlpflare status prod
+
+# Dry run (show what would be created)
+otlpflare plan staging
+
+# Tear down
+otlpflare destroy staging --force
+
+# Query data with DuckDB
+otlpflare query prod
+```
+
+### Auth
+
+The CLI resolves credentials in order:
+1. `CF_API_TOKEN` environment variable
+2. Wrangler OAuth token from `~/.wrangler/config/default.toml`
+
+Account ID is auto-detected from the API, or set `CF_ACCOUNT_ID` explicitly.
+
 ## Architecture
 
 This is an OTLP (OpenTelemetry Protocol) ingestion worker that receives telemetry data (logs, traces) and forwards it to Cloudflare Pipelines for storage in R2/Iceberg.
