@@ -24,6 +24,9 @@ pub use tracing;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cli;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cloudflare;
+
 // Re-export for tests
 pub use handler::{
     handle_signal, HandleError, HandleResponse, HecLogsHandler, LogsHandler, MetricsHandler,
