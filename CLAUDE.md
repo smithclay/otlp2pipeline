@@ -53,6 +53,15 @@ otlpflare destroy staging --force
 
 # Query data with DuckDB
 otlpflare query prod
+
+# List known services
+otlpflare services --url https://my-worker.workers.dev
+
+# Stream live logs for a service
+otlpflare tail my-service logs --url https://my-worker.workers.dev
+
+# Stream live traces
+otlpflare tail api-gateway traces
 ```
 
 ### Auth
