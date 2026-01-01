@@ -9,9 +9,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Create(args) => commands::execute_create(args).await?,
         Commands::Destroy(args) => commands::execute_destroy(args).await?,
         Commands::Status(args) => commands::execute_status(args).await?,
-        Commands::Plan(args) => {
-            println!("Would show plan for: {}", args.name);
-        }
+        Commands::Plan(args) => commands::execute_plan(args).await?,
         Commands::Query(args) => {
             println!("Would start query session for: {}", args.name);
         }
