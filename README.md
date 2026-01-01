@@ -10,26 +10,18 @@ Experimental Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Cat
 Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transforms them via [VRL](https://crates.io/crates/vrl) and forwards to [Cloudflare Pipelines](https://developers.cloudflare.com/pipelines/) for storage in [R2 Data Catalog](https://developers.cloudflare.com/r2/data-catalog/) tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
 ```mermaid
-flowchart LR
-    subgraph Ingest["Ingest"]
-        OTLP[OTLP metrics/logs/traces] --> W[Cloudflare Worker]
+flowchart TB
+    subgraph Ingest["Ingest + Store"]
+        OTLP[OTLP] --> W[Worker]
         HEC[Splunk HEC] --> W
-    end
-
-    subgraph Store["Store"]
-        W -->|POST /v1/logs,traces,metrics| P[Cloudflare Pipelines]
-        P --> R2[(R2 Data Catalog)]
-        W --> ADO[("AggregatorDO")]
-        W --> RDO[("RegistryDO")]
-        W --> LDO[("LiveTailDO")]
+        W --> P[Pipelines]
+        W --> DOs[(Durable Objects)]
+        P --> R2[(R2 Iceberg)]
     end
 
     subgraph Query["Query"]
-        DuckDB[🦆 DuckDB / Iceberg clients] -->|SELECT * FROM logs| R2
-        CLI[otlpflare CLI] -->|services, tail| W
-        API[curl / API] -->|GET /v1/services/:svc/:signal/stats| ADO
-        API -->|GET /v1/services| RDO
-        WS[WebSocket] -->|GET /v1/tail/:svc/:signal| LDO
+        CLI[CLI / WebSocket] -->|real-time| W
+        DuckDB[🦆 DuckDB] -->|batch| R2
     end
 ```
 

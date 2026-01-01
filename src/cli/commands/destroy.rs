@@ -1,27 +1,12 @@
 use anyhow::Result;
 use std::io::{self, Write};
 
+use super::naming::{bucket_name, pipeline_name, sink_name, stream_name};
 use crate::cli::auth;
 use crate::cli::DestroyArgs;
 use crate::cloudflare::CloudflareClient;
 
 const SIGNAL_NAMES: &[&str] = &["logs", "traces", "gauge", "sum"];
-
-fn bucket_name(env: &str) -> String {
-    format!("otlpflare-{}", env.replace('_', "-"))
-}
-
-fn stream_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
-
-fn sink_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}_sink", env.replace('-', "_"), signal)
-}
-
-fn pipeline_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
 
 pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
     let bucket = bucket_name(&args.name);

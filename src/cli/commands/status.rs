@@ -1,22 +1,11 @@
 use anyhow::Result;
 
+use super::naming::{pipeline_name, sink_name, stream_name};
 use crate::cli::auth;
 use crate::cli::StatusArgs;
 use crate::cloudflare::CloudflareClient;
 
 const SIGNAL_NAMES: &[&str] = &["logs", "traces", "gauge", "sum"];
-
-fn stream_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
-
-fn sink_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}_sink", env.replace('-', "_"), signal)
-}
-
-fn pipeline_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
 
 pub async fn execute_status(args: StatusArgs) -> Result<()> {
     println!("==> Pipeline environment status: {}", args.name);

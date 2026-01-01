@@ -1,5 +1,6 @@
 mod create;
 mod destroy;
+mod naming;
 mod plan;
 mod query;
 mod services;

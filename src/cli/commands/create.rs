@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use super::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
 use crate::cli::auth;
 use crate::cli::CreateArgs;
 use crate::cloudflare::{CloudflareClient, SchemaField};
@@ -33,22 +34,6 @@ const SIGNALS: &[SignalConfig] = &[
         table: "sum",
     },
 ];
-
-fn bucket_name(env: &str) -> String {
-    format!("otlpflare-{}", env.replace('_', "-"))
-}
-
-fn stream_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
-
-fn sink_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}_sink", env.replace('-', "_"), signal)
-}
-
-fn pipeline_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
 
 fn enabled_signals(args: &CreateArgs) -> Vec<&'static SignalConfig> {
     SIGNALS
@@ -207,7 +192,7 @@ command = "cargo install -q worker-build && worker-build --release"
 
 [vars]
 "#,
-        args.name
+        normalize(&args.name)
     );
 
     for (signal, endpoint) in endpoints {

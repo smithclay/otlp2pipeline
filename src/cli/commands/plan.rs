@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use super::naming::{bucket_name, pipeline_name, sink_name, stream_name};
 use crate::cli::auth;
 use crate::cli::PlanArgs;
 use crate::cloudflare::CloudflareClient;
@@ -11,22 +12,6 @@ const SIGNAL_SCHEMAS: &[&str] = &[
     "schemas/gauge.schema.json",
     "schemas/sum.schema.json",
 ];
-
-fn bucket_name(env: &str) -> String {
-    format!("otlpflare-{}", env.replace('_', "-"))
-}
-
-fn stream_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
-
-fn sink_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}_sink", env.replace('-', "_"), signal)
-}
-
-fn pipeline_name(env: &str, signal: &str) -> String {
-    format!("otlpflare_{}_{}", env.replace('-', "_"), signal)
-}
 
 pub async fn execute_plan(args: PlanArgs) -> Result<()> {
     let bucket = bucket_name(&args.name);
