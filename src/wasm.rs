@@ -8,6 +8,7 @@ use worker::*;
 
 use crate::decode::DecodeFormat;
 use crate::handler;
+use crate::livetail::WasmLiveTailSender;
 use crate::parse_content_metadata;
 use crate::pipeline::PipelineClient;
 use crate::registry::{RegistrySender, WasmRegistrySender};
@@ -53,6 +54,10 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Get, path) if path.starts_with("/v1/services/") => {
             handle_stats_query(path, req, env).await
         }
+        // Live tail WebSocket upgrade
+        (Method::Get, path) if path.starts_with("/v1/tail/") => {
+            handle_tail_upgrade(path, req, env).await
+        }
         _ => Response::error("Not Found", 404),
     }
 }
@@ -71,12 +76,16 @@ async fn handle_signal_worker<H: handler::SignalHandler>(
     // Initialize aggregator sender for dual-write
     let cache = crate::aggregator::WasmAggregatorSender::new(env.clone());
 
-    match handler::handle_signal_with_cache::<H, _, _>(
+    // Initialize livetail sender for triple-write
+    let livetail = WasmLiveTailSender::new(env.clone());
+
+    match handler::handle_signal_with_cache::<H, _, _, _>(
         Bytes::from(body_bytes),
         is_gzipped,
         decode_format,
         &client,
         Some(&cache),
+        Some(&livetail),
     )
     .await
     {
@@ -181,6 +190,66 @@ async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Respon
     stub.fetch_with_request(request).await
 }
 
+async fn handle_tail_upgrade(path: &str, req: Request, env: Env) -> Result<Response> {
+    // Parse path: /v1/tail/:service/:signal
+    let parts: Vec<&str> = path.trim_start_matches("/v1/tail/").split('/').collect();
+
+    if parts.len() < 2 {
+        return Response::error("Invalid path. Use /v1/tail/:service/:signal", 400);
+    }
+
+    let service = parts[0];
+    let signal = parts[1];
+
+    // Validate signal
+    if signal != "logs" && signal != "traces" {
+        return Response::error("Signal must be 'logs' or 'traces'", 400);
+    }
+
+    // Validate service name (same rules as aggregator)
+    if service.is_empty()
+        || service.len() > 128
+        || !service
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Response::error("Invalid service name", 400);
+    }
+
+    let do_name = format!("{}:{}", service, signal);
+
+    let namespace = env.durable_object("LIVETAIL")?;
+    let id = namespace.id_from_name(&do_name)?;
+    let stub = id.get_stub()?;
+
+    // Forward WebSocket upgrade to DO
+    let headers = worker::Headers::new();
+    if let Ok(upgrade) = req.headers().get("Upgrade") {
+        if let Some(upgrade) = upgrade {
+            headers.set("Upgrade", &upgrade)?;
+        }
+    }
+    if let Ok(key) = req.headers().get("Sec-WebSocket-Key") {
+        if let Some(key) = key {
+            headers.set("Sec-WebSocket-Key", &key)?;
+        }
+    }
+    if let Ok(version) = req.headers().get("Sec-WebSocket-Version") {
+        if let Some(version) = version {
+            headers.set("Sec-WebSocket-Version", &version)?;
+        }
+    }
+
+    let request = worker::Request::new_with_init(
+        "http://do/websocket",
+        worker::RequestInit::new()
+            .with_method(worker::Method::Get)
+            .with_headers(headers),
+    )?;
+
+    stub.fetch_with_request(request).await
+}
+
 // Re-export AggregatorDO from aggregator module
 #[allow(unused_imports)]
 pub use crate::aggregator::AggregatorDO;
@@ -188,3 +257,7 @@ pub use crate::aggregator::AggregatorDO;
 // Re-export RegistryDO from registry module
 #[allow(unused_imports)]
 pub use crate::registry::RegistryDO;
+
+// Re-export LiveTailDO from livetail module
+#[allow(unused_imports)]
+pub use crate::livetail::LiveTailDO;

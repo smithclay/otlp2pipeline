@@ -1,3 +1,5 @@
+#[cfg(target_arch = "wasm32")]
+use crate::livetail::LiveTailSender;
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
@@ -249,15 +251,16 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
     Ok(HandleResponse::from_result(result))
 }
 
-/// Handle signal with optional aggregator dual-write.
+/// Handle signal with optional aggregator dual-write and livetail.
 ///
-/// This function extends handle_signal to support dual-writing telemetry to both:
+/// This function extends handle_signal to support triple-writing telemetry to:
 /// 1. Pipeline (cold storage: R2/Iceberg) - required, failures fail the request
 /// 2. Aggregator (Durable Objects) - optional best-effort, failures are logged but don't fail the request
+/// 3. LiveTail (Durable Objects) - optional best-effort, failures are logged but don't fail the request
 #[cfg(target_arch = "wasm32")]
 #[tracing::instrument(
-    name = "ingest_dual",
-    skip(body, sender, cache),
+    name = "ingest_triple",
+    skip(body, sender, cache, livetail),
     fields(
         signal = ?H::SIGNAL,
         format = ?format,
@@ -265,26 +268,30 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
         records = tracing::field::Empty,
         tables = tracing::field::Empty,
         cache_enabled = cache.is_some(),
+        livetail_enabled = livetail.is_some(),
     )
 )]
-pub async fn handle_signal_with_cache<H, S, C>(
+pub async fn handle_signal_with_cache<H, S, C, L>(
     body: Bytes,
     is_gzipped: bool,
     format: DecodeFormat,
     sender: &S,
     cache: Option<&C>,
+    livetail: Option<&L>,
 ) -> Result<HandleResponse, HandleError>
 where
     H: SignalHandler,
     S: PipelineSender,
     C: crate::aggregator::AggregatorSender,
+    L: LiveTailSender,
 {
     debug!(
         body_size = body.len(),
         is_gzipped,
         signal = ?H::SIGNAL,
         cache_enabled = cache.is_some(),
-        "handling signal request with dual-write"
+        livetail_enabled = livetail.is_some(),
+        "handling signal request with triple-write"
     );
 
     // Decompress
@@ -324,32 +331,92 @@ where
     // Extract service names before sending (send_all takes ownership)
     let service_names = extract_service_names(&grouped);
 
-    // Dual-write: pipeline is primary (required), aggregator is best-effort (optional)
-    let pipeline_result = if let Some(cache) = cache {
-        // Clone grouped data for aggregator write
-        let grouped_clone = grouped.clone();
+    // Triple-write: pipeline is primary (required), aggregator and livetail are best-effort (optional)
+    let pipeline_result = match (cache, livetail) {
+        (Some(cache), Some(livetail)) => {
+            // Clone grouped data for aggregator and livetail writes
+            let grouped_agg = grouped.clone();
+            let grouped_tail = grouped.clone();
 
-        // Send to pipeline and aggregator in parallel
-        let (p_result, a_result) = futures::join!(
-            sender.send_all(grouped),
-            cache.send_to_aggregator(grouped_clone)
-        );
-
-        // Log aggregator errors but don't fail the request
-        if !a_result.failed.is_empty() {
-            for (do_name, error) in &a_result.failed {
-                warn!(do_name = %do_name, error = %error, "aggregator write failed");
-            }
-        } else {
-            debug!(
-                succeeded = a_result.succeeded.len(),
-                "aggregator write succeeded"
+            // Send to all three in parallel
+            let (p_result, a_result, l_result) = futures::join!(
+                sender.send_all(grouped),
+                cache.send_to_aggregator(grouped_agg),
+                livetail.send_to_livetail(grouped_tail)
             );
-        }
 
-        p_result
-    } else {
-        sender.send_all(grouped).await
+            // Log aggregator errors but don't fail the request
+            if !a_result.failed.is_empty() {
+                for (do_name, error) in &a_result.failed {
+                    warn!(do_name = %do_name, error = %error, "aggregator write failed");
+                }
+            } else {
+                debug!(
+                    succeeded = a_result.succeeded.len(),
+                    "aggregator write succeeded"
+                );
+            }
+
+            // Log livetail errors but don't fail the request
+            if !l_result.errors.is_empty() {
+                for (do_name, error) in &l_result.errors {
+                    warn!(do_name = %do_name, error = %error, "livetail write failed");
+                }
+            } else {
+                debug!(sent = l_result.sent.len(), "livetail write succeeded");
+            }
+
+            p_result
+        }
+        (Some(cache), None) => {
+            // Clone grouped data for aggregator write
+            let grouped_clone = grouped.clone();
+
+            // Send to pipeline and aggregator in parallel
+            let (p_result, a_result) = futures::join!(
+                sender.send_all(grouped),
+                cache.send_to_aggregator(grouped_clone)
+            );
+
+            // Log aggregator errors but don't fail the request
+            if !a_result.failed.is_empty() {
+                for (do_name, error) in &a_result.failed {
+                    warn!(do_name = %do_name, error = %error, "aggregator write failed");
+                }
+            } else {
+                debug!(
+                    succeeded = a_result.succeeded.len(),
+                    "aggregator write succeeded"
+                );
+            }
+
+            p_result
+        }
+        (None, Some(livetail)) => {
+            // Clone grouped data for livetail write
+            let grouped_clone = grouped.clone();
+
+            // Send to pipeline and livetail in parallel
+            let (p_result, l_result) = futures::join!(
+                sender.send_all(grouped),
+                livetail.send_to_livetail(grouped_clone)
+            );
+
+            // Log livetail errors but don't fail the request
+            if !l_result.errors.is_empty() {
+                for (do_name, error) in &l_result.errors {
+                    warn!(do_name = %do_name, error = %error, "livetail write failed");
+                }
+            } else {
+                debug!(sent = l_result.sent.len(), "livetail write succeeded");
+            }
+
+            p_result
+        }
+        (None, None) => {
+            // Just send to pipeline
+            sender.send_all(grouped).await
+        }
     };
 
     // Pipeline failure = request failure
