@@ -224,20 +224,14 @@ async fn handle_tail_upgrade(path: &str, req: Request, env: Env) -> Result<Respo
 
     // Forward WebSocket upgrade to DO
     let headers = worker::Headers::new();
-    if let Ok(upgrade) = req.headers().get("Upgrade") {
-        if let Some(upgrade) = upgrade {
-            headers.set("Upgrade", &upgrade)?;
-        }
+    if let Ok(Some(upgrade)) = req.headers().get("Upgrade") {
+        headers.set("Upgrade", &upgrade)?;
     }
-    if let Ok(key) = req.headers().get("Sec-WebSocket-Key") {
-        if let Some(key) = key {
-            headers.set("Sec-WebSocket-Key", &key)?;
-        }
+    if let Ok(Some(key)) = req.headers().get("Sec-WebSocket-Key") {
+        headers.set("Sec-WebSocket-Key", &key)?;
     }
-    if let Ok(version) = req.headers().get("Sec-WebSocket-Version") {
-        if let Some(version) = version {
-            headers.set("Sec-WebSocket-Version", &version)?;
-        }
+    if let Ok(Some(version)) = req.headers().get("Sec-WebSocket-Version") {
+        headers.set("Sec-WebSocket-Version", &version)?;
     }
 
     let request = worker::Request::new_with_init(
