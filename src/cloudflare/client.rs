@@ -31,7 +31,7 @@ struct Account {
 impl CloudflareClient {
     /// Create a new client, auto-detecting account ID if not provided
     pub async fn new(token: String, account_id: Option<String>) -> Result<Self> {
-        let client = Client::builder().user_agent("otlpflare-cli").build()?;
+        let client = Client::builder().user_agent("frostbit-cli").build()?;
 
         let account_id = match account_id {
             Some(id) => id,

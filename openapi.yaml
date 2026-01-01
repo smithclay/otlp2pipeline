@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: OTLPFlare API
+  title: Frostbit API
   description: |
     OTLP ingestion worker that receives OpenTelemetry data and forwards it to
     Cloudflare Pipelines. Provides per-service RED metrics aggregation via
@@ -14,7 +14,7 @@ servers:
     description: Cloudflare Workers deployment
     variables:
       worker:
-        default: otlpflare
+        default: frostbit
       account:
         default: your-account
 

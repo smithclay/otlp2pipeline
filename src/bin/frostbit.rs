@@ -1,5 +1,5 @@
 use clap::Parser;
-use otlpflare::cli::{commands, Cli, Commands};
+use frostbit::cli::{commands, Cli, Commands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

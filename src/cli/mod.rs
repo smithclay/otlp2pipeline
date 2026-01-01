@@ -5,8 +5,8 @@ pub mod url;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "otlpflare")]
-#[command(about = "Manage otlpflare infrastructure on Cloudflare")]
+#[command(name = "frostbit")]
+#[command(about = "Manage frostbit infrastructure on Cloudflare")]
 #[command(version)]
 pub struct Cli {
     #[command(subcommand)]

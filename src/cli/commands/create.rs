@@ -183,7 +183,7 @@ fn load_schema(path: &str) -> Result<Vec<SchemaField>> {
 
 fn generate_wrangler_toml(args: &CreateArgs, endpoints: &[(&str, String)]) -> String {
     let mut toml = format!(
-        r#"name = "otlpflare-{}"
+        r#"name = "frostbit-{}"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-01-01"
 
