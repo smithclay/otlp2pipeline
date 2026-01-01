@@ -4,6 +4,9 @@
 //! unnecessary DO calls during ingestion. Uses a shorter TTL (10s) than
 //! registry cache since client presence changes more frequently.
 
+// Cache is only used in WASM builds, but tests run on native
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 
