@@ -51,6 +51,11 @@ fn parse_schema_from_vrl(source: &str) -> Option<Schema> {
         if line.starts_with("# ") && line.contains(':') {
             if let Some(field) = parse_field_line(&line[2..]) {
                 fields.push(field);
+            } else {
+                println!(
+                    "cargo:warning=Failed to parse schema field: {}",
+                    line.trim_start_matches("# ")
+                );
             }
         }
     }

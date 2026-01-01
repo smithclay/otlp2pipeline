@@ -21,114 +21,49 @@
 # is_monotonic: bool, required, "True for counters"
 # @end
 
-# vrl/otlp_sum.vrl
-# OTLP sum metrics -> flat metric event
-# Uses custom WASM-compatible functions (not VRL stdlib)
+# vrl/otlp_sum.vrl - OTLP sum metrics -> flat metric event
 # Note: Records are pre-partitioned by _metric_type in Rust before reaching VRL
 
-# Convert nanoseconds to milliseconds (must be integer for schema)
-.timestamp = to_int(.time_unix_nano) ?? 0
-.timestamp = floor(.timestamp / 1000000) ?? 0
+# Timestamps (nanoseconds -> milliseconds)
+.timestamp = nanos_to_millis(.time_unix_nano)
+.start_timestamp = nanos_to_millis(.start_time_unix_nano)
 
-.start_timestamp = to_int(.start_time_unix_nano) ?? 0
-.start_timestamp = floor(.start_timestamp / 1000000) ?? 0
-
-# Extract metric name
-.metric_name, err = to_string(.metric_name)
-if err != null {
-    .metric_name = ""
-}
-
-# Extract description and unit
-.metric_description, err = to_string(.metric_description)
-if err != null {
-    .metric_description = ""
-}
-
-.metric_unit, err = to_string(.metric_unit)
-if err != null {
-    .metric_unit = ""
-}
+# Metric metadata (default to empty string)
+.metric_name = string_or_null(.metric_name)
+if .metric_name == null { .metric_name = "" }
+.metric_description = string_or_null(.metric_description)
+if .metric_description == null { .metric_description = "" }
+.metric_unit = string_or_null(.metric_unit)
+if .metric_unit == null { .metric_unit = "" }
 
 # Value is already set by decoder
 
-# Extract service info from resource attributes
-# Use explicit null check since get() returns null for missing keys
-.service_name_raw, err = get(.resource.attributes, ["service.name"])
-if err != null || .service_name_raw == null {
-    .service_name = "unknown"
-} else {
-    .service_name = .service_name_raw
-}
-.service_name_raw = null
+# Service info from resource attributes
+.service_name = get_attr(.resource.attributes, "service.name", "unknown")
+.service_namespace = get_attr(.resource.attributes, "service.namespace")
+.service_instance_id = get_attr(.resource.attributes, "service.instance.id")
 
-.service_namespace = get(.resource.attributes, ["service.namespace"]) ?? null
-.service_instance_id = get(.resource.attributes, ["service.instance.id"]) ?? null
+# Attribute blobs as JSON
+.resource_attributes = json_or_null(.resource.attributes)
+.scope_name = string_or_null(.scope.name)
+.scope_version = string_or_null(.scope.version)
+.scope_attributes = json_or_null(.scope.attributes)
+.metric_attributes = json_or_null(.attributes)
+.exemplars_json = json_or_null(.exemplars)
 
-# Encode attribute blobs as JSON
-if !is_empty(.resource.attributes) {
-    .resource_attributes = encode_json(.resource.attributes)
-} else {
-    .resource_attributes = null
-}
+# Flags and sum-specific fields
+.flags = int_or_default(.flags, 0)
+.aggregation_temporality = int_or_default(.aggregation_temporality, 0)
+if .is_monotonic == null { .is_monotonic = false }
 
-.scope_name_str, err = to_string(.scope.name)
-if err == null && .scope_name_str != "" {
-    .scope_name = .scope_name_str
-} else {
-    .scope_name = null
-}
-
-.scope_version_str, err = to_string(.scope.version)
-if err == null && .scope_version_str != "" {
-    .scope_version = .scope_version_str
-} else {
-    .scope_version = null
-}
-
-if !is_empty(.scope.attributes) {
-    .scope_attributes = encode_json(.scope.attributes)
-} else {
-    .scope_attributes = null
-}
-
-if !is_empty(.attributes) {
-    .metric_attributes = encode_json(.attributes)
-} else {
-    .metric_attributes = null
-}
-
-# Encode exemplars as JSON
-if !is_empty(.exemplars) {
-    .exemplars_json = encode_json(.exemplars)
-} else {
-    .exemplars_json = null
-}
-
-# Flags
-if .flags == null {
-    .flags = 0
-}
-
-# Sum-specific fields
-if .aggregation_temporality == null {
-    .aggregation_temporality = 0
-}
-
-if .is_monotonic == null {
-    .is_monotonic = false
-}
-
-# Clean up temporary and nested structures (set to null, filtered during serialization)
-._metric_type = null
-.scope_name_str = null
-.scope_version_str = null
+# Clean up nested structures
 .time_unix_nano = null
 .start_time_unix_nano = null
 .resource = null
 .scope = null
 .attributes = null
 .exemplars = null
+._metric_type = null
 
-# Set routing table
+# Routing
 ._table = "sum"
