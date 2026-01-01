@@ -22,9 +22,9 @@ async fn test_otlp_logs_flow() {
     wait_for_health(&client, &mock_url).await;
     reset_events(&client, &mock_url).await;
 
-    // 2. Start otlpflare router
+    // 2. Start frostbit router
     let app_port = free_port().await;
-    let app = otlpflare::build_router(mock_url.clone());
+    let app = frostbit::build_router(mock_url.clone());
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", app_port))
         .await
         .unwrap();

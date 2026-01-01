@@ -31,7 +31,7 @@ struct Account {
 impl CloudflareClient {
     /// Create a new client, auto-detecting account ID if not provided
     pub async fn new(token: String, account_id: Option<String>) -> Result<Self> {
-        let client = Client::builder().user_agent("otlpflare-cli").build()?;
+        let client = Client::builder().user_agent("frostbit-cli").build()?;
 
         let account_id = match account_id {
             Some(id) => id,
@@ -161,6 +161,32 @@ impl CloudflareClient {
         }
 
         Ok(response.result)
+    }
+
+    /// POST request that expects success but no result
+    pub async fn post_void<B: Serialize>(&self, path: &str, body: &B) -> Result<()> {
+        let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);
+        let response: ApiResponse<serde_json::Value> = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("POST {}", path))?
+            .json()
+            .await?;
+
+        if !response.success {
+            let msg = response
+                .errors
+                .first()
+                .map(|e| e.message.as_str())
+                .unwrap_or("Unknown error");
+            bail!("API error: {}", msg);
+        }
+
+        Ok(())
     }
 
     /// DELETE request to Cloudflare API

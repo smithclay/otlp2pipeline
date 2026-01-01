@@ -50,42 +50,35 @@ impl CloudflareClient {
 
     /// Enable R2 Data Catalog for a bucket
     pub async fn enable_catalog(&self, bucket: &str) -> Result<()> {
-        // Empty POST body
-        let _: serde_json::Value = self
-            .post(
-                &format!("/r2-catalog/{}/enable", bucket),
-                &serde_json::json!({}),
-            )
-            .await?;
-        Ok(())
+        self.post_void(
+            &format!("/r2-catalog/{}/enable", bucket),
+            &serde_json::json!({}),
+        )
+        .await
     }
 
     /// Set service credential for catalog maintenance
     pub async fn set_catalog_credential(&self, bucket: &str, token: &str) -> Result<()> {
-        let _: serde_json::Value = self
-            .post(
-                &format!("/r2-catalog/{}/credential", bucket),
-                &SetCredentialRequest { token },
-            )
-            .await?;
-        Ok(())
+        self.post_void(
+            &format!("/r2-catalog/{}/credential", bucket),
+            &SetCredentialRequest { token },
+        )
+        .await
     }
 
     /// Configure catalog maintenance (compaction + snapshot expiration)
     pub async fn configure_catalog_maintenance(&self, bucket: &str) -> Result<()> {
-        let _: serde_json::Value = self
-            .post(
-                &format!("/r2-catalog/{}/maintenance-configs", bucket),
-                &MaintenanceConfig {
-                    compaction: CompactionConfig { state: "enabled" },
-                    snapshot_expiration: SnapshotExpirationConfig {
-                        state: "enabled",
-                        max_snapshot_age: "1d",
-                        min_snapshots_to_keep: 1,
-                    },
+        self.post_void(
+            &format!("/r2-catalog/{}/maintenance-configs", bucket),
+            &MaintenanceConfig {
+                compaction: CompactionConfig { state: "enabled" },
+                snapshot_expiration: SnapshotExpirationConfig {
+                    state: "enabled",
+                    max_snapshot_age: "1d",
+                    min_snapshots_to_keep: 1,
                 },
-            )
-            .await?;
-        Ok(())
+            },
+        )
+        .await
     }
 }

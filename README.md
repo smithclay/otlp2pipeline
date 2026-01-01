@@ -1,7 +1,7 @@
-# otlpflare
+# frostbit
 
-[![Crates.io](https://img.shields.io/crates/v/otlpflare.svg)](https://crates.io/crates/otlpflare)
-[![License](https://img.shields.io/crates/l/otlpflare.svg)](https://github.com/smithclay/otlpflare/blob/main/LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/frostbit.svg)](https://crates.io/crates/frostbit)
+[![License](https://img.shields.io/crates/l/frostbit.svg)](https://github.com/smithclay/frostbit/blob/main/LICENSE)
 
 Experimental Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Catalog (Apache Iceberg).
 
@@ -48,7 +48,7 @@ Save the **Token value** for the next step.
 ### 2. Install CLI
 
 ```bash
-cargo install otlpflare
+cargo install frostbit
 ```
 
 ### 3. Create pipeline environment
@@ -57,14 +57,14 @@ The CLI creates the R2 bucket, streams, sinks, and pipelines for all signal type
 
 ```bash
 # Preview what would be created
-otlpflare plan prod
+frostbit plan prod
 
 # Create environment
-otlpflare create prod --token <R2_API_TOKEN> --output wrangler.toml
+frostbit create prod --token <R2_API_TOKEN> --output wrangler.toml
 ```
 
 This creates:
-- R2 bucket: `otlpflare-<env-name>` with Data Catalog enabled
+- R2 bucket: `frostbit-<env-name>` with Data Catalog enabled
 - Streams with schemas for each signal type
 - Sinks targeting R2 Data Catalog tables
 - Pipelines connecting streams to sinks
@@ -87,53 +87,53 @@ npx wrangler deploy
 
 ```bash
 # Check environment status
-otlpflare status prod
+frostbit status prod
 
 # Preview what would be created
-otlpflare plan prod
+frostbit plan prod
 
 # Query tables with DuckDB
-otlpflare query prod
+frostbit query prod
 
 # List known services
-otlpflare services --url https://your-worker.workers.dev
+frostbit services --url https://your-worker.workers.dev
 
 # Stream live logs
-otlpflare tail my-service logs
+frostbit tail my-service logs
 
 # Stream live traces
-otlpflare tail my-service traces
+frostbit tail my-service traces
 
 # Delete environment
-otlpflare destroy prod --force
+frostbit destroy prod --force
 ```
 
 ## Usage
 
 Send OTLP logs:
 ```bash
-curl -X POST https://otlpflare.<subdomain>.workers.dev/v1/logs \
+curl -X POST https://frostbit.<subdomain>.workers.dev/v1/logs \
   -H "Content-Type: application/json" \
   -d @sample-logs.json
 ```
 
 Send OTLP traces:
 ```bash
-curl -X POST https://otlpflare.<subdomain>.workers.dev/v1/traces \
+curl -X POST https://frostbit.<subdomain>.workers.dev/v1/traces \
   -H "Content-Type: application/json" \
   -d @sample-traces.json
 ```
 
 Send OTLP metrics (gauge and sum):
 ```bash
-curl -X POST https://otlpflare.<subdomain>.workers.dev/v1/metrics \
+curl -X POST https://frostbit.<subdomain>.workers.dev/v1/metrics \
   -H "Content-Type: application/json" \
   -d @sample-metrics.json
 ```
 
 Send Splunk HEC logs:
 ```bash
-curl -X POST https://otlpflare.<subdomain>.workers.dev/services/collector/event \
+curl -X POST https://frostbit.<subdomain>.workers.dev/services/collector/event \
   -H "Content-Type: application/json" \
   -d '{"time": 1702300000, "host": "web-1", "event": "User logged in"}'
 ```
@@ -145,17 +145,17 @@ Supports `Content-Type: application/x-protobuf` and `Content-Encoding: gzip`.
 Query aggregated stats (per-minute RED metrics):
 ```bash
 # Get log stats for a service
-curl https://otlpflare.<subdomain>.workers.dev/v1/services/my-service/logs/stats
+curl https://frostbit.<subdomain>.workers.dev/v1/services/my-service/logs/stats
 
 # Get trace stats with time filter (minutes since epoch)
-curl https://otlpflare.<subdomain>.workers.dev/v1/services/my-service/traces/stats?from=29000000&to=29000060
+curl https://frostbit.<subdomain>.workers.dev/v1/services/my-service/traces/stats?from=29000000&to=29000060
 ```
 
 Stats include count, error_count, and latency metrics (traces only).
 
 List all registered services:
 ```bash
-curl https://otlpflare.<subdomain>.workers.dev/v1/services
+curl https://frostbit.<subdomain>.workers.dev/v1/services
 ```
 
 Returns services with signal availability (has_logs, has_traces, has_metrics) and first_seen_at timestamp.
@@ -163,10 +163,10 @@ Returns services with signal availability (has_logs, has_traces, has_metrics) an
 Stream logs or traces in real-time via WebSocket:
 ```bash
 # Connect to live tail for a service's logs
-websocat wss://otlpflare.<subdomain>.workers.dev/v1/tail/my-service/logs
+websocat wss://frostbit.<subdomain>.workers.dev/v1/tail/my-service/logs
 
 # Connect to live tail for a service's traces
-websocat wss://otlpflare.<subdomain>.workers.dev/v1/tail/my-service/traces
+websocat wss://frostbit.<subdomain>.workers.dev/v1/tail/my-service/traces
 ```
 
 LiveTail uses WebSocket hibernation for zero cost when no clients are connected.

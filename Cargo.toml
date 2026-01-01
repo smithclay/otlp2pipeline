@@ -1,5 +1,5 @@
 [package]
-name = "otlpflare"
+name = "frostbit"
 version = "0.2.0"
 edition = "2021"
 
@@ -7,8 +7,8 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "otlpflare"
-path = "src/bin/otlpflare.rs"
+name = "frostbit"
+path = "src/bin/frostbit.rs"
 
 [dependencies]
 worker = "0.7"

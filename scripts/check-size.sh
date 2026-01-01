@@ -5,7 +5,7 @@ set -e
 echo "Building release WASM..."
 cargo build --release --target wasm32-unknown-unknown
 
-WASM_FILE="target/wasm32-unknown-unknown/release/otlpflare.wasm"
+WASM_FILE="target/wasm32-unknown-unknown/release/frostbit.wasm"
 
 if [ ! -f "$WASM_FILE" ]; then
     echo "ERROR: WASM file not found"

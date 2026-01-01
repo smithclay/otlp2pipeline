@@ -636,6 +636,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "frostbit"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.21.7",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "const-hex",
+ "dirs",
+ "flate2",
+ "futures",
+ "getrandom 0.3.4",
+ "gloo-timers",
+ "once_cell",
+ "opentelemetry-proto",
+ "ordered-float",
+ "prost",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tokio-tungstenite",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-web",
+ "urlencoding",
+ "vrl",
+ "worker",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1565,43 +1602,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7bb71e1b3fa6ca1c61f383464aaf2bb0e2f8e772a1f01d486832464de363b951"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "otlpflare"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "base64 0.21.7",
- "bytes",
- "chrono",
- "chrono-tz",
- "clap",
- "const-hex",
- "dirs",
- "flate2",
- "futures",
- "getrandom 0.3.4",
- "gloo-timers",
- "once_cell",
- "opentelemetry-proto",
- "ordered-float",
- "prost",
- "reqwest",
- "serde",
- "serde_json",
- "time",
- "tokio",
- "tokio-tungstenite",
- "toml",
- "tracing",
- "tracing-subscriber",
- "tracing-web",
- "urlencoding",
- "vrl",
- "worker",
 ]
 
 [[package]]
