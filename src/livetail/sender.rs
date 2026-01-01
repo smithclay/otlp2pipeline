@@ -174,7 +174,9 @@ impl WasmLiveTailSender {
 
         // Parse client count from response
         let count_str = response.text().await?;
-        let client_count = count_str.parse::<usize>().unwrap_or(0);
+        let client_count = count_str.parse::<usize>().map_err(|e| {
+            worker::Error::RustError(format!("Invalid client count '{}': {}", count_str, e))
+        })?;
 
         Ok(client_count)
     }
@@ -205,6 +207,10 @@ impl LiveTailSender for WasmLiveTailSender {
                         Some(true) => {
                             // Cached: has clients, send records
                             let res = self.send_to_do(&do_name, records).await;
+                            // Update cache with latest client count (detect disconnections)
+                            if let Ok(client_count) = &res {
+                                cache::update(&do_name, *client_count > 0);
+                            }
                             (do_name, count, res)
                         }
                         None => {
@@ -232,7 +238,7 @@ impl LiveTailSender for WasmLiveTailSender {
                     // No clients - records not sent (expected)
                 }
                 Err(e) => {
-                    tracing::debug!(do_name = %do_name, error = %e, "livetail send skipped");
+                    tracing::warn!(do_name = %do_name, error = %e, "livetail send failed");
                     result.errors.insert(do_name, e.to_string());
                 }
             }

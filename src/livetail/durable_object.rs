@@ -133,16 +133,30 @@ impl LiveTailDO {
                 let msg = WsMessage::Record {
                     data: record.clone(),
                 };
-                if let Ok(json) = serde_json::to_string(&msg) {
-                    let _ = ws.send_with_str(&json);
+                match serde_json::to_string(&msg) {
+                    Ok(json) => {
+                        if let Err(e) = ws.send_with_str(&json) {
+                            tracing::debug!(error = %e, "failed to send WebSocket message");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to serialize record for WebSocket");
+                    }
                 }
             }
 
             // Notify about dropped records
             if dropped > 0 {
                 let drop_msg = WsMessage::Dropped { count: dropped };
-                if let Ok(json) = serde_json::to_string(&drop_msg) {
-                    let _ = ws.send_with_str(&json);
+                match serde_json::to_string(&drop_msg) {
+                    Ok(json) => {
+                        if let Err(e) = ws.send_with_str(&json) {
+                            tracing::debug!(error = %e, "failed to send dropped notification");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to serialize dropped notification");
+                    }
                 }
             }
         }

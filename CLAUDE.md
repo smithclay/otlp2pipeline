@@ -59,7 +59,7 @@ HTTP POST /v1/{logs,traces}
 
 ### SignalHandler Trait
 
-Each telemetry signal type (logs, traces) implements `SignalHandler` in `src/handler.rs`:
+Each telemetry signal type (logs, traces) implements `SignalHandler` in `src/handler/mod.rs`:
 - `Signal` enum in `src/signal.rs` defines all supported types
 - Handler provides decode function and VRL program reference
 - Generic `handle_signal<H>` processes any handler type
