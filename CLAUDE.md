@@ -48,8 +48,9 @@ otlpflare status prod
 # Dry run (show what would be created)
 otlpflare plan staging
 
-# Tear down
+# Tear down (both forms work: with or without otlpflare- prefix)
 otlpflare destroy staging --force
+otlpflare destroy otlpflare-staging --force
 
 # Query data with DuckDB
 otlpflare query prod
@@ -63,6 +64,12 @@ otlpflare tail my-service logs --url https://my-worker.workers.dev
 # Stream live traces
 otlpflare tail api-gateway traces
 ```
+
+### Naming
+
+Environment names are normalized - the `otlpflare-` prefix is optional:
+- `prod` and `otlpflare-prod` both resolve to bucket `otlpflare-prod`
+- Naming logic lives in `src/cli/commands/naming.rs`
 
 ### Auth
 
@@ -123,7 +130,9 @@ VRL scripts in `vrl/*.vrl` are compiled at build time (`build.rs`):
 - `otlp_logs.vrl`: Flatten log records (15 fields)
 - `otlp_traces.vrl`: Flatten span records (24 fields)
 
-Custom VRL functions in `src/transform/functions.rs` (minimal set for WASM compatibility).
+Custom VRL functions in `src/transform/functions/` (minimal set for WASM compatibility):
+- `core.rs`: stdlib replacements (to_int, to_string, encode_json, get, is_empty, etc.)
+- `helpers.rs`: OTLP-specific helpers (string_or_null, nanos_to_millis, json_or_null, etc.)
 
 Scripts assign `._table` to route records to the correct pipeline.
 
