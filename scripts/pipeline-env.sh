@@ -413,6 +413,7 @@ PIPELINE_GAUGE = "${gauge_endpoint}"
 PIPELINE_SUM = "${sum_endpoint}"
 AGGREGATOR_ENABLED = "true"
 AGGREGATOR_RETENTION_MINUTES = "60"
+LIVETAIL_ENABLED = "true"
 
 [observability]
 enabled = true
@@ -432,6 +433,10 @@ class_name = "AggregatorDO"
 name = "REGISTRY"
 class_name = "RegistryDO"
 
+[[durable_objects.bindings]]
+name = "LIVETAIL"
+class_name = "LiveTailDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AggregatorDO"]
@@ -439,6 +444,10 @@ new_sqlite_classes = ["AggregatorDO"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["RegistryDO"]
+
+[[migrations]]
+tag = "v3"
+new_classes = ["LiveTailDO"]
 EOF
 
     echo "    Created: wrangler.toml"

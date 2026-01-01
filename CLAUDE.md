@@ -51,14 +51,15 @@ HTTP POST /v1/{logs,traces}
         → decompress_if_gzipped
         → H::decode (OTLP → VRL Values)
         → VrlTransformer::transform_batch (run VRL program)
-        → Dual-write:
+        → Triple-write:
             → PipelineSender::send_all (required - forward to Cloudflare Pipeline)
             → AggregatorSender::send_to_aggregator (best-effort - RED metrics)
+            → LiveTailSender::send_to_livetail (best-effort - WebSocket streaming)
 ```
 
 ### SignalHandler Trait
 
-Each telemetry signal type (logs, traces) implements `SignalHandler` in `src/handler.rs`:
+Each telemetry signal type (logs, traces) implements `SignalHandler` in `src/handler/mod.rs`:
 - `Signal` enum in `src/signal.rs` defines all supported types
 - Handler provides decode function and VRL program reference
 - Generic `handle_signal<H>` processes any handler type
@@ -117,6 +118,18 @@ Singleton Durable Object tracking all services seen:
 Service validation: alphanumeric + hyphens + underscores + dots, max 128 chars.
 
 Query via `GET /v1/services` (returns all services with signal availability).
+
+### Livetail (`src/livetail/`)
+
+Durable Objects for real-time WebSocket streaming of logs and traces:
+
+- `durable_object.rs`: `LiveTailDO` with WebSocket hibernation per {service}:{signal}
+- `cache.rs`: Worker-local cache with 10s TTL to track which DOs have clients
+- `sender.rs`: `LiveTailSender` trait for best-effort broadcast
+
+WebSocket endpoint: `GET /v1/tail/:service/:signal` upgrades to WebSocket.
+Workers fan-out transformed records to LiveTailDOs, which broadcast to connected clients.
+Hibernation ensures zero cost when no clients are connected.
 
 ### Pipeline Client (`src/pipeline/`)
 
