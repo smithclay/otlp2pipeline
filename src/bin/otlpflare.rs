@@ -12,6 +12,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Plan(args) => commands::execute_plan(args).await?,
         Commands::Query(args) => commands::execute_query(args).await?,
         Commands::Services(args) => commands::execute_services(args).await?,
+        Commands::Tail(_args) => todo!("tail command not yet implemented"),
     }
 
     Ok(())

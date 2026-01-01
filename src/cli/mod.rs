@@ -27,6 +27,8 @@ pub enum Commands {
     Query(QueryArgs),
     /// List known services
     Services(ServicesArgs),
+    /// Stream live telemetry
+    Tail(TailArgs),
 }
 
 #[derive(clap::Args)]
@@ -97,6 +99,19 @@ pub struct QueryArgs {
 
 #[derive(clap::Args)]
 pub struct ServicesArgs {
+    /// Worker URL (falls back to wrangler.toml)
+    #[arg(long)]
+    pub url: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct TailArgs {
+    /// Service name to tail
+    pub service: String,
+
+    /// Signal type (logs or traces)
+    pub signal: String,
+
     /// Worker URL (falls back to wrangler.toml)
     #[arg(long)]
     pub url: Option<String>,
