@@ -11,6 +11,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Status(args) => commands::execute_status(args).await?,
         Commands::Plan(args) => commands::execute_plan(args).await?,
         Commands::Query(args) => commands::execute_query(args).await?,
+        Commands::Services(args) => commands::execute_services(args).await?,
     }
 
     Ok(())

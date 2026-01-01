@@ -25,6 +25,8 @@ pub enum Commands {
     Plan(PlanArgs),
     /// Start a DuckDB query session
     Query(QueryArgs),
+    /// List known services
+    Services(ServicesArgs),
 }
 
 #[derive(clap::Args)]
@@ -91,4 +93,11 @@ pub struct PlanArgs {
 pub struct QueryArgs {
     /// Environment name
     pub name: String,
+}
+
+#[derive(clap::Args)]
+pub struct ServicesArgs {
+    /// Worker URL (falls back to wrangler.toml)
+    #[arg(long)]
+    pub url: Option<String>,
 }
