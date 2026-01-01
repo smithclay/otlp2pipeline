@@ -1,23 +1,8 @@
-// src/transform/functions.rs
-//! Custom VRL stdlib functions for WASM compatibility
+//! Core VRL stdlib replacements for WASM compatibility
 //! These replace VRL's stdlib which depends on zstd (C code)
 
 use vrl::compiler::prelude::*;
 use vrl::value::Value;
-
-/// Get all custom functions
-pub fn all() -> Vec<Box<dyn Function>> {
-    vec![
-        Box::new(ToInt),
-        Box::new(ToString_),
-        Box::new(EncodeJson),
-        Box::new(Get),
-        Box::new(IsEmpty),
-        Box::new(IsObject),
-        Box::new(IsArray),
-        Box::new(Floor),
-    ]
-}
 
 // --- to_int ---
 #[derive(Clone, Copy, Debug)]
@@ -478,8 +463,20 @@ impl FunctionExpression for FloorFn {
         match value {
             Value::Integer(i) => Ok(Value::Integer(i)),
             Value::Float(f) => {
-                let floored = f.into_inner().floor();
-                // Convert to integer after flooring
+                let float_val = f.into_inner();
+                if float_val.is_nan() {
+                    return Err("cannot floor NaN".into());
+                }
+                if float_val.is_infinite() {
+                    return Err("cannot floor infinity".into());
+                }
+                let floored = float_val.floor();
+                // i64::MAX cannot be exactly represented as f64; use safe bounds
+                const MAX_SAFE_FLOAT: f64 = 9_223_372_036_854_774_784.0;
+                const MIN_SAFE_FLOAT: f64 = i64::MIN as f64;
+                if !(MIN_SAFE_FLOAT..=MAX_SAFE_FLOAT).contains(&floored) {
+                    return Err(format!("floored value {} is out of range for i64", floored).into());
+                }
                 Ok(Value::Integer(floored as i64))
             }
             _ => Err("floor requires a numeric value".into()),

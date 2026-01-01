@@ -4,8 +4,8 @@
 # timestamp: timestamp, required, "Start time in milliseconds"
 # end_timestamp: int64, required, "End time in milliseconds"
 # duration: int64, required, "Duration in milliseconds"
-# trace_id: string, required, "Trace ID hex string"
-# span_id: string, required, "Span ID hex string"
+# trace_id: string, "Trace ID hex string (null if empty)"
+# span_id: string, "Span ID hex string (null if empty)"
 # parent_span_id: string, "Parent span ID hex string"
 # trace_state: string, "W3C trace state"
 # service_name: string, required, "Service name from resource attributes"
@@ -28,150 +28,49 @@
 # flags: int32, "Trace flags"
 # @end
 
-# vrl/otlp_traces.vrl
-# OTLP traces -> flat trace event
-# Uses custom WASM-compatible functions (not VRL stdlib)
+# vrl/otlp_traces.vrl - OTLP traces -> flat span event
 
-# Convert nanoseconds to milliseconds (must be integer for schema)
-.timestamp = to_int(.start_time_unix_nano) ?? 0
-.timestamp = floor(.timestamp / 1000000) ?? 0
+# Timestamps (nanoseconds -> milliseconds)
+.timestamp = nanos_to_millis(.start_time_unix_nano)
+.end_timestamp = nanos_to_millis(.end_time_unix_nano)
+.duration = nanos_to_millis(.duration_ns)
 
-.end_timestamp = to_int(.end_time_unix_nano) ?? 0
-.end_timestamp = floor(.end_timestamp / 1000000) ?? 0
+# Service info from resource attributes
+.service_name = get_attr(.resource.attributes, "service.name", "unknown")
+.service_namespace = get_attr(.resource.attributes, "service.namespace")
+.service_instance_id = get_attr(.resource.attributes, "service.instance.id")
 
-# Duration in milliseconds (must be integer for schema)
-.duration = to_int(.duration_ns) ?? 0
-.duration = floor(.duration / 1000000) ?? 0
+# IDs - null if empty
+.trace_id = string_or_null(.trace_id)
+.span_id = string_or_null(.span_id)
+.parent_span_id = string_or_null(.parent_span_id)
+.trace_state = string_or_null(.trace_state)
 
-# Extract service info from resource attributes
-# Use explicit null check since get() returns null for missing keys
-.service_name_raw, err = get(.resource.attributes, ["service.name"])
-if err != null || .service_name_raw == null {
-    .service_name = "unknown"
-} else {
-    .service_name = .service_name_raw
-}
-.service_name_raw = null
-
-.service_namespace = get(.resource.attributes, ["service.namespace"]) ?? null
-.service_instance_id = get(.resource.attributes, ["service.instance.id"]) ?? null
-
-# IDs - keep as strings, null if empty
-.trace_id_str, err = to_string(.trace_id)
-if err == null && .trace_id_str != "" {
-    .trace_id = .trace_id_str
-} else {
-    .trace_id = null
-}
-
-.span_id_str, err = to_string(.span_id)
-if err == null && .span_id_str != "" {
-    .span_id = .span_id_str
-} else {
-    .span_id = null
-}
-
-.parent_span_id_str, err = to_string(.parent_span_id)
-if err == null && .parent_span_id_str != "" {
-    .parent_span_id = .parent_span_id_str
-} else {
-    .parent_span_id = null
-}
-
-# Span name
-.span_name, err = to_string(.name)
-if err != null {
-    .span_name = ""
-}
-
-# Span kind (0=unspecified, 1=internal, 2=server, 3=client, 4=producer, 5=consumer)
-if .kind == null {
-    .span_kind = 0
-} else {
-    .span_kind = to_int(.kind) ?? 0
-}
-
-# Trace state
-.trace_state_str, err = to_string(.trace_state)
-if err == null && .trace_state_str != "" {
-    .trace_state = .trace_state_str
-} else {
-    .trace_state = null
-}
+# Span name and kind
+.span_name = string_or_null(.name)
+if .span_name == null { .span_name = "" }
+.span_kind = int_or_default(.kind, 0)
 
 # Status
-if .status_code == null {
-    .status_code = 0
-}
+.status_code = int_or_default(.status_code, 0)
+.status_message = string_or_null(.status_message)
 
-.status_message_str, err = to_string(.status_message)
-if err == null && .status_message_str != "" {
-    .status_message = .status_message_str
-} else {
-    .status_message = null
-}
+# Attribute blobs as JSON
+.resource_attributes = json_or_null(.resource.attributes)
+.scope_name = string_or_null(.scope.name)
+.scope_version = string_or_null(.scope.version)
+.scope_attributes = json_or_null(.scope.attributes)
+.span_attributes = json_or_null(.attributes)
+.events_json = json_or_null(.events)
+.links_json = json_or_null(.links)
 
-# Encode attribute blobs as JSON
-if !is_empty(.resource.attributes) {
-    .resource_attributes = encode_json(.resource.attributes)
-} else {
-    .resource_attributes = null
-}
+# Dropped counts and flags
+.dropped_attributes_count = int_or_default(.dropped_attributes_count, 0)
+.dropped_events_count = int_or_default(.dropped_events_count, 0)
+.dropped_links_count = int_or_default(.dropped_links_count, 0)
+.flags = int_or_default(.flags, 0)
 
-.scope_name_str, err = to_string(.scope.name)
-if err == null && .scope_name_str != "" {
-    .scope_name = .scope_name_str
-} else {
-    .scope_name = null
-}
-
-.scope_version_str, err = to_string(.scope.version)
-if err == null && .scope_version_str != "" {
-    .scope_version = .scope_version_str
-} else {
-    .scope_version = null
-}
-
-if !is_empty(.scope.attributes) {
-    .scope_attributes = encode_json(.scope.attributes)
-} else {
-    .scope_attributes = null
-}
-
-if !is_empty(.attributes) {
-    .span_attributes = encode_json(.attributes)
-} else {
-    .span_attributes = null
-}
-
-# Encode events as JSON array
-if !is_empty(.events) {
-    .events_json = encode_json(.events)
-} else {
-    .events_json = null
-}
-
-# Encode links as JSON array
-if !is_empty(.links) {
-    .links_json = encode_json(.links)
-} else {
-    .links_json = null
-}
-
-# Extract dropped counts and flags
-.dropped_attributes_count = to_int(.dropped_attributes_count) ?? 0
-.dropped_events_count = to_int(.dropped_events_count) ?? 0
-.dropped_links_count = to_int(.dropped_links_count) ?? 0
-.flags = to_int(.flags) ?? 0
-
-# Clean up temporary and nested structures
-.trace_id_str = null
-.span_id_str = null
-.parent_span_id_str = null
-.trace_state_str = null
-.status_message_str = null
-.scope_name_str = null
-.scope_version_str = null
+# Clean up nested structures
 .name = null
 .kind = null
 .start_time_unix_nano = null
@@ -183,5 +82,5 @@ if !is_empty(.links) {
 .events = null
 .links = null
 
-# Set routing table
+# Routing
 ._table = "traces"

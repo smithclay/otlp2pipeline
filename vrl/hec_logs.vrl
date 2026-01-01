@@ -18,60 +18,35 @@
 # service_instance_id: string, "Always null for HEC"
 # @end
 
-# Timestamps are already converted to milliseconds by decoder
-# .timestamp and .observed_timestamp are set by decoder
+# vrl/hec_logs.vrl - Splunk HEC logs -> flat log event
+# Timestamps (.timestamp, .observed_timestamp) and body are set by decoder
 
 # Service name from host (HEC doesn't have service concept)
-if .host != null {
-    .service_name = .host
-} else {
-    .service_name = "unknown"
-}
+.service_name = string_or_null(.host)
+if .service_name == null { .service_name = "unknown" }
 
 # HEC doesn't have severity - default to UNSPECIFIED
 .severity_number = 0
 .severity_text = ""
 
-# Body is already set by decoder
-
 # Build resource_attributes from HEC metadata
 .resource_attributes = {}
-if .host != null {
-    .resource_attributes."host.name" = .host
-}
-if .source != null {
-    .resource_attributes."splunk.source" = .source
-}
-if .sourcetype != null {
-    .resource_attributes."splunk.sourcetype" = .sourcetype
-}
+if .host != null { .resource_attributes."host.name" = .host }
+if .source != null { .resource_attributes."splunk.source" = .source }
+if .sourcetype != null { .resource_attributes."splunk.sourcetype" = .sourcetype }
+.resource_attributes = json_or_null(.resource_attributes)
 
-# Encode as JSON if not empty
-if !is_empty(.resource_attributes) {
-    .resource_attributes = encode_json(.resource_attributes)
-} else {
-    .resource_attributes = null
-}
-
-# HEC doesn't have scope concept
+# HEC doesn't have these OTLP concepts
 .scope_name = null
 .scope_version = null
 .scope_attributes = null
-
-# HEC doesn't have trace context
 .trace_id = null
 .span_id = null
-
-# HEC doesn't have service namespace/instance
 .service_namespace = null
 .service_instance_id = null
 
 # Fields become log_attributes
-if .fields != null && !is_empty(.fields) {
-    .log_attributes = encode_json(.fields)
-} else {
-    .log_attributes = null
-}
+.log_attributes = json_or_null(.fields)
 
 # Clean up intermediate fields
 .host = null
@@ -79,5 +54,5 @@ if .fields != null && !is_empty(.fields) {
 .sourcetype = null
 .fields = null
 
-# Set routing table
+# Routing
 ._table = "logs"

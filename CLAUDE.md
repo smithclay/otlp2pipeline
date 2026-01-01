@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-# Build for WASM (Cloudflare Workers)
-cargo build --target wasm32-unknown-unknown --release
+# Build for WASM (Cloudflare Workers) - use --lib to skip CLI binary
+cargo build --lib --target wasm32-unknown-unknown --release
 
 # Build for native (tests)
 cargo build
@@ -27,6 +27,57 @@ npx wrangler deploy
 # Local development (note: secrets not available without .dev.vars)
 npx wrangler dev
 ```
+
+## CLI Tool
+
+The `otlpflare` CLI manages Cloudflare infrastructure (R2, Pipelines). Install with:
+
+```bash
+cargo install --path .
+```
+
+### Commands
+
+```bash
+# Create environment (bucket, streams, sinks, pipelines)
+otlpflare create prod --token $R2_TOKEN --output wrangler.toml
+
+# Check status
+otlpflare status prod
+
+# Dry run (show what would be created)
+otlpflare plan staging
+
+# Tear down (both forms work: with or without otlpflare- prefix)
+otlpflare destroy staging --force
+otlpflare destroy otlpflare-staging --force
+
+# Query data with DuckDB
+otlpflare query prod
+
+# List known services
+otlpflare services --url https://my-worker.workers.dev
+
+# Stream live logs for a service
+otlpflare tail my-service logs --url https://my-worker.workers.dev
+
+# Stream live traces
+otlpflare tail api-gateway traces
+```
+
+### Naming
+
+Environment names are normalized - the `otlpflare-` prefix is optional:
+- `prod` and `otlpflare-prod` both resolve to bucket `otlpflare-prod`
+- Naming logic lives in `src/cli/commands/naming.rs`
+
+### Auth
+
+The CLI resolves credentials in order:
+1. `CF_API_TOKEN` environment variable
+2. Wrangler OAuth token from `~/.wrangler/config/default.toml`
+
+Account ID is auto-detected from the API, or set `CF_ACCOUNT_ID` explicitly.
 
 ## Architecture
 
@@ -79,7 +130,9 @@ VRL scripts in `vrl/*.vrl` are compiled at build time (`build.rs`):
 - `otlp_logs.vrl`: Flatten log records (15 fields)
 - `otlp_traces.vrl`: Flatten span records (24 fields)
 
-Custom VRL functions in `src/transform/functions.rs` (minimal set for WASM compatibility).
+Custom VRL functions in `src/transform/functions/` (minimal set for WASM compatibility):
+- `core.rs`: stdlib replacements (to_int, to_string, encode_json, get, is_empty, etc.)
+- `helpers.rs`: OTLP-specific helpers (string_or_null, nanos_to_millis, json_or_null, etc.)
 
 Scripts assign `._table` to route records to the correct pipeline.
 

@@ -1,5 +1,8 @@
 # otlpflare
 
+[![Crates.io](https://img.shields.io/crates/v/otlpflare.svg)](https://crates.io/crates/otlpflare)
+[![License](https://img.shields.io/crates/l/otlpflare.svg)](https://github.com/smithclay/otlpflare/blob/main/LICENSE)
+
 Experimental Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Catalog (Apache Iceberg).
 
 ## What it does
@@ -7,15 +10,18 @@ Experimental Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Cat
 Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transforms them via [VRL](https://crates.io/crates/vrl) and forwards to [Cloudflare Pipelines](https://developers.cloudflare.com/pipelines/) for storage in [R2 Data Catalog](https://developers.cloudflare.com/r2/data-catalog/) tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
 ```mermaid
-flowchart LR
-    subgraph Ingest["Ingest"]
-        OTLP[OpenTelemetry metrics, logs, traces] --> W[Cloudflare Worker]
+flowchart TB
+    subgraph Ingest["Ingest + Store"]
+        OTLP[OTLP] --> W[Worker]
         HEC[Splunk HEC] --> W
-        W -->|transform + route| P[Cloudflare Pipelines]
-        P --> R2[(R2 Data Catalog / Iceberg)]
-        W -->|aggregate| ADO[("AggregatorDO: per-service RED metrics")]
-        W -->|register| RDO[("RegistryDO: service discovery")]
-        W -->|stream| LDO[("LiveTailDO: real-time WebSocket")]
+        W --> P[Pipelines]
+        W --> DOs[(Durable Objects)]
+        P --> R2[(R2 Iceberg)]
+    end
+
+    subgraph Query["Query"]
+        CLI[CLI / WebSocket] -->|real-time| W
+        DuckDB[🦆 DuckDB] -->|batch| R2
     end
 ```
 
@@ -39,17 +45,22 @@ Go to **[R2 API Tokens](https://dash.cloudflare.com/?to=/:account/r2/api-tokens)
 
 Save the **Token value** for the next step.
 
-### 2. Create pipeline environment
-
-The setup script creates the R2 bucket, streams, sinks, and pipelines for all signal types (logs, traces, gauge, sum):
+### 2. Install CLI
 
 ```bash
-./scripts/pipeline-env.sh create <env-name> --token <R2_API_TOKEN>
+cargo install otlpflare
 ```
 
-For example:
+### 3. Create pipeline environment
+
+The CLI creates the R2 bucket, streams, sinks, and pipelines for all signal types:
+
 ```bash
-./scripts/pipeline-env.sh create prod --token r2_xxxxx
+# Preview what would be created
+otlpflare plan prod
+
+# Create environment
+otlpflare create prod --token <R2_API_TOKEN> --output wrangler.toml
 ```
 
 This creates:
@@ -59,35 +70,42 @@ This creates:
 - Pipelines connecting streams to sinks
 - Catalog maintenance (compaction + snapshot expiration)
 
-The script generates a complete `wrangler.toml` with the stream endpoints configured.
-
-### 3. Set auth secret
+### 4. Set auth secret
 
 Create a Cloudflare API token with `Pipelines: Edit` permission:
 ```bash
 npx wrangler secret put PIPELINE_AUTH_TOKEN
 ```
 
-### 4. Deploy
+### 5. Deploy
 
 ```bash
 npx wrangler deploy
 ```
 
-### Other commands
+### CLI commands
 
 ```bash
 # Check environment status
-./scripts/pipeline-env.sh status <env-name>
+otlpflare status prod
 
 # Preview what would be created
-./scripts/pipeline-env.sh dry-run <env-name>
+otlpflare plan prod
 
 # Query tables with DuckDB
-./scripts/pipeline-env.sh query <env-name>
+otlpflare query prod
+
+# List known services
+otlpflare services --url https://your-worker.workers.dev
+
+# Stream live logs
+otlpflare tail my-service logs
+
+# Stream live traces
+otlpflare tail my-service traces
 
 # Delete environment
-./scripts/pipeline-env.sh delete <env-name>
+otlpflare destroy prod --force
 ```
 
 ## Usage
