@@ -9,13 +9,24 @@ Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transfor
 ```mermaid
 flowchart LR
     subgraph Ingest["Ingest"]
-        OTLP[OpenTelemetry metrics, logs, traces] --> W[Cloudflare Worker]
+        OTLP[OTLP metrics/logs/traces] --> W[Cloudflare Worker]
         HEC[Splunk HEC] --> W
-        W -->|transform + route| P[Cloudflare Pipelines]
-        P --> R2[(R2 Data Catalog / Iceberg)]
-        W -->|aggregate| ADO[("AggregatorDO: per-service RED metrics")]
-        W -->|register| RDO[("RegistryDO: service discovery")]
-        W -->|stream| LDO[("LiveTailDO: real-time WebSocket")]
+    end
+
+    subgraph Store["Store"]
+        W -->|POST /v1/logs,traces,metrics| P[Cloudflare Pipelines]
+        P --> R2[(R2 Data Catalog)]
+        W --> ADO[("AggregatorDO")]
+        W --> RDO[("RegistryDO")]
+        W --> LDO[("LiveTailDO")]
+    end
+
+    subgraph Query["Query"]
+        DuckDB[🦆 DuckDB / Iceberg clients] -->|SELECT * FROM logs| R2
+        CLI[otlpflare CLI] -->|services, tail| W
+        API[curl / API] -->|GET /v1/services/:svc/:signal/stats| ADO
+        API -->|GET /v1/services| RDO
+        WS[WebSocket] -->|GET /v1/tail/:svc/:signal| LDO
     end
 ```
 
