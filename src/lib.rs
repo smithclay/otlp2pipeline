@@ -21,7 +21,7 @@ pub use signal::Signal;
 // Re-export tracing for use in other modules
 pub use tracing;
 
-#[cfg(all(feature = "cli", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub mod cli;
 
 // Re-export for tests

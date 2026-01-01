@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-# Build for WASM (Cloudflare Workers)
-cargo build --target wasm32-unknown-unknown --release
+# Build for WASM (Cloudflare Workers) - use --lib to skip CLI binary
+cargo build --lib --target wasm32-unknown-unknown --release
 
 # Build for native (tests)
 cargo build
