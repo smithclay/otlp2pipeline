@@ -10,9 +10,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Destroy(args) => commands::execute_destroy(args).await?,
         Commands::Status(args) => commands::execute_status(args).await?,
         Commands::Plan(args) => commands::execute_plan(args).await?,
-        Commands::Query(args) => {
-            println!("Would start query session for: {}", args.name);
-        }
+        Commands::Query(args) => commands::execute_query(args).await?,
     }
 
     Ok(())
