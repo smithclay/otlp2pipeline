@@ -36,9 +36,11 @@ pub struct CreateArgs {
     /// Environment name
     pub name: String,
 
-    /// R2 API token for catalog operations
-    #[arg(long)]
-    pub token: String,
+    /// R2 API token (create at dash.cloudflare.com > R2 > Manage R2 API Tokens)
+    ///
+    /// Required permissions: Admin Read & Write. This is separate from CF_API_TOKEN.
+    #[arg(long = "r2-token", env = "R2_API_TOKEN")]
+    pub r2_token: String,
 
     /// Path to write wrangler.toml (stdout if not specified)
     #[arg(long)]

@@ -79,7 +79,9 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     // Step 3: Set service credential
     eprintln!("\n==> Setting service credential...");
-    client.set_catalog_credential(&bucket, &args.token).await?;
+    client
+        .set_catalog_credential(&bucket, &args.r2_token)
+        .await?;
     eprintln!("    Set");
 
     // Step 4: Configure maintenance
@@ -123,7 +125,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("    Creating: {}", name);
 
         match client
-            .create_sink(&name, &bucket, signal.table, &args.token)
+            .create_sink(&name, &bucket, signal.table, &args.r2_token)
             .await?
         {
             Some(_) => eprintln!("      Created"),
