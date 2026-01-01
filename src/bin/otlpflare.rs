@@ -8,9 +8,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Create(args) => commands::execute_create(args).await?,
         Commands::Destroy(args) => commands::execute_destroy(args).await?,
-        Commands::Status(args) => {
-            println!("Would show status for: {}", args.name);
-        }
+        Commands::Status(args) => commands::execute_status(args).await?,
         Commands::Plan(args) => {
             println!("Would show plan for: {}", args.name);
         }
