@@ -1,3 +1,5 @@
+pub mod auth;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]

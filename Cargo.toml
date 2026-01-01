@@ -52,6 +52,7 @@ clap = { version = "4", features = ["derive", "env"] }
 dirs = "5"
 toml = "0.8"
 anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
