@@ -9,6 +9,7 @@ pub mod aggregator;
 mod convert;
 mod decode;
 mod handler;
+pub mod livetail;
 mod pipeline;
 pub mod registry;
 mod schema;

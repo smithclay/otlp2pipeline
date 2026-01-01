@@ -1,11 +1,19 @@
 //! LiveTail: WebSocket streaming of logs and traces to browsers.
 
 mod cache;
-mod durable_object;
 mod sender;
 
-pub use durable_object::LiveTailDO;
+#[cfg(target_arch = "wasm32")]
+mod durable_object;
+
 pub use sender::{LiveTailSendResult, LiveTailSender, NativeLiveTailSender};
 
 #[cfg(target_arch = "wasm32")]
+pub use durable_object::LiveTailDO;
+
+#[cfg(target_arch = "wasm32")]
 pub use sender::WasmLiveTailSender;
+
+// Native placeholder for tests
+#[cfg(not(target_arch = "wasm32"))]
+pub struct LiveTailDO;
