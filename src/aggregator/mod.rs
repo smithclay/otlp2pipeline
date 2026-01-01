@@ -18,7 +18,7 @@ pub use stats::{LogAggregates, TraceAggregates};
 pub use durable_object::AggregatorDO;
 
 #[cfg(target_arch = "wasm32")]
-pub use sender::{AggregatorSender, WasmAggregatorSender};
+pub use sender::{build_do_name, get_service_name, AggregatorSender, WasmAggregatorSender};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use sender::{AggregatorSender, NativeAggregatorSender};
