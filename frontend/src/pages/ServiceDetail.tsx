@@ -1,14 +1,172 @@
-import { useParams } from 'react-router-dom';
+import { useState, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { useCredentials } from '../hooks/useCredentials';
+import { useStats, TIME_RANGES, TimeRange } from '../hooks/useStats';
+import { TimeRangePicker } from '../components/TimeRangePicker';
+import { RedChart, ChartDataPoint } from '../components/RedChart';
+
+function LoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-500" />
+    </div>
+  );
+}
+
+interface ErrorMessageProps {
+  message: string;
+  onRetry: () => void;
+}
+
+function ErrorMessage({ message, onRetry }: ErrorMessageProps) {
+  return (
+    <div className="rounded-lg border border-red-900 bg-red-950 p-4">
+      <p className="text-red-400">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-3 rounded-md bg-red-900 px-3 py-1.5 text-sm text-red-200 hover:bg-red-800 transition-colors"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
 
 export function ServiceDetail() {
   const { name } = useParams<{ name: string }>();
+  const { credentials } = useCredentials();
+  const workerUrl = credentials?.workerUrl ?? null;
+
+  // Default to last 1 hour
+  const [timeRange, setTimeRange] = useState<TimeRange>(TIME_RANGES[1]);
+
+  const { logStats, traceStats, loading, error, refetch } = useStats(
+    workerUrl,
+    name ?? '',
+    timeRange
+  );
+
+  // Transform stats data for Rate chart (logs and traces count over time)
+  const rateData = useMemo<ChartDataPoint[]>(() => {
+    const minuteMap = new Map<string, ChartDataPoint>();
+
+    // Add log counts
+    for (const stat of logStats) {
+      const existing = minuteMap.get(stat.minute);
+      if (existing) {
+        existing.logs = stat.count;
+      } else {
+        minuteMap.set(stat.minute, { minute: stat.minute, logs: stat.count });
+      }
+    }
+
+    // Add trace counts
+    for (const stat of traceStats) {
+      const existing = minuteMap.get(stat.minute);
+      if (existing) {
+        existing.traces = stat.count;
+      } else {
+        minuteMap.set(stat.minute, { minute: stat.minute, traces: stat.count });
+      }
+    }
+
+    // Sort by minute
+    return Array.from(minuteMap.values()).sort(
+      (a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime()
+    );
+  }, [logStats, traceStats]);
+
+  // Transform stats data for Error Rate chart
+  const errorData = useMemo<ChartDataPoint[]>(() => {
+    const minuteMap = new Map<string, ChartDataPoint>();
+
+    // Add log error counts
+    for (const stat of logStats) {
+      const existing = minuteMap.get(stat.minute);
+      if (existing) {
+        existing.logs = stat.error_count;
+      } else {
+        minuteMap.set(stat.minute, { minute: stat.minute, logs: stat.error_count });
+      }
+    }
+
+    // Add trace error counts
+    for (const stat of traceStats) {
+      const existing = minuteMap.get(stat.minute);
+      if (existing) {
+        existing.traces = stat.error_count;
+      } else {
+        minuteMap.set(stat.minute, { minute: stat.minute, traces: stat.error_count });
+      }
+    }
+
+    // Sort by minute
+    return Array.from(minuteMap.values()).sort(
+      (a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime()
+    );
+  }, [logStats, traceStats]);
+
+  // Transform stats data for Latency chart (traces only, average latency)
+  const latencyData = useMemo<ChartDataPoint[]>(() => {
+    return traceStats
+      .map((stat) => {
+        // Calculate average latency in milliseconds
+        const avgLatencyMs = stat.count > 0 ? stat.latency_sum_us / stat.count / 1000 : 0;
+        return {
+          minute: stat.minute,
+          traces: Math.round(avgLatencyMs * 100) / 100, // Round to 2 decimal places
+        };
+      })
+      .sort((a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime());
+  }, [traceStats]);
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-800 p-6">
-      <h1 className="text-2xl font-semibold text-slate-100">
-        Service: <span className="text-cyan-500">{name}</span>
-      </h1>
-      <p className="mt-2 text-slate-400">Service details will be displayed here.</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link
+            to="/"
+            className="text-slate-400 hover:text-slate-100 transition-colors"
+          >
+            Services
+          </Link>
+          <span className="text-slate-600">/</span>
+          <h1 className="text-xl font-semibold text-cyan-500">{name}</h1>
+        </div>
+        <TimeRangePicker value={timeRange} onChange={setTimeRange} />
+      </div>
+
+      {/* Content */}
+      {loading && <LoadingSpinner />}
+
+      {error && <ErrorMessage message={error} onRetry={refetch} />}
+
+      {!loading && !error && (
+        <div className="space-y-4">
+          {/* Request Rate Chart */}
+          <RedChart
+            title="Request Rate"
+            data={rateData}
+            yLabel="Requests per minute"
+          />
+
+          {/* Error Rate Chart */}
+          <RedChart
+            title="Error Rate"
+            data={errorData}
+            yLabel="Errors per minute"
+          />
+
+          {/* Latency Chart (traces only) */}
+          <RedChart
+            title="Latency (traces only)"
+            data={latencyData}
+            yLabel="Average latency (ms)"
+          />
+        </div>
+      )}
     </div>
   );
 }
