@@ -15,6 +15,24 @@ use crate::registry::{RegistrySender, WasmRegistrySender};
 use crate::signal::Signal;
 use crate::transform::init_programs;
 
+/// Add CORS headers to a response.
+fn with_cors(mut response: Response) -> Result<Response> {
+    let headers = response.headers_mut();
+    headers.set("Access-Control-Allow-Origin", "*")?;
+    headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")?;
+    headers.set(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Accept, Content-Encoding",
+    )?;
+    headers.set("Access-Control-Max-Age", "86400")?;
+    Ok(response)
+}
+
+/// Handle CORS preflight OPTIONS requests.
+fn cors_preflight() -> Result<Response> {
+    with_cors(Response::empty()?.with_status(204))
+}
+
 /// Initialize tracing and VRL programs for Cloudflare Workers.
 /// Must be called via #[event(start)] to run once on worker initialization.
 #[event(start)]
@@ -43,7 +61,12 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
     let method = req.method();
     let path = req.path();
 
-    match (method, path.as_str()) {
+    // Handle CORS preflight for all API endpoints
+    if method == Method::Options {
+        return cors_preflight();
+    }
+
+    let response = match (method, path.as_str()) {
         (Method::Post, "/v1/logs") => handle_logs_worker(req, env, ctx).await,
         (Method::Post, "/v1/traces") => handle_traces_worker(req, env, ctx).await,
         (Method::Post, "/v1/metrics") => handle_metrics_worker(req, env, ctx).await,
@@ -59,7 +82,10 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
             handle_tail_upgrade(path, req, env).await
         }
         _ => Response::error("Not Found", 404),
-    }
+    };
+
+    // Add CORS headers to all responses
+    response.and_then(with_cors)
 }
 
 async fn handle_signal_worker<H: handler::SignalHandler>(
