@@ -86,9 +86,10 @@ export function ServiceDetail() {
   // Transform stats data for Latency chart (traces only, average latency)
   const latencyData = useMemo<ChartDataPoint[]>(() => {
     return traceStats
+      .filter((stat) => stat.latency_sum_us !== undefined) // Only include stats with latency data
       .map((stat) => {
         // Calculate average latency in milliseconds
-        const avgLatencyMs = stat.count > 0 ? stat.latency_sum_us / stat.count / 1000 : 0;
+        const avgLatencyMs = stat.count > 0 ? (stat.latency_sum_us ?? 0) / stat.count / 1000 : 0;
         return {
           minute: stat.minute,
           traces: Math.round(avgLatencyMs * 100) / 100, // Round to 2 decimal places

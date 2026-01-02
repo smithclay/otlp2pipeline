@@ -16,8 +16,9 @@ use crate::signal::Signal;
 use crate::transform::init_programs;
 
 /// Add CORS headers to a response.
-fn with_cors(mut response: Response) -> Result<Response> {
-    let headers = response.headers_mut();
+/// Creates a new response to handle immutable headers from Durable Objects.
+fn with_cors(response: Response) -> Result<Response> {
+    let headers = Headers::new();
     headers.set("Access-Control-Allow-Origin", "*")?;
     headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")?;
     headers.set(
@@ -25,7 +26,18 @@ fn with_cors(mut response: Response) -> Result<Response> {
         "Content-Type, Accept, Content-Encoding",
     )?;
     headers.set("Access-Control-Max-Age", "86400")?;
-    Ok(response)
+
+    // Copy original headers
+    for (key, value) in response.headers() {
+        // Don't overwrite CORS headers
+        if !key.to_lowercase().starts_with("access-control-") {
+            headers.set(&key, &value)?;
+        }
+    }
+
+    Ok(Response::from_body(response.body().clone())?
+        .with_status(response.status_code())
+        .with_headers(headers))
 }
 
 /// Handle CORS preflight OPTIONS requests.
@@ -84,8 +96,11 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         _ => Response::error("Not Found", 404),
     };
 
-    // Add CORS headers to all responses
-    response.and_then(with_cors)
+    // Add CORS headers to all responses, including errors
+    match response {
+        Ok(r) => with_cors(r),
+        Err(e) => with_cors(Response::error(e.to_string(), 500)?),
+    }
 }
 
 async fn handle_signal_worker<H: handler::SignalHandler>(
@@ -207,10 +222,11 @@ async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Respon
     let id = namespace.id_from_name(&do_name)?;
     let stub = id.get_stub()?;
 
-    // Forward request to DO (preserving query string)
+    // Forward request to DO (preserving query string and adding signal param)
     let url = req.url()?;
-    let query = url.query().map(|q| format!("?{}", q)).unwrap_or_default();
-    let do_url = format!("http://do/stats{}", query);
+    let existing_query = url.query().unwrap_or("");
+    let sep = if existing_query.is_empty() { "" } else { "&" };
+    let do_url = format!("http://do/stats?{}{}signal={}", existing_query, sep, signal);
 
     let request = worker::Request::new(&do_url, worker::Method::Get)?;
     stub.fetch_with_request(request).await

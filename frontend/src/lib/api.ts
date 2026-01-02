@@ -18,77 +18,99 @@ export interface TraceStats {
   minute: string;
   count: number;
   error_count: number;
-  latency_sum_us: number;
-  latency_min_us: number;
-  latency_max_us: number;
+  latency_sum_us?: number;
+  latency_min_us?: number;
+  latency_max_us?: number;
 }
 
 /**
  * Type guard for Service objects.
+ * Accepts both boolean and numeric (0/1) values for has_logs/has_traces
+ * since the API returns integers.
  */
-function isService(obj: unknown): obj is Service {
+function isServiceLike(obj: unknown): boolean {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const s = obj as Record<string, unknown>;
   return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    typeof (obj as Service).name === 'string' &&
-    typeof (obj as Service).has_logs === 'boolean' &&
-    typeof (obj as Service).has_traces === 'boolean'
+    typeof s.name === 'string' &&
+    (typeof s.has_logs === 'boolean' || typeof s.has_logs === 'number') &&
+    (typeof s.has_traces === 'boolean' || typeof s.has_traces === 'number')
   );
 }
 
 /**
- * Type guard for LogStats objects.
+ * Convert API response to Service with boolean fields.
  */
-function isLogStats(obj: unknown): obj is LogStats {
+function toService(obj: Record<string, unknown>): Service {
+  return {
+    name: obj.name as string,
+    has_logs: Boolean(obj.has_logs),
+    has_traces: Boolean(obj.has_traces),
+  };
+}
+
+/**
+ * Type guard for LogStats-like objects.
+ * Accepts both string and number for minute since the API returns integers.
+ */
+function isLogStatsLike(obj: unknown): boolean {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const s = obj as Record<string, unknown>;
   return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    typeof (obj as LogStats).minute === 'string' &&
-    typeof (obj as LogStats).count === 'number' &&
-    typeof (obj as LogStats).error_count === 'number'
+    (typeof s.minute === 'string' || typeof s.minute === 'number') &&
+    typeof s.count === 'number' &&
+    typeof s.error_count === 'number'
   );
 }
 
 /**
- * Type guard for TraceStats objects.
+ * Convert API response to LogStats with string minute.
  */
-function isTraceStats(obj: unknown): obj is TraceStats {
-  return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    typeof (obj as TraceStats).minute === 'string' &&
-    typeof (obj as TraceStats).count === 'number' &&
-    typeof (obj as TraceStats).error_count === 'number' &&
-    typeof (obj as TraceStats).latency_sum_us === 'number' &&
-    typeof (obj as TraceStats).latency_min_us === 'number' &&
-    typeof (obj as TraceStats).latency_max_us === 'number'
-  );
+function toLogStats(obj: Record<string, unknown>): LogStats {
+  return {
+    minute: String(obj.minute),
+    count: obj.count as number,
+    error_count: obj.error_count as number,
+  };
 }
 
 /**
- * Validate an array of items using a type guard.
- * Logs warnings for invalid items and returns only valid ones.
+ * Type guard for TraceStats-like objects.
+ * Accepts both string and number for minute since the API returns integers.
+ * Latency fields are optional (may be missing if no latency data recorded).
  */
-function validateArray<T>(
-  data: unknown,
-  guard: (item: unknown) => item is T,
-  typeName: string
-): T[] {
-  if (!Array.isArray(data)) {
-    console.error(`Expected array of ${typeName}, got:`, typeof data);
-    throw new Error(`Invalid API response: expected array of ${typeName}`);
+function isTraceStatsLike(obj: unknown): boolean {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const s = obj as Record<string, unknown>;
+  // Required fields
+  if (
+    !(typeof s.minute === 'string' || typeof s.minute === 'number') ||
+    typeof s.count !== 'number' ||
+    typeof s.error_count !== 'number'
+  ) {
+    return false;
   }
+  // Optional latency fields - must be number if present
+  if (s.latency_sum_us !== undefined && typeof s.latency_sum_us !== 'number') return false;
+  if (s.latency_min_us !== undefined && typeof s.latency_min_us !== 'number') return false;
+  if (s.latency_max_us !== undefined && typeof s.latency_max_us !== 'number') return false;
+  return true;
+}
 
-  const valid: T[] = [];
-  for (let i = 0; i < data.length; i++) {
-    if (guard(data[i])) {
-      valid.push(data[i]);
-    } else {
-      console.warn(`Invalid ${typeName} at index ${i}:`, data[i]);
-    }
-  }
-
-  return valid;
+/**
+ * Convert API response to TraceStats with string minute.
+ */
+function toTraceStats(obj: Record<string, unknown>): TraceStats {
+  const result: TraceStats = {
+    minute: String(obj.minute),
+    count: obj.count as number,
+    error_count: obj.error_count as number,
+  };
+  // Include optional latency fields if present
+  if (obj.latency_sum_us !== undefined) result.latency_sum_us = obj.latency_sum_us as number;
+  if (obj.latency_min_us !== undefined) result.latency_min_us = obj.latency_min_us as number;
+  if (obj.latency_max_us !== undefined) result.latency_max_us = obj.latency_max_us as number;
+  return result;
 }
 
 export async function fetchServices(workerUrl: string): Promise<Service[]> {
@@ -101,7 +123,22 @@ export async function fetchServices(workerUrl: string): Promise<Service[]> {
   }
 
   const data: unknown = await response.json();
-  return validateArray(data, isService, 'Service');
+
+  if (!Array.isArray(data)) {
+    console.error('Expected array of services, got:', typeof data);
+    throw new Error('Invalid API response: expected array of services');
+  }
+
+  const services: Service[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (isServiceLike(data[i])) {
+      services.push(toService(data[i] as Record<string, unknown>));
+    } else {
+      console.warn('Invalid service at index', i, ':', data[i]);
+    }
+  }
+
+  return services;
 }
 
 /**
@@ -127,7 +164,22 @@ export async function fetchLogStats(
   }
 
   const data: unknown = await response.json();
-  return validateArray(data, isLogStats, 'LogStats');
+
+  if (!Array.isArray(data)) {
+    console.error('Expected array of LogStats, got:', typeof data);
+    throw new Error('Invalid API response: expected array of LogStats');
+  }
+
+  const stats: LogStats[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (isLogStatsLike(data[i])) {
+      stats.push(toLogStats(data[i] as Record<string, unknown>));
+    } else {
+      console.warn('Invalid LogStats at index', i, ':', data[i]);
+    }
+  }
+
+  return stats;
 }
 
 /**
@@ -153,5 +205,20 @@ export async function fetchTraceStats(
   }
 
   const data: unknown = await response.json();
-  return validateArray(data, isTraceStats, 'TraceStats');
+
+  if (!Array.isArray(data)) {
+    console.error('Expected array of TraceStats, got:', typeof data);
+    throw new Error('Invalid API response: expected array of TraceStats');
+  }
+
+  const stats: TraceStats[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (isTraceStatsLike(data[i])) {
+      stats.push(toTraceStats(data[i] as Record<string, unknown>));
+    } else {
+      console.warn('Invalid TraceStats at index', i, ':', data[i]);
+    }
+  }
+
+  return stats;
 }

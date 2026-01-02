@@ -131,8 +131,12 @@ impl WasmAggregatorSender {
         let body = serde_json::to_string(&json_records)
             .map_err(|e| worker::Error::RustError(e.to_string()))?;
 
+        // Extract signal from do_name (format: "service:signal")
+        let signal = do_name.rsplit(':').next().unwrap_or("logs");
+        let url = format!("http://do/ingest?signal={}", signal);
+
         let mut request = worker::Request::new_with_init(
-            "http://do/ingest",
+            &url,
             worker::RequestInit::new()
                 .with_method(worker::Method::Post)
                 .with_body(Some(body.into())),

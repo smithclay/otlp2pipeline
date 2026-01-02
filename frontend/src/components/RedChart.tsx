@@ -3,8 +3,9 @@ import { getPerspectiveWorker } from '../lib/perspective';
 import type { Table } from '@finos/perspective';
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
 
-// Import Perspective viewer element and styles
+// Import Perspective viewer element, plugins, and styles
 import '@finos/perspective-viewer';
+import '@finos/perspective-viewer-d3fc';
 import '@finos/perspective-viewer/dist/css/themes.css';
 
 export interface ChartDataPoint {

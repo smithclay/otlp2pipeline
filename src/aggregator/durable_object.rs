@@ -32,11 +32,11 @@ pub struct StatsRow {
     pub minute: i64,
     pub count: i64,
     pub error_count: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub latency_sum_us: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub latency_sum_us: i64,
+    #[serde(default)]
     pub latency_min_us: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub latency_max_us: Option<i64>,
 }
 
@@ -52,9 +52,9 @@ pub struct AggregatorDO {
 #[cfg(target_arch = "wasm32")]
 impl DurableObject for AggregatorDO {
     fn new(state: State, env: Env) -> Self {
-        // Parse signal from DO id name (e.g., "my-service:logs")
-        let id_name = state.id().name().unwrap_or_default();
-        let signal = AggregatorSignal::from_key(&id_name);
+        // Note: state.id().name() returns empty in workers-rs, so we can't rely on it
+        // for signal detection. Signal is passed via query param in requests instead.
+        let signal = AggregatorSignal::Logs; // Default, actual signal comes from request
         let do_instance = Self { state, env, signal };
 
         // Log but don't panic - Workers will return 500 and retry
@@ -97,11 +97,10 @@ impl AggregatorDO {
     )";
 
     fn ensure_schema(&self) -> Result<()> {
-        let ddl = match self.signal {
-            AggregatorSignal::Logs => Self::LOGS_DDL,
-            AggregatorSignal::Traces => Self::TRACES_DDL,
-        };
-        self.state.storage().sql().exec(ddl, None)?;
+        // Always use traces schema (superset) since state.id().name() is broken
+        // and we can't reliably determine signal at construction time.
+        // The traces schema includes latency columns that logs doesn't use (they stay NULL).
+        self.state.storage().sql().exec(Self::TRACES_DDL, None)?;
         Ok(())
     }
 
@@ -111,6 +110,14 @@ impl AggregatorDO {
     }
 
     async fn handle_ingest(&self, mut req: Request) -> Result<Response> {
+        // Parse signal from query param (sender passes it since state.id().name() is broken)
+        let url = req.url()?;
+        let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
+        let signal = match params.get("signal").map(|s| s.as_ref()) {
+            Some("traces") => AggregatorSignal::Traces,
+            _ => AggregatorSignal::Logs,
+        };
+
         let body = req.text().await?;
         let records: Vec<serde_json::Value> = serde_json::from_str(&body)
             .map_err(|e| worker::Error::RustError(format!("Invalid JSON: {}", e)))?;
@@ -121,7 +128,7 @@ impl AggregatorDO {
 
         let minute = Self::now_minute();
 
-        match self.signal {
+        match signal {
             AggregatorSignal::Logs => {
                 let mut agg = LogAggregates::default();
                 for record in &records {
@@ -183,11 +190,35 @@ impl AggregatorDO {
         Ok(())
     }
 
+    /// Parse a time parameter as either ISO 8601 date string or integer minutes.
+    fn parse_time_param(value: &str) -> Option<i64> {
+        // Try parsing as integer (legacy format: minute timestamp)
+        if let Ok(mins) = value.parse::<i64>() {
+            return Some(mins);
+        }
+
+        // Try parsing as ISO 8601 date string (e.g., "2026-01-02T17:53:01.903Z")
+        // Convert to minute timestamp (ms since epoch / 60000)
+        let date_ms = js_sys::Date::parse(value);
+        if !date_ms.is_nan() {
+            return Some((date_ms as i64) / 60_000);
+        }
+
+        None
+    }
+
     async fn handle_stats_query(&self, req: Request) -> Result<Response> {
         let url = req.url()?;
         let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
-        let from = params.get("from").and_then(|v| v.parse::<i64>().ok());
-        let to = params.get("to").and_then(|v| v.parse::<i64>().ok());
+
+        // Parse signal from query param (sender passes it since state.id().name() is broken)
+        let signal = match params.get("signal").map(|s| s.as_ref()) {
+            Some("traces") => AggregatorSignal::Traces,
+            _ => AggregatorSignal::Logs,
+        };
+
+        let from = params.get("from").and_then(|v| Self::parse_time_param(v));
+        let to = params.get("to").and_then(|v| Self::parse_time_param(v));
 
         let mut query = "SELECT * FROM stats WHERE 1=1".to_string();
         let mut binds: Vec<SqlStorageValue> = vec![];
