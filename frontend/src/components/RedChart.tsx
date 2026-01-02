@@ -17,12 +17,14 @@ interface RedChartProps {
   title: string;
   data: ChartDataPoint[];
   yLabel: string;
+  /** Callback when a data point is clicked */
+  onPointClick?: (minute: string) => void;
 }
 
 /**
  * Chart component using Perspective viewer for RED metrics visualization.
  */
-export function RedChart({ title, data, yLabel }: RedChartProps) {
+export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
   const viewerRef = useRef<HTMLPerspectiveViewerElement | null>(null);
   const tableRef = useRef<Table | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,17 +90,33 @@ export function RedChart({ title, data, yLabel }: RedChartProps) {
       }
     }
 
-    initChart();
+    // Create click handler
+    const handleClick = ((event: CustomEvent) => {
+      const row = event.detail?.row;
+      if (row && row.minute && onPointClick) {
+        onPointClick(row.minute);
+      }
+    }) as EventListener;
+
+    initChart().then(() => {
+      if (viewerRef.current && onPointClick) {
+        viewerRef.current.addEventListener('perspective-click', handleClick);
+      }
+    });
 
     return () => {
       mounted = false;
+      // Remove click listener
+      if (viewerRef.current) {
+        viewerRef.current.removeEventListener('perspective-click', handleClick);
+      }
       // Cleanup table on unmount
       if (tableRef.current) {
         tableRef.current.delete().catch(console.error);
         tableRef.current = null;
       }
     };
-  }, [data, yLabel]);
+  }, [data, yLabel, onPointClick]);
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">

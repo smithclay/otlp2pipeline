@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCredentials } from '../hooks/useCredentials';
 import { useStats, TIME_RANGES, TimeRange } from '../hooks/useStats';
 import { TimeRangePicker } from '../components/TimeRangePicker';
 import { RedChart, ChartDataPoint } from '../components/RedChart';
+import { RecordsPanel } from '../components/RecordsPanel';
 
 function LoadingSpinner() {
   return (
@@ -33,6 +34,14 @@ function ErrorMessage({ message, onRetry }: ErrorMessageProps) {
   );
 }
 
+/**
+ * Time range for records drilldown.
+ */
+interface DrilldownTimeRange {
+  from: Date;
+  to: Date;
+}
+
 export function ServiceDetail() {
   const { name } = useParams<{ name: string }>();
   const { credentials } = useCredentials();
@@ -40,6 +49,9 @@ export function ServiceDetail() {
 
   // Default to last 1 hour
   const [timeRange, setTimeRange] = useState<TimeRange>(TIME_RANGES[1]);
+
+  // Drilldown state: selected time point for records panel
+  const [drilldownRange, setDrilldownRange] = useState<DrilldownTimeRange | null>(null);
 
   const { logStats, traceStats, loading, error, refetch } = useStats(
     workerUrl,
@@ -121,6 +133,20 @@ export function ServiceDetail() {
       .sort((a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime());
   }, [traceStats]);
 
+  // Handle chart point click for drilldown
+  const handleChartClick = useCallback((minute: string) => {
+    const clickedTime = new Date(minute);
+    // Create a time range of +/- 30 seconds around the clicked point
+    const from = new Date(clickedTime.getTime() - 30 * 1000);
+    const to = new Date(clickedTime.getTime() + 30 * 1000);
+    setDrilldownRange({ from, to });
+  }, []);
+
+  // Close the records drilldown panel
+  const handleCloseDrilldown = useCallback(() => {
+    setDrilldownRange(null);
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -150,6 +176,7 @@ export function ServiceDetail() {
             title="Request Rate"
             data={rateData}
             yLabel="Requests per minute"
+            onPointClick={handleChartClick}
           />
 
           {/* Error Rate Chart */}
@@ -157,6 +184,7 @@ export function ServiceDetail() {
             title="Error Rate"
             data={errorData}
             yLabel="Errors per minute"
+            onPointClick={handleChartClick}
           />
 
           {/* Latency Chart (traces only) */}
@@ -164,7 +192,17 @@ export function ServiceDetail() {
             title="Latency (traces only)"
             data={latencyData}
             yLabel="Average latency (ms)"
+            onPointClick={handleChartClick}
           />
+
+          {/* Records Drilldown Panel */}
+          {drilldownRange && name && (
+            <RecordsPanel
+              service={name}
+              timeRange={drilldownRange}
+              onClose={handleCloseDrilldown}
+            />
+          )}
         </div>
       )}
     </div>
