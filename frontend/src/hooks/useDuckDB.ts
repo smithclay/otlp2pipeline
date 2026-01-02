@@ -65,12 +65,17 @@ export function useDuckDB(
             r2Token,
             accountId,
           };
-          const conn = await connectToR2(db, config);
+          const status = await connectToR2(db, config);
           if (!mounted) {
-            await conn.close();
+            await status.connection.close();
             return;
           }
-          connRef.current = conn;
+          connRef.current = status.connection;
+
+          // Surface any warnings from connection setup
+          if (status.warnings.length > 0) {
+            console.warn('DuckDB connection warnings:', status.warnings);
+          }
         } else {
           // Basic connection without R2
           const conn = await db.connect();
@@ -126,13 +131,59 @@ export function useDuckDB(
 }
 
 /**
+ * Validate and sanitize a SQL WHERE clause fragment.
+ *
+ * WARNING: This provides basic validation only. The filter is intended for
+ * trusted users querying their own data. Do not expose to untrusted input.
+ *
+ * @param clause - The WHERE clause fragment to validate
+ * @returns The validated clause or null if invalid
+ */
+export function validateWhereClause(clause: string): string | null {
+  if (!clause || clause.trim().length === 0) {
+    return null;
+  }
+
+  const trimmed = clause.trim();
+
+  // Block obvious SQL injection patterns
+  const dangerousPatterns = [
+    /;\s*(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)/i,
+    /--/,  // SQL comments
+    /\/\*/,  // Block comments
+    /UNION\s+SELECT/i,
+    /INTO\s+OUTFILE/i,
+    /LOAD_FILE/i,
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(trimmed)) {
+      console.warn('Blocked potentially dangerous SQL pattern:', pattern);
+      return null;
+    }
+  }
+
+  // Basic length limit
+  if (trimmed.length > 500) {
+    console.warn('WHERE clause too long, max 500 characters');
+    return null;
+  }
+
+  return trimmed;
+}
+
+/**
  * Build a query to fetch records for a service within a time range.
+ *
+ * WARNING: The whereClause parameter accepts raw SQL. Basic validation is
+ * performed but this should only be used with trusted input. The filter
+ * is intended for power users querying their own observability data.
  *
  * @param bucketName - R2 bucket name
  * @param service - Service name to filter by
  * @param from - Start time in milliseconds
  * @param to - End time in milliseconds
- * @param whereClause - Additional SQL WHERE clause filter
+ * @param whereClause - Additional SQL WHERE clause filter (validated, max 500 chars)
  * @param limit - Maximum number of records to return
  */
 export function buildRecordsQuery(
@@ -149,8 +200,9 @@ export function buildRecordsQuery(
   // Escape service name for SQL
   const escapedService = service.replace(/'/g, "''");
 
-  // Build additional filter clause
-  const additionalFilter = whereClause ? ` AND (${whereClause})` : '';
+  // Validate and build additional filter clause
+  const validatedClause = whereClause ? validateWhereClause(whereClause) : null;
+  const additionalFilter = validatedClause ? ` AND (${validatedClause})` : '';
 
   return `
     SELECT 'LOG' as type, timestamp_ms, body as message, severity_text

@@ -7,6 +7,104 @@ interface SetupModalProps {
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
+/**
+ * Categorized connection test result.
+ */
+interface ConnectionTestResult {
+  success: boolean;
+  errorType?: 'network' | 'cors' | 'server' | 'timeout' | 'unknown';
+  statusCode?: number;
+  message: string;
+}
+
+/**
+ * Test connection to worker and return categorized result.
+ */
+async function testConnection(url: string): Promise<ConnectionTestResult> {
+  // Normalize URL - remove trailing slash
+  const normalizedUrl = url.replace(/\/+$/, '');
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(`${normalizedUrl}/v1/services`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      return { success: true, message: 'Connection successful!' };
+    }
+
+    // Server responded but with an error status
+    if (response.status >= 500) {
+      return {
+        success: false,
+        errorType: 'server',
+        statusCode: response.status,
+        message: `Server error (${response.status}). The worker may be misconfigured or experiencing issues.`,
+      };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        success: false,
+        errorType: 'server',
+        statusCode: response.status,
+        message: `Authentication failed (${response.status}). Check your credentials.`,
+      };
+    }
+
+    if (response.status === 404) {
+      return {
+        success: false,
+        errorType: 'server',
+        statusCode: response.status,
+        message: 'Endpoint not found (404). Check that the worker URL is correct and the /v1/services endpoint exists.',
+      };
+    }
+
+    return {
+      success: false,
+      errorType: 'server',
+      statusCode: response.status,
+      message: `Unexpected response (${response.status}). Check the worker URL and configuration.`,
+    };
+  } catch (error) {
+    // Categorize the error
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        return {
+          success: false,
+          errorType: 'timeout',
+          message: 'Connection timed out. Check the URL and ensure the worker is running.',
+        };
+      }
+
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        // This is typically a CORS or network error
+        return {
+          success: false,
+          errorType: 'cors',
+          message: 'Could not connect. This may be a CORS issue - ensure the worker has CORS headers configured, or the URL may be unreachable.',
+        };
+      }
+    }
+
+    return {
+      success: false,
+      errorType: 'unknown',
+      message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
+
 export function SetupModal({ onSave }: SetupModalProps) {
   const [workerUrl, setWorkerUrl] = useState('');
   const [r2Token, setR2Token] = useState('');
@@ -19,22 +117,6 @@ export function SetupModal({ onSave }: SetupModalProps) {
     r2Token.trim().length > 0 &&
     bucketName.trim().length > 0;
 
-  async function testConnection(url: string): Promise<boolean> {
-    try {
-      // Normalize URL - remove trailing slash
-      const normalizedUrl = url.replace(/\/+$/, '');
-      const response = await fetch(`${normalizedUrl}/v1/services`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
@@ -46,13 +128,11 @@ export function SetupModal({ onSave }: SetupModalProps) {
     const normalizedUrl = workerUrl.trim().replace(/\/+$/, '');
 
     // Test connection to worker
-    const workerReachable = await testConnection(normalizedUrl);
+    const result = await testConnection(normalizedUrl);
 
-    if (!workerReachable) {
+    if (!result.success) {
       setStatus('error');
-      setErrorMessage(
-        'Could not connect to worker. Check the URL and ensure CORS is enabled.'
-      );
+      setErrorMessage(result.message);
       return;
     }
 

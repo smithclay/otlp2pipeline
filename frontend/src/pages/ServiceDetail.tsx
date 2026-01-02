@@ -1,38 +1,11 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCredentials } from '../hooks/useCredentials';
-import { useStats, TIME_RANGES, TimeRange } from '../hooks/useStats';
+import { useStats, TIME_RANGES, TimeRange, LogStats, TraceStats } from '../hooks/useStats';
 import { TimeRangePicker } from '../components/TimeRangePicker';
 import { RedChart, ChartDataPoint } from '../components/RedChart';
 import { RecordsPanel } from '../components/RecordsPanel';
-
-function LoadingSpinner() {
-  return (
-    <div className="flex items-center justify-center py-12">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-500" />
-    </div>
-  );
-}
-
-interface ErrorMessageProps {
-  message: string;
-  onRetry: () => void;
-}
-
-function ErrorMessage({ message, onRetry }: ErrorMessageProps) {
-  return (
-    <div className="rounded-lg border border-red-900 bg-red-950 p-4">
-      <p className="text-red-400">{message}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="mt-3 rounded-md bg-red-900 px-3 py-1.5 text-sm text-red-200 hover:bg-red-800 transition-colors"
-      >
-        Retry
-      </button>
-    </div>
-  );
-}
+import { LoadingSpinner, ErrorMessage } from '../components/LoadingState';
 
 /**
  * Time range for records drilldown.
@@ -40,6 +13,45 @@ function ErrorMessage({ message, onRetry }: ErrorMessageProps) {
 interface DrilldownTimeRange {
   from: Date;
   to: Date;
+}
+
+/**
+ * Merge log and trace stats into chart data points.
+ * Extracts the specified field from each stat type and groups by minute.
+ */
+function mergeStatsToChartData(
+  logStats: LogStats[],
+  traceStats: TraceStats[],
+  logField: keyof LogStats,
+  traceField: keyof TraceStats
+): ChartDataPoint[] {
+  const minuteMap = new Map<string, ChartDataPoint>();
+
+  for (const stat of logStats) {
+    const value = stat[logField];
+    if (typeof value !== 'number') continue;
+    const existing = minuteMap.get(stat.minute);
+    if (existing) {
+      existing.logs = value;
+    } else {
+      minuteMap.set(stat.minute, { minute: stat.minute, logs: value });
+    }
+  }
+
+  for (const stat of traceStats) {
+    const value = stat[traceField];
+    if (typeof value !== 'number') continue;
+    const existing = minuteMap.get(stat.minute);
+    if (existing) {
+      existing.traces = value;
+    } else {
+      minuteMap.set(stat.minute, { minute: stat.minute, traces: value });
+    }
+  }
+
+  return Array.from(minuteMap.values()).sort(
+    (a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime()
+  );
 }
 
 export function ServiceDetail() {
@@ -60,64 +72,16 @@ export function ServiceDetail() {
   );
 
   // Transform stats data for Rate chart (logs and traces count over time)
-  const rateData = useMemo<ChartDataPoint[]>(() => {
-    const minuteMap = new Map<string, ChartDataPoint>();
-
-    // Add log counts
-    for (const stat of logStats) {
-      const existing = minuteMap.get(stat.minute);
-      if (existing) {
-        existing.logs = stat.count;
-      } else {
-        minuteMap.set(stat.minute, { minute: stat.minute, logs: stat.count });
-      }
-    }
-
-    // Add trace counts
-    for (const stat of traceStats) {
-      const existing = minuteMap.get(stat.minute);
-      if (existing) {
-        existing.traces = stat.count;
-      } else {
-        minuteMap.set(stat.minute, { minute: stat.minute, traces: stat.count });
-      }
-    }
-
-    // Sort by minute
-    return Array.from(minuteMap.values()).sort(
-      (a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime()
-    );
-  }, [logStats, traceStats]);
+  const rateData = useMemo<ChartDataPoint[]>(
+    () => mergeStatsToChartData(logStats, traceStats, 'count', 'count'),
+    [logStats, traceStats]
+  );
 
   // Transform stats data for Error Rate chart
-  const errorData = useMemo<ChartDataPoint[]>(() => {
-    const minuteMap = new Map<string, ChartDataPoint>();
-
-    // Add log error counts
-    for (const stat of logStats) {
-      const existing = minuteMap.get(stat.minute);
-      if (existing) {
-        existing.logs = stat.error_count;
-      } else {
-        minuteMap.set(stat.minute, { minute: stat.minute, logs: stat.error_count });
-      }
-    }
-
-    // Add trace error counts
-    for (const stat of traceStats) {
-      const existing = minuteMap.get(stat.minute);
-      if (existing) {
-        existing.traces = stat.error_count;
-      } else {
-        minuteMap.set(stat.minute, { minute: stat.minute, traces: stat.error_count });
-      }
-    }
-
-    // Sort by minute
-    return Array.from(minuteMap.values()).sort(
-      (a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime()
-    );
-  }, [logStats, traceStats]);
+  const errorData = useMemo<ChartDataPoint[]>(
+    () => mergeStatsToChartData(logStats, traceStats, 'error_count', 'error_count'),
+    [logStats, traceStats]
+  );
 
   // Transform stats data for Latency chart (traces only, average latency)
   const latencyData = useMemo<ChartDataPoint[]>(() => {

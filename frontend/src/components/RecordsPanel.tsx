@@ -3,7 +3,6 @@ import { useCredentials } from '../hooks/useCredentials';
 import {
   useDuckDB,
   buildRecordsQuery,
-  generateMockResult,
   type QueryResult,
 } from '../hooks/useDuckDB';
 
@@ -122,14 +121,13 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [queryLoading, setQueryLoading] = useState<boolean>(false);
   const [queryError, setQueryError] = useState<string | null>(null);
-  const [useMockData, setUseMockData] = useState<boolean>(false);
 
   // Execute query when connection is ready or when filter changes
   const runQuery = useCallback(async () => {
     if (!bucketName) {
-      // Use mock data if no bucket configured
-      setUseMockData(true);
-      setQueryResult(generateMockResult(service, timeRange.from, timeRange.to));
+      // Show configuration message instead of proceeding with query
+      setQueryResult(null);
+      setQueryError('R2 bucket not configured. Configure your bucket in the setup modal to view records.');
       return;
     }
 
@@ -139,7 +137,6 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
 
     setQueryLoading(true);
     setQueryError(null);
-    setUseMockData(false);
 
     try {
       const sql = buildRecordsQuery(
@@ -154,11 +151,10 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
       setQueryResult(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Query failed';
-      setQueryError(message);
-
-      // Fall back to mock data on error
-      setUseMockData(true);
-      setQueryResult(generateMockResult(service, timeRange.from, timeRange.to));
+      console.error('DuckDB query failed:', err);
+      // Show clear error state
+      setQueryError(`Failed to query records: ${message}. Check your R2 credentials and bucket configuration.`);
+      setQueryResult(null);
     } finally {
       setQueryLoading(false);
     }
@@ -212,9 +208,6 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-medium text-slate-100">Records</h3>
           <span className="text-xs text-slate-500">{timeRangeLabel}</span>
-          {useMockData && (
-            <span className="text-xs text-yellow-500">(Demo data)</span>
-          )}
         </div>
         <button
           type="button"
@@ -236,7 +229,8 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="severity_text = 'ERROR'"
+            placeholder="e.g. severity_text = 'ERROR'"
+            title="Raw SQL WHERE clause - use column names like severity_text, message, type"
             className="flex-1 rounded bg-slate-900 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 border border-slate-600 focus:border-cyan-500 focus:outline-none"
           />
           <button
@@ -264,9 +258,9 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
           </div>
         )}
 
-        {error && !useMockData && (
-          <div className="p-4 text-center text-red-400 text-sm">
-            {error}
+        {error && (
+          <div className="p-4 text-center text-sm">
+            <p className="text-red-400">{error}</p>
           </div>
         )}
 
@@ -287,12 +281,14 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
-              {queryResult.rows.map((row: Record<string, unknown>, index: number) => {
+              {queryResult.rows.map((row: Record<string, unknown>) => {
                 const record = row as unknown as RecordRow;
+                // Use composite key from unique fields
+                const key = `${record.type}-${record.timestamp_ms}-${record.message?.slice(0, 50) ?? ''}`;
                 return (
                   <tr
-                    key={`${record.timestamp_ms}-${index}`}
-                    className="hover:bg-slate-750 transition-colors"
+                    key={key}
+                    className="hover:bg-slate-700 transition-colors"
                   >
                     <td className="px-4 py-2">
                       <TypeBadge type={record.type} />

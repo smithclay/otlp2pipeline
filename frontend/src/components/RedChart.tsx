@@ -31,9 +31,11 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
 
   useEffect(() => {
     let mounted = true;
+    // Capture refs at effect start to avoid stale closure in cleanup
+    const viewer = viewerRef.current;
 
     async function initChart() {
-      if (!viewerRef.current || data.length === 0) return;
+      if (!viewer || data.length === 0) return;
 
       try {
         const worker = await getPerspectiveWorker();
@@ -61,7 +63,7 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
         }
 
         // Load table into viewer
-        await viewerRef.current.load(table);
+        await viewer.load(table);
 
         // Determine which columns have data
         const hasLogs = data.some((d) => d.logs !== undefined && d.logs !== null);
@@ -72,7 +74,7 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
         if (hasTraces) columns.push('traces');
 
         // Configure viewer for line chart
-        await viewerRef.current.restore({
+        await viewer.restore({
           plugin: 'Y Line',
           columns: columns.length > 0 ? columns : ['logs', 'traces'],
           group_by: ['minute'],
@@ -99,16 +101,16 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
     }) as EventListener;
 
     initChart().then(() => {
-      if (viewerRef.current && onPointClick) {
-        viewerRef.current.addEventListener('perspective-click', handleClick);
+      if (viewer && onPointClick) {
+        viewer.addEventListener('perspective-click', handleClick);
       }
     });
 
     return () => {
       mounted = false;
-      // Remove click listener
-      if (viewerRef.current) {
-        viewerRef.current.removeEventListener('perspective-click', handleClick);
+      // Remove click listener using captured ref
+      if (viewer) {
+        viewer.removeEventListener('perspective-click', handleClick);
       }
       // Cleanup table on unmount
       if (tableRef.current) {

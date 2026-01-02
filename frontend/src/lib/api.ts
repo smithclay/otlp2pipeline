@@ -23,6 +23,74 @@ export interface TraceStats {
   latency_max_us: number;
 }
 
+/**
+ * Type guard for Service objects.
+ */
+function isService(obj: unknown): obj is Service {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof (obj as Service).name === 'string' &&
+    typeof (obj as Service).has_logs === 'boolean' &&
+    typeof (obj as Service).has_traces === 'boolean'
+  );
+}
+
+/**
+ * Type guard for LogStats objects.
+ */
+function isLogStats(obj: unknown): obj is LogStats {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof (obj as LogStats).minute === 'string' &&
+    typeof (obj as LogStats).count === 'number' &&
+    typeof (obj as LogStats).error_count === 'number'
+  );
+}
+
+/**
+ * Type guard for TraceStats objects.
+ */
+function isTraceStats(obj: unknown): obj is TraceStats {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof (obj as TraceStats).minute === 'string' &&
+    typeof (obj as TraceStats).count === 'number' &&
+    typeof (obj as TraceStats).error_count === 'number' &&
+    typeof (obj as TraceStats).latency_sum_us === 'number' &&
+    typeof (obj as TraceStats).latency_min_us === 'number' &&
+    typeof (obj as TraceStats).latency_max_us === 'number'
+  );
+}
+
+/**
+ * Validate an array of items using a type guard.
+ * Logs warnings for invalid items and returns only valid ones.
+ */
+function validateArray<T>(
+  data: unknown,
+  guard: (item: unknown) => item is T,
+  typeName: string
+): T[] {
+  if (!Array.isArray(data)) {
+    console.error(`Expected array of ${typeName}, got:`, typeof data);
+    throw new Error(`Invalid API response: expected array of ${typeName}`);
+  }
+
+  const valid: T[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (guard(data[i])) {
+      valid.push(data[i]);
+    } else {
+      console.warn(`Invalid ${typeName} at index ${i}:`, data[i]);
+    }
+  }
+
+  return valid;
+}
+
 export async function fetchServices(workerUrl: string): Promise<Service[]> {
   const url = `${workerUrl}/v1/services`;
 
@@ -32,8 +100,8 @@ export async function fetchServices(workerUrl: string): Promise<Service[]> {
     throw new Error(`Failed to fetch services: ${response.status} ${response.statusText}`);
   }
 
-  const data = await response.json();
-  return data as Service[];
+  const data: unknown = await response.json();
+  return validateArray(data, isService, 'Service');
 }
 
 /**
@@ -58,8 +126,8 @@ export async function fetchLogStats(
     throw new Error(`Failed to fetch log stats: ${response.status} ${response.statusText}`);
   }
 
-  const data = await response.json();
-  return data as LogStats[];
+  const data: unknown = await response.json();
+  return validateArray(data, isLogStats, 'LogStats');
 }
 
 /**
@@ -84,6 +152,6 @@ export async function fetchTraceStats(
     throw new Error(`Failed to fetch trace stats: ${response.status} ${response.statusText}`);
   }
 
-  const data = await response.json();
-  return data as TraceStats[];
+  const data: unknown = await response.json();
+  return validateArray(data, isTraceStats, 'TraceStats');
 }

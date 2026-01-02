@@ -64,27 +64,42 @@ export interface R2Config {
 }
 
 /**
+ * Connection status including extension availability.
+ */
+export interface ConnectionStatus {
+  connection: duckdb.AsyncDuckDBConnection;
+  httpfsAvailable: boolean;
+  s3Configured: boolean;
+  warnings: string[];
+}
+
+/**
  * Create a connection configured for R2/Iceberg access.
  *
  * Note: DuckDB WASM's S3/Iceberg support has limitations.
  * The connection is set up with basic S3 configuration but actual
  * R2 connectivity may require additional configuration or may not
  * be fully supported in the browser environment.
+ *
+ * @throws Error if S3 configuration fails (required for R2 access)
  */
 export async function connectToR2(
   database: duckdb.AsyncDuckDB,
   config: R2Config
-): Promise<duckdb.AsyncDuckDBConnection> {
+): Promise<ConnectionStatus> {
   const conn = await database.connect();
+  const warnings: string[] = [];
+  let httpfsAvailable = false;
 
-  // Install and load required extensions
-  // Note: Extension availability in WASM may vary
+  // Attempt to load httpfs extension for remote file access
+  // In WASM builds, httpfs may already be bundled or may not be available
   try {
     await conn.query('INSTALL httpfs;');
     await conn.query('LOAD httpfs;');
-  } catch {
-    // httpfs may be built-in or unavailable
-    console.warn('httpfs extension not available, continuing without it');
+    httpfsAvailable = true;
+  } catch (error) {
+    console.error('Failed to load httpfs extension:', error);
+    warnings.push('httpfs extension not available - R2/S3 queries may fail');
   }
 
   // Configure S3 credentials for R2
@@ -99,10 +114,20 @@ export async function connectToR2(
       SET s3_use_ssl = true;
     `);
   } catch (error) {
-    console.warn('Failed to configure S3 settings:', error);
+    console.error('Failed to configure R2/S3 settings:', error);
+    // Close the connection since it's not usable without S3 config
+    await conn.close();
+    throw new Error(
+      'Failed to configure R2 connection. Check your credentials and try again.'
+    );
   }
 
-  return conn;
+  return {
+    connection: conn,
+    httpfsAvailable,
+    s3Configured: true,
+    warnings,
+  };
 }
 
 /**

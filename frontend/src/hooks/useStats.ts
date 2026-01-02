@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LogStats, TraceStats, fetchLogStats, fetchTraceStats } from '../lib/api';
 
+// Re-export types for consumers
+export type { LogStats, TraceStats } from '../lib/api';
+
 /**
  * Time range configuration for stats queries.
  */
@@ -80,16 +83,38 @@ export function useStats(
     const to = new Date();
 
     try {
-      // Fetch both log and trace stats in parallel
-      const [logs, traces] = await Promise.all([
-        fetchLogStats(workerUrl, service, from, to).catch(() => [] as LogStats[]),
-        fetchTraceStats(workerUrl, service, from, to).catch(() => [] as TraceStats[]),
+      // Fetch both log and trace stats in parallel, tracking individual failures
+      const results = await Promise.allSettled([
+        fetchLogStats(workerUrl, service, from, to),
+        fetchTraceStats(workerUrl, service, from, to),
       ]);
+
+      const [logResult, traceResult] = results;
+
+      // Extract successful results
+      const logs = logResult.status === 'fulfilled' ? logResult.value : [];
+      const traces = traceResult.status === 'fulfilled' ? traceResult.value : [];
 
       setLogStats(logs);
       setTraceStats(traces);
+
+      // Track partial failures and surface them to users
+      const failures: string[] = [];
+      if (logResult.status === 'rejected') {
+        console.error('Failed to fetch log stats:', logResult.reason);
+        failures.push('logs');
+      }
+      if (traceResult.status === 'rejected') {
+        console.error('Failed to fetch trace stats:', traceResult.reason);
+        failures.push('traces');
+      }
+
+      if (failures.length > 0) {
+        setError(`Failed to load ${failures.join(' and ')} stats. Some data may be missing.`);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch stats';
+      console.error('Stats fetch error:', err);
       setError(message);
       setLogStats([]);
       setTraceStats([]);

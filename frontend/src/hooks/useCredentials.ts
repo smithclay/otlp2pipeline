@@ -1,15 +1,13 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import {
+  Credentials,
   getStoredCredentials,
   setStoredCredentials,
   clearStoredCredentials,
 } from '../lib/storage';
 
-export interface Credentials {
-  workerUrl: string;
-  r2Token: string;
-  bucketName: string;
-}
+// Re-export Credentials type for consumers
+export type { Credentials };
 
 export interface UseCredentialsResult {
   credentials: Credentials | null;
@@ -33,14 +31,12 @@ export function useCredentials(): UseCredentialsResult {
     setCredentialsState(null);
   }, []);
 
-  const isConfigured = useMemo(
-    () =>
-      credentials !== null &&
-      credentials.workerUrl.length > 0 &&
-      credentials.r2Token.length > 0 &&
-      credentials.bucketName.length > 0,
-    [credentials]
-  );
+  // Simple computation - no memoization needed
+  const isConfigured =
+    credentials !== null &&
+    credentials.workerUrl.length > 0 &&
+    credentials.r2Token.length > 0 &&
+    credentials.bucketName.length > 0;
 
   return {
     credentials,

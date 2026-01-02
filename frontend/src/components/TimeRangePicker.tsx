@@ -19,6 +19,7 @@ export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
             onChange(selected);
           }
         }}
+        aria-label="Select time range"
         className="appearance-none rounded-md border border-slate-700 bg-slate-800 px-4 py-2 pr-8 text-sm text-slate-100 hover:border-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-colors cursor-pointer"
       >
         {TIME_RANGES.map((range) => (
