@@ -100,7 +100,9 @@ export function ServiceDetail() {
 
   // Handle chart point click for drilldown
   const handleChartClick = useCallback((minute: string) => {
-    const clickedTime = new Date(minute);
+    // The minute value is a Unix minute bucket (timestamp / 60), convert to milliseconds
+    const minuteBucket = parseInt(minute, 10);
+    const clickedTime = new Date(minuteBucket * 60 * 1000);
     // Create a time range of +/- 30 seconds around the clicked point
     const from = new Date(clickedTime.getTime() - 30 * 1000);
     const to = new Date(clickedTime.getTime() + 30 * 1000);

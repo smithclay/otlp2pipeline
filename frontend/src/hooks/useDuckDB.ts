@@ -30,12 +30,12 @@ export interface UseDuckDBResult {
  *
  * @param bucketName - R2 bucket name for Iceberg queries
  * @param r2Token - R2 API token for authentication
- * @param accountId - Optional Cloudflare account ID
+ * @param accountId - Cloudflare account ID for R2 Data Catalog
  */
 export function useDuckDB(
   bucketName: string | null,
   r2Token: string | null,
-  accountId?: string
+  accountId: string | null
 ): UseDuckDBResult {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,8 +58,8 @@ export function useDuckDB(
         if (!mounted) return;
         dbRef.current = db;
 
-        // Create connection with R2 config if credentials are provided
-        if (bucketName && r2Token) {
+        // Create connection with R2 config if all credentials are provided
+        if (bucketName && r2Token && accountId) {
           const config: R2Config = {
             bucketName,
             r2Token,
@@ -187,15 +187,17 @@ export function validateWhereClause(clause: string): string | null {
  * @param limit - Maximum number of records to return
  */
 export function buildRecordsQuery(
-  bucketName: string,
+  _bucketName: string,
   service: string,
   from: number,
   to: number,
   whereClause?: string,
   limit: number = 100
 ): string {
-  const logsPath = `s3://${bucketName}/logs/**/*.parquet`;
-  const tracesPath = `s3://${bucketName}/traces/**/*.parquet`;
+  // Query from attached R2 Data Catalog (Iceberg tables)
+  // The catalog is attached as 'r2_catalog' in connectToR2()
+  const logsTable = 'r2_catalog.default.logs';
+  const tracesTable = 'r2_catalog.default.traces';
 
   // Escape service name for SQL
   const escapedService = service.replace(/'/g, "''");
@@ -206,13 +208,13 @@ export function buildRecordsQuery(
 
   return `
     SELECT 'LOG' as type, timestamp_ms, body as message, severity_text
-    FROM read_parquet('${logsPath}')
+    FROM ${logsTable}
     WHERE service = '${escapedService}'
       AND timestamp_ms BETWEEN ${from} AND ${to}
       ${additionalFilter}
     UNION ALL
     SELECT 'SPAN' as type, timestamp_ms, name as message, status_code::VARCHAR as severity_text
-    FROM read_parquet('${tracesPath}')
+    FROM ${tracesTable}
     WHERE service = '${escapedService}'
       AND timestamp_ms BETWEEN ${from} AND ${to}
       ${additionalFilter}

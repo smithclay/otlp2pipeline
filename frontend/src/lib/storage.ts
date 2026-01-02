@@ -8,6 +8,7 @@ export interface Credentials {
   workerUrl: string;
   r2Token: string;
   bucketName: string;
+  accountId: string;
 }
 
 /** @deprecated Use Credentials instead */
@@ -24,7 +25,8 @@ export function getStoredCredentials(): Credentials | null {
     if (
       typeof parsed.workerUrl === 'string' &&
       typeof parsed.r2Token === 'string' &&
-      typeof parsed.bucketName === 'string'
+      typeof parsed.bucketName === 'string' &&
+      typeof parsed.accountId === 'string'
     ) {
       return parsed as Credentials;
     }

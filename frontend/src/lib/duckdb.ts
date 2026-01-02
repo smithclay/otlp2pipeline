@@ -27,9 +27,16 @@ export async function initDuckDB(): Promise<duckdb.AsyncDuckDB> {
         throw new Error('DuckDB bundle does not include a worker');
       }
 
-      // Create worker and logger
-      const worker = new Worker(bundle.mainWorker);
+      // Create worker using Blob URL to avoid CORS issues with jsdelivr CDN
+      // This wraps the remote worker script in a local blob that can load cross-origin scripts
+      const workerUrl = URL.createObjectURL(
+        new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+      );
+      const worker = new Worker(workerUrl);
       const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
+
+      // Clean up the blob URL after worker is created (it's already loaded)
+      URL.revokeObjectURL(workerUrl);
 
       // Initialize DuckDB
       const instance = new duckdb.AsyncDuckDB(logger, worker);
@@ -54,13 +61,12 @@ export function getDuckDB(): duckdb.AsyncDuckDB | null {
 }
 
 /**
- * R2/S3 connection configuration.
+ * R2 Data Catalog connection configuration.
  */
 export interface R2Config {
   bucketName: string;
   r2Token: string;
-  accountId?: string;
-  endpoint?: string;
+  accountId: string;
 }
 
 /**
@@ -68,20 +74,18 @@ export interface R2Config {
  */
 export interface ConnectionStatus {
   connection: duckdb.AsyncDuckDBConnection;
-  httpfsAvailable: boolean;
-  s3Configured: boolean;
+  icebergAvailable: boolean;
+  catalogAttached: boolean;
   warnings: string[];
 }
 
 /**
- * Create a connection configured for R2/Iceberg access.
+ * Create a connection configured for R2 Data Catalog/Iceberg access.
  *
- * Note: DuckDB WASM's S3/Iceberg support has limitations.
- * The connection is set up with basic S3 configuration but actual
- * R2 connectivity may require additional configuration or may not
- * be fully supported in the browser environment.
+ * Uses DuckDB's Iceberg extension with Cloudflare R2 Data Catalog.
+ * See: https://developers.cloudflare.com/r2/data-catalog/config-examples/duckdb/
  *
- * @throws Error if S3 configuration fails (required for R2 access)
+ * @throws Error if Iceberg configuration fails
  */
 export async function connectToR2(
   database: duckdb.AsyncDuckDB,
@@ -89,43 +93,58 @@ export async function connectToR2(
 ): Promise<ConnectionStatus> {
   const conn = await database.connect();
   const warnings: string[] = [];
-  let httpfsAvailable = false;
+  let icebergAvailable = false;
+  let catalogAttached = false;
 
-  // Attempt to load httpfs extension for remote file access
-  // In WASM builds, httpfs may already be bundled or may not be available
+  // Load required extensions for R2 Data Catalog access
   try {
     await conn.query('INSTALL httpfs;');
     await conn.query('LOAD httpfs;');
-    httpfsAvailable = true;
+    await conn.query('INSTALL iceberg;');
+    await conn.query('LOAD iceberg;');
+    icebergAvailable = true;
   } catch (error) {
-    console.error('Failed to load httpfs extension:', error);
-    warnings.push('httpfs extension not available - R2/S3 queries may fail');
+    console.error('Failed to load extensions:', error);
+    warnings.push('Required extensions not available - R2 queries may fail');
   }
 
-  // Configure S3 credentials for R2
-  // R2 uses S3-compatible API with Cloudflare-specific endpoint
-  const endpoint = config.endpoint ?? `https://${config.accountId}.r2.cloudflarestorage.com`;
-
+  // Create Iceberg secret with R2 token
+  // See: https://duckdb.org/2025/12/16/iceberg-in-the-browser
   try {
     await conn.query(`
-      SET s3_region = 'auto';
-      SET s3_endpoint = '${endpoint}';
-      SET s3_access_key_id = '${config.r2Token}';
-      SET s3_use_ssl = true;
+      CREATE SECRET r2_secret (
+        TYPE ICEBERG,
+        TOKEN '${config.r2Token}'
+      );
     `);
   } catch (error) {
-    console.error('Failed to configure R2/S3 settings:', error);
-    // Close the connection since it's not usable without S3 config
+    console.error('Failed to create Iceberg secret:', error);
     await conn.close();
-    throw new Error(
-      'Failed to configure R2 connection. Check your credentials and try again.'
-    );
+    throw new Error('Failed to configure R2 credentials. Check your API token.');
+  }
+
+  // Attach R2 Data Catalog
+  // Warehouse format is: <account_id>_<bucket_name>
+  // Endpoint format is: https://catalog.cloudflarestorage.com/<account_id>/<bucket_name>
+  const catalogEndpoint = `https://catalog.cloudflarestorage.com/${config.accountId}/${config.bucketName}`;
+  const warehouse = `${config.accountId}_${config.bucketName}`;
+  try {
+    await conn.query(`
+      ATTACH '${warehouse}' AS r2_catalog (
+        TYPE ICEBERG,
+        ENDPOINT '${catalogEndpoint}'
+      );
+    `);
+    catalogAttached = true;
+  } catch (error) {
+    console.error('Failed to attach R2 catalog:', error);
+    warnings.push(`Failed to attach catalog: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
   return {
     connection: conn,
-    httpfsAvailable,
-    s3Configured: true,
+    icebergAvailable,
+    catalogAttached,
     warnings,
   };
 }

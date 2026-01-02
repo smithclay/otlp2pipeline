@@ -36,7 +36,8 @@ export function useCredentials(): UseCredentialsResult {
     credentials !== null &&
     credentials.workerUrl.length > 0 &&
     credentials.r2Token.length > 0 &&
-    credentials.bucketName.length > 0;
+    credentials.bucketName.length > 0 &&
+    credentials.accountId.length > 0;
 
   return {
     credentials,

@@ -111,10 +111,12 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
   const { credentials } = useCredentials();
   const bucketName = credentials?.bucketName ?? null;
   const r2Token = credentials?.r2Token ?? null;
+  const accountId = credentials?.accountId ?? null;
 
   const { executeQuery, loading: dbLoading, error: dbError, isConnected } = useDuckDB(
     bucketName,
-    r2Token
+    r2Token,
+    accountId
   );
 
   const [filter, setFilter] = useState<string>('');
@@ -152,8 +154,16 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Query failed';
       console.error('DuckDB query failed:', err);
-      // Show clear error state
-      setQueryError(`Failed to query records: ${message}. Check your R2 credentials and bucket configuration.`);
+
+      // Detect CORS/catalog errors and show helpful message
+      if (message.includes('Catalog') && message.includes('does not exist')) {
+        setQueryError(
+          'R2 Data Catalog connection failed. Browser-based Iceberg queries may not be supported due to CORS. ' +
+          'Use the CLI: frostbit query <env>'
+        );
+      } else {
+        setQueryError(`Failed to query records: ${message}. Check your R2 credentials and bucket configuration.`);
+      }
       setQueryResult(null);
     } finally {
       setQueryLoading(false);

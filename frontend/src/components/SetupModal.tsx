@@ -109,13 +109,15 @@ export function SetupModal({ onSave }: SetupModalProps) {
   const [workerUrl, setWorkerUrl] = useState('');
   const [r2Token, setR2Token] = useState('');
   const [bucketName, setBucketName] = useState('');
+  const [accountId, setAccountId] = useState('');
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
   const isFormValid =
     workerUrl.trim().length > 0 &&
     r2Token.trim().length > 0 &&
-    bucketName.trim().length > 0;
+    bucketName.trim().length > 0 &&
+    accountId.trim().length > 0;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -146,6 +148,7 @@ export function SetupModal({ onSave }: SetupModalProps) {
         workerUrl: normalizedUrl,
         r2Token: r2Token.trim(),
         bucketName: bucketName.trim(),
+        accountId: accountId.trim(),
       });
     }, 500);
   }
@@ -179,6 +182,25 @@ export function SetupModal({ onSave }: SetupModalProps) {
               value={workerUrl}
               onChange={(e) => setWorkerUrl(e.target.value)}
               placeholder="https://frostbit.example.workers.dev"
+              className="w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 placeholder-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              required
+            />
+          </div>
+
+          {/* Account ID */}
+          <div>
+            <label
+              htmlFor="accountId"
+              className="mb-1 block text-sm font-medium text-slate-300"
+            >
+              Cloudflare Account ID
+            </label>
+            <input
+              id="accountId"
+              type="text"
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              placeholder="e.g. 1a2b3c4d5e6f7g8h9i0j"
               className="w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 placeholder-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               required
             />
