@@ -67,6 +67,8 @@ export interface R2Config {
   bucketName: string;
   r2Token: string;
   accountId: string;
+  /** Worker URL for proxying R2 Data Catalog requests (CORS workaround) */
+  workerUrl?: string;
 }
 
 /**
@@ -125,9 +127,11 @@ export async function connectToR2(
 
   // Attach R2 Data Catalog
   // Warehouse format is: <account_id>_<bucket_name>
-  // Endpoint format is: https://catalog.cloudflarestorage.com/<account_id>/<bucket_name>
-  const catalogEndpoint = `https://catalog.cloudflarestorage.com/${config.accountId}/${config.bucketName}`;
+  // If workerUrl is provided, use it as a CORS proxy, otherwise try direct access
   const warehouse = `${config.accountId}_${config.bucketName}`;
+  const catalogEndpoint = config.workerUrl
+    ? `${config.workerUrl}/v1/iceberg`
+    : `https://catalog.cloudflarestorage.com/${config.accountId}/${config.bucketName}`;
   try {
     await conn.query(`
       ATTACH '${warehouse}' AS r2_catalog (

@@ -31,11 +31,13 @@ export interface UseDuckDBResult {
  * @param bucketName - R2 bucket name for Iceberg queries
  * @param r2Token - R2 API token for authentication
  * @param accountId - Cloudflare account ID for R2 Data Catalog
+ * @param workerUrl - Worker URL for proxying R2 catalog requests (CORS workaround)
  */
 export function useDuckDB(
   bucketName: string | null,
   r2Token: string | null,
-  accountId: string | null
+  accountId: string | null,
+  workerUrl: string | null = null
 ): UseDuckDBResult {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +66,7 @@ export function useDuckDB(
             bucketName,
             r2Token,
             accountId,
+            workerUrl: workerUrl ?? undefined,
           };
           const status = await connectToR2(db, config);
           if (!mounted) {
@@ -111,7 +114,7 @@ export function useDuckDB(
         connRef.current = null;
       }
     };
-  }, [bucketName, r2Token, accountId]);
+  }, [bucketName, r2Token, accountId, workerUrl]);
 
   // Execute a query against the database
   const executeQuery = useCallback(async (sql: string): Promise<QueryResult> => {

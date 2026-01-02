@@ -93,6 +93,8 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Get, path) if path.starts_with("/v1/tail/") => {
             handle_tail_upgrade(path, req, env).await
         }
+        // R2 Data Catalog proxy for browser DuckDB (CORS workaround)
+        (_, path) if path.starts_with("/v1/iceberg/") => handle_iceberg_proxy(path, req, env).await,
         _ => Response::error("Not Found", 404),
     };
 
@@ -230,6 +232,86 @@ async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Respon
 
     let request = worker::Request::new(&do_url, worker::Method::Get)?;
     stub.fetch_with_request(request).await
+}
+
+/// Proxy requests to R2 Data Catalog to work around browser CORS restrictions.
+/// The worker adds auth headers and forwards to catalog.cloudflarestorage.com.
+///
+/// Path format: /v1/iceberg/{rest_of_path}
+/// Environment variables required:
+///   - R2_CATALOG_ACCOUNT_ID: Cloudflare account ID
+///   - R2_CATALOG_BUCKET: R2 bucket name
+///   - R2_CATALOG_TOKEN: R2 API token (secret)
+async fn handle_iceberg_proxy(path: &str, mut req: Request, env: Env) -> Result<Response> {
+    // Get configuration from environment
+    let account_id = env
+        .var("R2_CATALOG_ACCOUNT_ID")
+        .map(|v| v.to_string())
+        .map_err(|_| Error::from("R2_CATALOG_ACCOUNT_ID not configured"))?;
+    let bucket = env
+        .var("R2_CATALOG_BUCKET")
+        .map(|v| v.to_string())
+        .map_err(|_| Error::from("R2_CATALOG_BUCKET not configured"))?;
+    let token = env
+        .secret("R2_CATALOG_TOKEN")
+        .map(|v| v.to_string())
+        .map_err(|_| Error::from("R2_CATALOG_TOKEN secret not configured"))?;
+
+    // Extract the path after /v1/iceberg/
+    let catalog_path = path.trim_start_matches("/v1/iceberg");
+
+    // Build the target URL
+    let catalog_base = format!(
+        "https://catalog.cloudflarestorage.com/{}/{}",
+        account_id, bucket
+    );
+    let target_url = if catalog_path.is_empty() || catalog_path == "/" {
+        catalog_base
+    } else {
+        format!("{}{}", catalog_base, catalog_path)
+    };
+
+    // Preserve query string if present
+    let url = req.url()?;
+    let target_url = if let Some(query) = url.query() {
+        format!("{}?{}", target_url, query)
+    } else {
+        target_url
+    };
+
+    // Build headers for the proxied request
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {}", token))?;
+
+    // Copy relevant headers from original request
+    if let Ok(Some(content_type)) = req.headers().get("Content-Type") {
+        headers.set("Content-Type", &content_type)?;
+    }
+    if let Ok(Some(accept)) = req.headers().get("Accept") {
+        headers.set("Accept", &accept)?;
+    }
+
+    // Get method and body before creating request
+    let method = req.method();
+    let is_body_request = method == Method::Post || method == Method::Put;
+    let body = if is_body_request {
+        Some(req.bytes().await?)
+    } else {
+        None
+    };
+
+    // Create the proxied request
+    let mut init = RequestInit::new();
+    init.with_method(method);
+    init.with_headers(headers);
+    if let Some(b) = body {
+        init.with_body(Some(b.into()));
+    }
+
+    let proxy_req = Request::new_with_init(&target_url, &init)?;
+
+    // Execute the request
+    Fetch::Request(proxy_req).send().await
 }
 
 async fn handle_tail_upgrade(path: &str, req: Request, env: Env) -> Result<Response> {

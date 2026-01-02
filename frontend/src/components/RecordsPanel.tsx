@@ -112,11 +112,13 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
   const bucketName = credentials?.bucketName ?? null;
   const r2Token = credentials?.r2Token ?? null;
   const accountId = credentials?.accountId ?? null;
+  const workerUrl = credentials?.workerUrl ?? null;
 
   const { executeQuery, loading: dbLoading, error: dbError, isConnected } = useDuckDB(
     bucketName,
     r2Token,
-    accountId
+    accountId,
+    workerUrl
   );
 
   const [filter, setFilter] = useState<string>('');
