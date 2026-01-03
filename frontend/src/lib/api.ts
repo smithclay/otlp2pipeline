@@ -130,12 +130,26 @@ export async function fetchServices(workerUrl: string): Promise<Service[]> {
   }
 
   const services: Service[] = [];
+  const invalidIndices: number[] = [];
+
   for (let i = 0; i < data.length; i++) {
     if (isServiceLike(data[i])) {
       services.push(toService(data[i] as Record<string, unknown>));
     } else {
       console.warn('Invalid service at index', i, ':', data[i]);
+      invalidIndices.push(i);
     }
+  }
+
+  // If ALL items were invalid, this indicates an API compatibility issue
+  if (data.length > 0 && services.length === 0) {
+    console.error('All services failed validation:', data);
+    throw new Error('API returned data in unexpected format. Check API version compatibility.');
+  }
+
+  // Log prominently if significant portion dropped
+  if (invalidIndices.length > 0) {
+    console.error(`Dropped ${invalidIndices.length} of ${data.length} services due to validation failure`);
   }
 
   return services;
@@ -171,12 +185,26 @@ export async function fetchLogStats(
   }
 
   const stats: LogStats[] = [];
+  const invalidIndices: number[] = [];
+
   for (let i = 0; i < data.length; i++) {
     if (isLogStatsLike(data[i])) {
       stats.push(toLogStats(data[i] as Record<string, unknown>));
     } else {
       console.warn('Invalid LogStats at index', i, ':', data[i]);
+      invalidIndices.push(i);
     }
+  }
+
+  // If ALL items were invalid, this indicates an API compatibility issue
+  if (data.length > 0 && stats.length === 0) {
+    console.error('All LogStats failed validation:', data);
+    throw new Error('API returned log stats in unexpected format. Check API version compatibility.');
+  }
+
+  // Log prominently if significant portion dropped
+  if (invalidIndices.length > 0) {
+    console.error(`Dropped ${invalidIndices.length} of ${data.length} LogStats due to validation failure`);
   }
 
   return stats;
@@ -212,12 +240,26 @@ export async function fetchTraceStats(
   }
 
   const stats: TraceStats[] = [];
+  const invalidIndices: number[] = [];
+
   for (let i = 0; i < data.length; i++) {
     if (isTraceStatsLike(data[i])) {
       stats.push(toTraceStats(data[i] as Record<string, unknown>));
     } else {
       console.warn('Invalid TraceStats at index', i, ':', data[i]);
+      invalidIndices.push(i);
     }
+  }
+
+  // If ALL items were invalid, this indicates an API compatibility issue
+  if (data.length > 0 && stats.length === 0) {
+    console.error('All TraceStats failed validation:', data);
+    throw new Error('API returned trace stats in unexpected format. Check API version compatibility.');
+  }
+
+  // Log prominently if significant portion dropped
+  if (invalidIndices.length > 0) {
+    console.error(`Dropped ${invalidIndices.length} of ${data.length} TraceStats due to validation failure`);
   }
 
   return stats;

@@ -47,6 +47,8 @@ pub struct AggregatorDO {
     state: State,
     env: Env,
     signal: AggregatorSignal,
+    /// Schema initialization error, if any. Checked on fetch to return proper errors.
+    schema_error: Option<String>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -54,18 +56,31 @@ impl DurableObject for AggregatorDO {
     fn new(state: State, env: Env) -> Self {
         // Note: state.id().name() returns empty in workers-rs, so we can't rely on it
         // for signal detection. Signal is passed via query param in requests instead.
+        // TODO: Re-evaluate when workers-rs is updated.
         let signal = AggregatorSignal::Logs; // Default, actual signal comes from request
-        let do_instance = Self { state, env, signal };
+        let mut do_instance = Self {
+            state,
+            env,
+            signal,
+            schema_error: None,
+        };
 
-        // Log but don't panic - Workers will return 500 and retry
+        // Capture schema error for checking on fetch - provides better error messages
         if let Err(e) = do_instance.ensure_schema() {
-            worker::console_error!("Failed to initialize SQLite schema: {}", e);
+            let error_msg = format!("Failed to initialize SQLite schema: {}", e);
+            worker::console_error!("{}", error_msg);
+            do_instance.schema_error = Some(error_msg);
         }
 
         do_instance
     }
 
     async fn fetch(&self, req: Request) -> Result<Response> {
+        // Check for schema initialization error before processing
+        if let Some(ref error) = self.schema_error {
+            return Response::error(format!("Aggregator not ready: {}", error), 503);
+        }
+
         let path = req.path();
         match (req.method(), path.as_str()) {
             (Method::Post, "/ingest") => self.handle_ingest(req).await,
@@ -204,6 +219,11 @@ impl AggregatorDO {
             return Some((date_ms as i64) / 60_000);
         }
 
+        // Log parsing failure to help debug client issues
+        worker::console_warn!(
+            "Failed to parse time parameter: '{}' - expected integer or ISO 8601 date",
+            value
+        );
         None
     }
 

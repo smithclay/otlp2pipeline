@@ -72,6 +72,14 @@ export interface R2Config {
 }
 
 /**
+ * Escape single quotes for SQL string literals.
+ * Prevents SQL injection when interpolating values into queries.
+ */
+function escapeSqlString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+/**
  * Connection status including extension availability.
  */
 export interface ConnectionStatus {
@@ -113,10 +121,11 @@ export async function connectToR2(
   // Create Iceberg secret with R2 token
   // See: https://duckdb.org/2025/12/16/iceberg-in-the-browser
   try {
+    const escapedToken = escapeSqlString(config.r2Token);
     await conn.query(`
       CREATE SECRET r2_secret (
         TYPE ICEBERG,
-        TOKEN '${config.r2Token}'
+        TOKEN '${escapedToken}'
       );
     `);
   } catch (error) {
@@ -128,10 +137,12 @@ export async function connectToR2(
   // Attach R2 Data Catalog
   // Warehouse format is: <account_id>_<bucket_name>
   // If workerUrl is provided, use it as a CORS proxy, otherwise try direct access
-  const warehouse = `${config.accountId}_${config.bucketName}`;
+  const escapedAccountId = escapeSqlString(config.accountId);
+  const escapedBucketName = escapeSqlString(config.bucketName);
+  const warehouse = `${escapedAccountId}_${escapedBucketName}`;
   const catalogEndpoint = config.workerUrl
-    ? `${config.workerUrl}/v1/iceberg`
-    : `https://catalog.cloudflarestorage.com/${config.accountId}/${config.bucketName}`;
+    ? `${escapeSqlString(config.workerUrl)}/v1/iceberg`
+    : `https://catalog.cloudflarestorage.com/${escapedAccountId}/${escapedBucketName}`;
   try {
     await conn.query(`
       ATTACH '${warehouse}' AS r2_catalog (
@@ -141,8 +152,17 @@ export async function connectToR2(
     `);
     catalogAttached = true;
   } catch (error) {
+    // Catalog attachment failure means queries won't work - fail explicitly
     console.error('Failed to attach R2 catalog:', error);
-    warnings.push(`Failed to attach catalog: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    await conn.close();
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message.includes('forbidden') || message.includes('401') || message.includes('403')) {
+      throw new Error('R2 token does not have permission to access the catalog. Check token permissions.');
+    } else if (message.includes('not found') || message.includes('404')) {
+      throw new Error('R2 Data Catalog not found. Verify your Account ID and Bucket Name.');
+    } else {
+      throw new Error(`Failed to connect to R2 Data Catalog: ${message}`);
+    }
   }
 
   return {
@@ -195,11 +215,4 @@ export async function executeQuery(
   }
 
   return { columns, rows };
-}
-
-/**
- * Build an R2 parquet path for a given table.
- */
-export function buildR2Path(bucketName: string, tableName: string): string {
-  return `s3://${bucketName}/${tableName}/**/*.parquet`;
 }

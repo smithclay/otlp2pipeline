@@ -93,7 +93,27 @@ export function useDuckDB(
         setError(null);
       } catch (err) {
         if (mounted) {
-          const message = err instanceof Error ? err.message : 'Failed to initialize DuckDB';
+          let message: string;
+
+          if (err instanceof Error) {
+            const errMsg = err.message.toLowerCase();
+            // Categorize errors for actionable messages
+            if (errMsg.includes('secret') || errMsg.includes('credentials') || errMsg.includes('token') || errMsg.includes('permission')) {
+              message = err.message; // Already has good context from duckdb.ts
+            } else if (errMsg.includes('catalog') || errMsg.includes('attach')) {
+              message = err.message; // Already has good context from duckdb.ts
+            } else if (errMsg.includes('fetch') || errMsg.includes('network') || errMsg.includes('cors') || errMsg.includes('failed to fetch')) {
+              message = 'Network error connecting to DuckDB. Check your internet connection and Worker URL.';
+            } else if (errMsg.includes('webassembly') || errMsg.includes('wasm')) {
+              message = 'Browser does not support WebAssembly. Try a modern browser like Chrome, Firefox, or Edge.';
+            } else {
+              message = `DuckDB initialization failed: ${err.message}`;
+            }
+          } else {
+            message = 'Failed to initialize DuckDB';
+          }
+
+          console.error('DuckDB error:', err);
           setError(message);
           setIsConnected(false);
         }
@@ -182,7 +202,7 @@ export function validateWhereClause(clause: string): string | null {
  * performed but this should only be used with trusted input. The filter
  * is intended for power users querying their own observability data.
  *
- * @param bucketName - R2 bucket name
+ * @param _bucketName - Unused, kept for API compatibility. Queries now use attached 'r2_catalog'.
  * @param service - Service name to filter by
  * @param from - Start time in milliseconds
  * @param to - End time in milliseconds

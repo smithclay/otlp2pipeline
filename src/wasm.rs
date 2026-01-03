@@ -314,7 +314,18 @@ async fn handle_iceberg_proxy(path: &str, mut req: Request, env: Env) -> Result<
     let proxy_req = Request::new_with_init(&target_url, &init)?;
 
     // Execute the request
-    Fetch::Request(proxy_req).send().await
+    let response = Fetch::Request(proxy_req).send().await?;
+
+    // Log non-2xx responses for debugging catalog issues
+    if response.status_code() >= 400 {
+        tracing::warn!(
+            status = response.status_code(),
+            path = catalog_path,
+            "R2 catalog proxy received error response"
+        );
+    }
+
+    Ok(response)
 }
 
 async fn handle_tail_upgrade(path: &str, req: Request, env: Env) -> Result<Response> {
