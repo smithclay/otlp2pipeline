@@ -6,6 +6,7 @@ export interface Service {
   name: string;
   has_logs: boolean;
   has_traces: boolean;
+  has_metrics: boolean;
 }
 
 export interface LogStats {
@@ -25,7 +26,7 @@ export interface TraceStats {
 
 /**
  * Type guard for Service objects.
- * Accepts both boolean and numeric (0/1) values for has_logs/has_traces
+ * Accepts both boolean and numeric (0/1) values for has_logs/has_traces/has_metrics
  * since the API returns integers.
  */
 function isServiceLike(obj: unknown): boolean {
@@ -34,7 +35,8 @@ function isServiceLike(obj: unknown): boolean {
   return (
     typeof s.name === 'string' &&
     (typeof s.has_logs === 'boolean' || typeof s.has_logs === 'number') &&
-    (typeof s.has_traces === 'boolean' || typeof s.has_traces === 'number')
+    (typeof s.has_traces === 'boolean' || typeof s.has_traces === 'number') &&
+    (typeof s.has_metrics === 'boolean' || typeof s.has_metrics === 'number')
   );
 }
 
@@ -46,6 +48,7 @@ function toService(obj: Record<string, unknown>): Service {
     name: obj.name as string,
     has_logs: Boolean(obj.has_logs),
     has_traces: Boolean(obj.has_traces),
+    has_metrics: Boolean(obj.has_metrics),
   };
 }
 

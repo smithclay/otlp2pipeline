@@ -196,8 +196,10 @@ export function HoneycombGrid({
                   }}
                 >
                   <tspan style={{ fill: item.service.has_logs ? '#1565c0' : '#9e9e9e' }}>L</tspan>
-                  <tspan>  </tspan>
+                  <tspan> </tspan>
                   <tspan style={{ fill: item.service.has_traces ? '#7b1fa2' : '#9e9e9e' }}>T</tspan>
+                  <tspan> </tspan>
+                  <tspan style={{ fill: item.service.has_metrics ? '#059669' : '#9e9e9e' }}>M</tspan>
                 </Text>
               </Hexagon>
             );

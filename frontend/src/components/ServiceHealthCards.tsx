@@ -141,7 +141,7 @@ function MetricSparkline({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="w-16 shrink-0">
+      <div className="w-20 shrink-0">
         <span
           className="text-xs font-medium uppercase tracking-wider"
           style={{ color: 'var(--color-text-tertiary)' }}
@@ -149,10 +149,10 @@ function MetricSparkline({
           {label}
         </span>
       </div>
-      <div className="flex-1 min-w-0">
-        <Sparkline data={data} color={color} width={200} height={28} />
+      <div className="flex-1 min-w-0 overflow-hidden mr-3">
+        <Sparkline data={data} color={color} width={160} height={28} />
       </div>
-      <div className="w-20 shrink-0 text-right">
+      <div className="w-24 shrink-0 text-right">
         <span className="mono text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
           {typeof value === 'number' && !isNaN(value)
             ? value >= 1000
@@ -230,24 +230,6 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
 
   // Calculate throughput (requests per minute, assuming 15-min window)
   const throughputPerMin = item.totalCount / 15;
-
-  // Generate mock sparkline data from recent stats or use placeholder
-  const sparklineData = useMemo(() => {
-    if (detailStats && isSelected) {
-      // Combine log and trace counts
-      const combined = new Map<string, number>();
-      for (const stat of detailStats.logStats) {
-        combined.set(stat.minute, (combined.get(stat.minute) ?? 0) + stat.count);
-      }
-      for (const stat of detailStats.traceStats) {
-        combined.set(stat.minute, (combined.get(stat.minute) ?? 0) + stat.count);
-      }
-      const sorted = Array.from(combined.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-      return sorted.map(([, count]) => count);
-    }
-    // Placeholder sparkline based on error rate variance
-    return Array.from({ length: 15 }, () => Math.random() * item.totalCount * 0.1);
-  }, [detailStats, isSelected, item.totalCount]);
 
   // Calculate RED metrics from detail stats
   const redMetrics = useMemo(() => {
@@ -397,11 +379,6 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
               <span className="mono">{formatCount(Math.round(throughputPerMin))}</span>
               {' req/min'}
             </p>
-
-            {/* Mini sparkline */}
-            <div className="mt-3">
-              <Sparkline data={sparklineData.slice(-15)} color={statusColor} />
-            </div>
           </div>
 
           {/* Status indicator */}
@@ -441,6 +418,17 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
                   }}
                 >
                   Traces
+                </span>
+              )}
+              {item.service.has_metrics && (
+                <span
+                  className="px-2 py-0.5 text-xs font-medium rounded"
+                  style={{
+                    backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                    color: '#059669',
+                  }}
+                >
+                  Metrics
                 </span>
               )}
             </div>
