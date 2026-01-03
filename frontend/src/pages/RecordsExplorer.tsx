@@ -316,13 +316,15 @@ export function RecordsExplorer() {
         const columnar = toColumnarData(records);
         if (!columnar) return;
 
-        // Create or replace table
-        if (tableRef.current) {
-          await tableRef.current.delete();
-        }
+        // Create new table first, then load into viewer, then delete old table
+        // (Must load before delete - viewer holds a View on the old table)
+        const oldTable = tableRef.current;
         const newTable = await worker.table(columnar);
         tableRef.current = newTable;
         await viewer.load(newTable);
+        if (oldTable) {
+          await oldTable.delete();
+        }
 
         // Apply default config for tail mode
         await viewer.restore({
