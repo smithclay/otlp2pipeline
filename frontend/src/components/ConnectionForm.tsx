@@ -181,13 +181,24 @@ export function ConnectionForm({ onSave, initialValues, submitLabel = 'Connect' 
 
       {/* R2 API Token */}
       <div>
-        <label
-          htmlFor="r2Token"
-          className="mb-1.5 block text-sm font-medium"
-          style={{ color: 'var(--color-text-secondary)' }}
-        >
-          R2 API Token
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label
+            htmlFor="r2Token"
+            className="text-sm font-medium"
+            style={{ color: 'var(--color-text-secondary)' }}
+          >
+            R2 API Token
+          </label>
+          <a
+            href="https://dash.cloudflare.com/?to=/:account/r2/api-tokens"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs hover:underline"
+            style={{ color: 'var(--color-accent)' }}
+          >
+            Get token →
+          </a>
+        </div>
         <input
           id="r2Token"
           type="password"

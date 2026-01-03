@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useCredentials } from '../hooks/useCredentials';
 import { useServices } from '../hooks/useServices';
 import { useStats, TIME_RANGES } from '../hooks/useStats';
 import { useServiceStats } from '../hooks/useServiceStats';
 import { ServiceHealthCards, type ServiceWithStats } from '../components/ServiceHealthCards';
 import { LoadingSpinner, ErrorMessage } from '../components/LoadingState';
+import { useToast } from '../components/Toast';
 
 function formatTimeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -16,8 +17,12 @@ function formatTimeAgo(date: Date): string {
 }
 
 export function Home() {
-  const { credentials } = useCredentials();
+  const { credentials, isConfigured } = useCredentials();
   const workerUrl = credentials?.workerUrl ?? null;
+  const { showToast } = useToast();
+
+  // Track if we've shown the config toast to avoid duplicates
+  const hasShownConfigToast = useRef(false);
 
   // State for selected service (toggle selection on click)
   const [selectedService, setSelectedService] = useState<string | null>(null);
@@ -31,6 +36,18 @@ export function Home() {
     const id = setInterval(() => setTick((t) => t + 1), 10000);
     return () => clearInterval(id);
   }, []);
+
+  // Show toast if not configured on mount
+  useEffect(() => {
+    if (!isConfigured && !hasShownConfigToast.current) {
+      hasShownConfigToast.current = true;
+      showToast({
+        type: 'info',
+        message: 'Configure your connection settings to get started.',
+        action: { label: 'Go to Settings', to: '/settings' },
+      });
+    }
+  }, [isConfigured, showToast]);
 
   // Fixed time range for detail stats (1 hour)
   const timeRange = TIME_RANGES[1];
@@ -64,6 +81,25 @@ export function Home() {
 
   // Primary error to display (services error takes precedence)
   const error = servicesError ?? statsError;
+
+  // Track if we've shown the error toast to avoid duplicates
+  const hasShownErrorToast = useRef(false);
+
+  // Show toast on error (connection issues)
+  useEffect(() => {
+    if (error && isConfigured && !hasShownErrorToast.current) {
+      hasShownErrorToast.current = true;
+      showToast({
+        type: 'error',
+        message: 'Connection error. Check your settings.',
+        action: { label: 'Go to Settings', to: '/settings' },
+      });
+    }
+    // Reset when error clears so we can show again if it recurs
+    if (!error) {
+      hasShownErrorToast.current = false;
+    }
+  }, [error, isConfigured, showToast]);
 
   // Combined refetch that handles both error sources
   const handleRetry = useCallback(() => {
