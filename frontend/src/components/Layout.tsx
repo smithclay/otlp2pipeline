@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { NavLink } from 'react-router-dom';
 
 interface LayoutProps {
   children: ReactNode;
@@ -15,6 +16,30 @@ export function Layout({ children, onOpenSettings }: LayoutProps) {
           <div className="flex items-center gap-2">
             <span className="text-xl font-semibold text-cyan-500">frostbit</span>
           </div>
+
+          {/* Navigation */}
+          <nav className="flex items-center gap-4">
+            <NavLink
+              to="/"
+              className={({ isActive }) =>
+                `text-sm transition-colors ${
+                  isActive ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
+                }`
+              }
+            >
+              Dashboard
+            </NavLink>
+            <NavLink
+              to="/records"
+              className={({ isActive }) =>
+                `text-sm transition-colors ${
+                  isActive ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
+                }`
+              }
+            >
+              Records
+            </NavLink>
+          </nav>
 
           {/* Settings */}
           <button
