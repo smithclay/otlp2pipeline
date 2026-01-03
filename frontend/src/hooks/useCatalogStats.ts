@@ -128,6 +128,12 @@ function formatPartitionSpec(metadata: TableMetadata): string {
     const columnName = fieldIdToName.get(sourceId) || `field_${sourceId}`;
     const transform = field.transform;
 
+    // Skip if transform is missing (defensive)
+    if (!transform) {
+      console.warn('Partition field missing transform:', field);
+      continue;
+    }
+
     // Format based on transform type
     if (transform === 'identity') {
       // Identity transform: just show column name
@@ -166,7 +172,7 @@ function extractSchemaFields(metadata: TableMetadata): SchemaFieldInfo[] {
 
   return currentSchema.fields.map((field) => ({
     name: field.name,
-    type: field.type,
+    type: typeof field.type === 'string' ? field.type : JSON.stringify(field.type),
   }));
 }
 
