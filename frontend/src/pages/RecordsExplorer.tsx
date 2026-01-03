@@ -339,11 +339,7 @@ export function RecordsExplorer() {
         clearTimeout(tailUpdateTimeoutRef.current);
         tailUpdateTimeoutRef.current = null;
       }
-      // Cleanup table on mode change
-      if (tableRef.current) {
-        tableRef.current.delete().catch(console.error);
-        tableRef.current = null;
-      }
+      // Note: Don't delete table here - handled by unmount effect below
     };
   }, [mode, tailRecords]);
 
@@ -571,8 +567,29 @@ export function RecordsExplorer() {
         </div>
       )}
 
-      {/* No Results Message */}
-      {isConnected && queryResult && queryResult.rows.length === 0 && (
+      {/* Perspective Viewer - show when we have data in either mode */}
+      {isConfigured && (
+        <div
+          className="flex-1 min-h-[400px] rounded-lg overflow-hidden"
+          style={{
+            display:
+              (mode === 'query' && queryResult && queryResult.rows.length > 0) ||
+              (mode === 'tail' && tailRecords.length > 0)
+                ? 'flex'
+                : 'none',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          <perspective-viewer
+            ref={viewerRef}
+            style={{ flex: 1, minHeight: '400px' }}
+          />
+        </div>
+      )}
+
+      {/* No Results Message - only for query mode */}
+      {mode === 'query' && isConnected && queryResult && queryResult.rows.length === 0 && (
         <div
           className="rounded-lg p-8 text-center"
           style={{
@@ -586,20 +603,18 @@ export function RecordsExplorer() {
         </div>
       )}
 
-      {/* Perspective Viewer - always render when connected so ref is stable */}
-      {isConnected && (
+      {/* Waiting for data - tail mode */}
+      {mode === 'tail' && tailStatus.state === 'connected' && tailRecords.length === 0 && (
         <div
-          className="flex-1 min-h-[400px] rounded-lg overflow-hidden"
+          className="rounded-lg p-8 text-center"
           style={{
-            display: queryResult && queryResult.rows.length > 0 ? 'flex' : 'none',
+            backgroundColor: 'var(--color-paper-warm)',
             border: '1px solid var(--color-border)',
-            boxShadow: 'var(--shadow-sm)',
           }}
         >
-          <perspective-viewer
-            ref={viewerRef}
-            style={{ flex: 1, minHeight: '400px' }}
-          />
+          <p style={{ color: 'var(--color-text-secondary)' }}>
+            Waiting for records...
+          </p>
         </div>
       )}
     </div>
