@@ -42,6 +42,47 @@ export interface Snapshot {
 }
 
 /**
+ * Field in a partition spec.
+ * Defines how data is partitioned (e.g., by day, month, bucket).
+ */
+export interface PartitionField {
+  'source-id': number;
+  'field-id': number;
+  name: string;
+  transform: string;
+}
+
+/**
+ * Partition specification for a table.
+ * Describes how table data is organized into partitions.
+ */
+export interface PartitionSpec {
+  'spec-id': number;
+  fields: PartitionField[];
+}
+
+/**
+ * Field in a table schema.
+ * Defines a column with its type and nullability.
+ */
+export interface SchemaField {
+  id: number;
+  name: string;
+  required: boolean;
+  type: string;
+}
+
+/**
+ * Table schema definition.
+ * Describes the structure of data in the table.
+ */
+export interface Schema {
+  'schema-id': number;
+  type: string;
+  fields: SchemaField[];
+}
+
+/**
  * Iceberg table metadata.
  * Contains the essential fields needed for catalog stats.
  */
@@ -52,6 +93,10 @@ export interface TableMetadata {
   'last-updated-ms'?: number;
   'current-snapshot-id'?: number;
   snapshots?: Snapshot[];
+  'partition-specs'?: PartitionSpec[];
+  'default-spec-id'?: number;
+  schemas?: Schema[];
+  'current-schema-id'?: number;
 }
 
 /**
