@@ -12,9 +12,7 @@ import '@finos/perspective-viewer/dist/css/themes.css';
 
 const DEFAULT_QUERY = `SELECT *
 FROM r2_catalog.default.logs
-WHERE timestamp > now() - INTERVAL '1 hour'
-ORDER BY timestamp DESC
-LIMIT 1000`;
+LIMIT 100`;
 
 /**
  * Perspective-compatible value types.
@@ -202,6 +200,7 @@ export function RecordsExplorer() {
         {queryTimeMs !== null && (
           <span className="text-sm text-slate-400">
             Query executed in {queryTimeMs}ms
+            {queryResult && ` - ${queryResult.rows.length} rows`}
           </span>
         )}
       </div>
@@ -265,12 +264,22 @@ export function RecordsExplorer() {
         </div>
       )}
 
-      {/* Perspective Viewer */}
+      {/* No Results Message */}
+      {isConnected && queryResult && queryResult.rows.length === 0 && (
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-8 text-center">
+          <p className="text-slate-400">No results found. Try adjusting your query.</p>
+        </div>
+      )}
+
+      {/* Perspective Viewer - always render when connected so ref is stable */}
       {isConnected && (
-        <div className="flex-1 min-h-[400px] rounded-lg overflow-hidden border border-slate-700">
+        <div
+          className="flex-1 min-h-[400px] rounded-lg overflow-hidden border border-slate-700"
+          style={{ display: queryResult && queryResult.rows.length > 0 ? 'flex' : 'none' }}
+        >
           <perspective-viewer
             ref={viewerRef}
-            style={{ height: '100%', width: '100%' }}
+            style={{ flex: 1, minHeight: '400px' }}
           />
         </div>
       )}
