@@ -6,6 +6,8 @@ import {
   loadTable,
   TableIdentifier,
   LoadTableResponse,
+  TableMetadata,
+  Schema,
 } from '../lib/iceberg';
 
 /**
@@ -29,6 +31,14 @@ async function fetchWorkerConfig(workerUrl: string): Promise<WorkerConfig> {
 }
 
 /**
+ * Schema field for display purposes.
+ */
+export interface SchemaFieldInfo {
+  name: string;
+  type: string;
+}
+
+/**
  * Stats for a single Iceberg table.
  */
 export interface TableStats {
@@ -38,6 +48,9 @@ export interface TableStats {
   recordCount: number;
   snapshotCount: number;
   lastUpdatedMs: number | null;
+  partitionSpec: string;
+  totalSizeBytes: number;
+  schemaFields: SchemaFieldInfo[];
 }
 
 /**
@@ -65,6 +78,99 @@ export interface UseCatalogStatsResult {
 
 
 /**
+ * Format partition spec as human-readable string.
+ *
+ * Maps partition field source-ids to column names using the current schema,
+ * then formats as "transform(column_name)" for each field.
+ *
+ * @param metadata - Iceberg table metadata
+ * @returns Formatted partition spec (e.g., "day(__ingest_ts)") or "not partitioned"
+ */
+function formatPartitionSpec(metadata: TableMetadata): string {
+  const defaultSpecId = metadata['default-spec-id'];
+  const specs = metadata['partition-specs'];
+
+  // No partition specs defined
+  if (specs === undefined || specs.length === 0) {
+    return 'not partitioned';
+  }
+
+  // Find the default partition spec
+  const defaultSpec = specs.find((s) => s['spec-id'] === defaultSpecId);
+  if (!defaultSpec || defaultSpec.fields.length === 0) {
+    return 'not partitioned';
+  }
+
+  // Build a map from field id to column name using current schema
+  const currentSchemaId = metadata['current-schema-id'];
+  const schemas = metadata.schemas;
+  let currentSchema: Schema | undefined;
+
+  if (schemas && schemas.length > 0) {
+    currentSchema = schemas.find((s) => s['schema-id'] === currentSchemaId);
+    // Fallback to first schema if current not found
+    if (!currentSchema) {
+      currentSchema = schemas[0];
+    }
+  }
+
+  const fieldIdToName: Map<number, string> = new Map();
+  if (currentSchema) {
+    for (const field of currentSchema.fields) {
+      fieldIdToName.set(field.id, field.name);
+    }
+  }
+
+  // Format each partition field as "transform(column_name)"
+  const parts: string[] = [];
+  for (const field of defaultSpec.fields) {
+    const sourceId = field['source-id'];
+    const columnName = fieldIdToName.get(sourceId) || `field_${sourceId}`;
+    const transform = field.transform;
+
+    // Format based on transform type
+    if (transform === 'identity') {
+      // Identity transform: just show column name
+      parts.push(columnName);
+    } else {
+      // Other transforms: show transform(column_name)
+      parts.push(`${transform}(${columnName})`);
+    }
+  }
+
+  return parts.length > 0 ? parts.join(', ') : 'not partitioned';
+}
+
+/**
+ * Extract schema fields from table metadata.
+ *
+ * Gets the fields from the current schema.
+ *
+ * @param metadata - Iceberg table metadata
+ * @returns Array of field definitions with name and type
+ */
+function extractSchemaFields(metadata: TableMetadata): SchemaFieldInfo[] {
+  const currentSchemaId = metadata['current-schema-id'];
+  const schemas = metadata.schemas;
+
+  if (!schemas || schemas.length === 0) {
+    return [];
+  }
+
+  // Find the current schema
+  let currentSchema = schemas.find((s) => s['schema-id'] === currentSchemaId);
+  // Fallback to first schema if current not found
+  if (!currentSchema) {
+    currentSchema = schemas[0];
+  }
+
+  return currentSchema.fields.map((field) => ({
+    name: field.name,
+    type: field.type,
+  }));
+}
+
+/**
  * Extract stats from a loaded table response.
  */
 function extractTableStats(
@@ -82,18 +188,24 @@ function extractTableStats(
     ? snapshots.find((s) => s['snapshot-id'] === currentSnapshotId)
     : undefined;
 
-  // Extract file and record counts from current snapshot summary
+  // Extract file, record, and size counts from current snapshot summary
   let fileCount = 0;
   let recordCount = 0;
+  let totalSizeBytes = 0;
   if (currentSnapshot?.summary) {
     const summary = currentSnapshot.summary;
-    // Use total-data-files and total-records from snapshot summary
+    // Use total-data-files, total-records, and total-files-size from snapshot summary
     fileCount = parseInt(summary['total-data-files'] || '0', 10) || 0;
     recordCount = parseInt(summary['total-records'] || '0', 10) || 0;
+    totalSizeBytes = parseInt(summary['total-files-size'] || '0', 10) || 0;
   }
 
   // Last updated from current snapshot timestamp or metadata
   const lastUpdatedMs = currentSnapshot?.['timestamp-ms'] ?? metadata['last-updated-ms'] ?? null;
+
+  // Extract partition spec and schema fields
+  const partitionSpec = formatPartitionSpec(metadata);
+  const schemaFields = extractSchemaFields(metadata);
 
   return {
     namespace,
@@ -102,6 +214,9 @@ function extractTableStats(
     recordCount,
     snapshotCount,
     lastUpdatedMs,
+    partitionSpec,
+    totalSizeBytes,
+    schemaFields,
   };
 }
 
