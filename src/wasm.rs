@@ -13,6 +13,7 @@ use crate::parse_content_metadata;
 use crate::pipeline::PipelineClient;
 use crate::registry::{RegistrySender, WasmRegistrySender};
 use crate::signal::Signal;
+use crate::stats::{handle_all_services_stats, handle_stats_query};
 use crate::transform::init_programs;
 
 /// Add CORS headers to a response.
@@ -89,8 +90,10 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Get, "/health") => Response::ok("ok"),
         (Method::Get, "/v1/config") => handle_config(env),
         (Method::Get, "/v1/services") => handle_services_list(env).await,
-        // Stats API endpoints
-        (Method::Get, path) if path.starts_with("/v1/services/") => {
+        // All-services stats: /v1/services/stats?signal=logs|traces
+        (Method::Get, "/v1/services/stats") => handle_all_services_stats(req, env).await,
+        // Per-service stats: /v1/services/:service/:signal/stats
+        (Method::Get, path) if path.starts_with("/v1/services/") && path.ends_with("/stats") => {
             handle_stats_query(path, req, env).await
         }
         // Live tail WebSocket upgrade
@@ -225,40 +228,6 @@ fn handle_config(env: Env) -> Result<Response> {
     };
 
     Response::from_json(&config)
-}
-
-async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Response> {
-    // Parse path: /v1/services/:service/:signal/stats
-    let parts: Vec<&str> = path
-        .trim_start_matches("/v1/services/")
-        .split('/')
-        .collect();
-    if parts.len() < 3 || parts[2] != "stats" {
-        return Response::error("Invalid path. Use /v1/services/:service/:signal/stats", 400);
-    }
-
-    let service = parts[0];
-    let signal = parts[1];
-
-    // Validate signal
-    if signal != "logs" && signal != "traces" {
-        return Response::error("Signal must be 'logs' or 'traces'", 400);
-    }
-
-    let do_name = format!("{}:{}", service, signal);
-
-    let namespace = env.durable_object("AGGREGATOR")?;
-    let id = namespace.id_from_name(&do_name)?;
-    let stub = id.get_stub()?;
-
-    // Forward request to DO (preserving query string and adding signal param)
-    let url = req.url()?;
-    let existing_query = url.query().unwrap_or("");
-    let sep = if existing_query.is_empty() { "" } else { "&" };
-    let do_url = format!("http://do/stats?{}{}signal={}", existing_query, sep, signal);
-
-    let request = worker::Request::new(&do_url, worker::Method::Get)?;
-    stub.fetch_with_request(request).await
 }
 
 /// Proxy requests to R2 Data Catalog to work around browser CORS restrictions.

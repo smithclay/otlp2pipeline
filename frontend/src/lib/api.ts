@@ -116,6 +116,66 @@ function toTraceStats(obj: Record<string, unknown>): TraceStats {
   return result;
 }
 
+/**
+ * Response from the all-services stats endpoint.
+ */
+export interface AllServicesStatsResponse {
+  service: string;
+  stats: LogStats[] | TraceStats[];
+}
+
+/**
+ * Fetch stats for all services at once.
+ * Uses the combined endpoint to reduce N+1 API calls.
+ */
+export async function fetchAllServicesStats(
+  workerUrl: string,
+  signal: 'logs' | 'traces',
+  from: Date,
+  to: Date
+): Promise<AllServicesStatsResponse[]> {
+  const params = new URLSearchParams({
+    signal,
+    from: from.toISOString(),
+    to: to.toISOString(),
+  });
+
+  const url = `${workerUrl}/v1/services/stats?${params}`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch all services stats: ${response.status} ${response.statusText}`);
+  }
+
+  const data: unknown = await response.json();
+
+  if (!Array.isArray(data)) {
+    console.error('Expected array of service stats, got:', typeof data);
+    throw new Error('Invalid API response: expected array of service stats');
+  }
+
+  // Validate each service stats entry
+  const results: AllServicesStatsResponse[] = [];
+  for (const entry of data) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.service !== 'string' || !Array.isArray(e.stats)) continue;
+
+    // Validate stats array based on signal type
+    const validator = signal === 'logs' ? isLogStatsLike : isTraceStatsLike;
+    const converter = signal === 'logs' ? toLogStats : toTraceStats;
+    const validStats = e.stats.filter(validator).map((s) => converter(s as Record<string, unknown>));
+
+    results.push({
+      service: e.service,
+      stats: validStats,
+    });
+  }
+
+  return results;
+}
+
 export async function fetchServices(workerUrl: string): Promise<Service[]> {
   const url = `${workerUrl}/v1/services`;
 

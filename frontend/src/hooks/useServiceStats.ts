@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Service } from '../lib/api';
-import { fetchLogStats, fetchTraceStats } from '../lib/api';
+import { fetchAllServicesStats } from '../lib/api';
 
 export interface ServiceErrorStats {
   name: string;
@@ -17,32 +17,8 @@ export interface UseServiceStatsResult {
 }
 
 /**
- * Calculate error rate from stats arrays.
- */
-function calculateErrorRate(
-  logStats: { count: number; error_count: number }[],
-  traceStats: { count: number; error_count: number }[]
-): { totalCount: number; errorCount: number; errorRate: number } {
-  let totalCount = 0;
-  let errorCount = 0;
-
-  for (const stat of logStats) {
-    totalCount += stat.count;
-    errorCount += stat.error_count;
-  }
-
-  for (const stat of traceStats) {
-    totalCount += stat.count;
-    errorCount += stat.error_count;
-  }
-
-  const errorRate = totalCount > 0 ? (errorCount / totalCount) * 100 : 0;
-
-  return { totalCount, errorCount, errorRate };
-}
-
-/**
  * Hook to fetch error stats for all services.
+ * Uses the combined /v1/services/stats endpoint for efficiency (2 requests instead of 2*N).
  * Returns a map of service name to error rate for traffic light display.
  */
 export function useServiceStats(
@@ -67,45 +43,52 @@ export function useServiceStats(
     const from = new Date(Date.now() - 15 * 60 * 1000);
     const to = new Date();
 
-    const newStats = new Map<string, ServiceErrorStats>();
-
     try {
-      // Fetch stats for all services in parallel
-      await Promise.all(
-        services.map(async (service) => {
-          try {
-            const [logStats, traceStats] = await Promise.all([
-              service.has_logs
-                ? fetchLogStats(workerUrl, service.name, from, to)
-                : Promise.resolve([]),
-              service.has_traces
-                ? fetchTraceStats(workerUrl, service.name, from, to)
-                : Promise.resolve([]),
-            ]);
+      // Fetch logs and traces stats for ALL services in just 2 requests
+      const [logResults, traceResults] = await Promise.all([
+        fetchAllServicesStats(workerUrl, 'logs', from, to),
+        fetchAllServicesStats(workerUrl, 'traces', from, to),
+      ]);
 
-            const { totalCount, errorCount, errorRate } = calculateErrorRate(
-              logStats,
-              traceStats
-            );
+      // Build a map of service name to accumulated counts
+      const newStats = new Map<string, ServiceErrorStats>();
 
-            newStats.set(service.name, {
-              name: service.name,
-              errorRate,
-              totalCount,
-              errorCount,
-            });
-          } catch (err) {
-            console.warn(`Failed to fetch stats for ${service.name}:`, err);
-            // Default to 0% error rate on failure
-            newStats.set(service.name, {
-              name: service.name,
-              errorRate: 0,
-              totalCount: 0,
-              errorCount: 0,
-            });
+      // Initialize all services with zero counts
+      for (const service of services) {
+        newStats.set(service.name, {
+          name: service.name,
+          errorRate: 0,
+          totalCount: 0,
+          errorCount: 0,
+        });
+      }
+
+      // Accumulate log stats
+      for (const result of logResults) {
+        const existing = newStats.get(result.service);
+        if (existing) {
+          for (const stat of result.stats) {
+            existing.totalCount += stat.count;
+            existing.errorCount += stat.error_count;
           }
-        })
-      );
+        }
+      }
+
+      // Accumulate trace stats
+      for (const result of traceResults) {
+        const existing = newStats.get(result.service);
+        if (existing) {
+          for (const stat of result.stats) {
+            existing.totalCount += stat.count;
+            existing.errorCount += stat.error_count;
+          }
+        }
+      }
+
+      // Calculate error rates
+      for (const stat of newStats.values()) {
+        stat.errorRate = stat.totalCount > 0 ? (stat.errorCount / stat.totalCount) * 100 : 0;
+      }
 
       setStats(newStats);
     } catch (err) {

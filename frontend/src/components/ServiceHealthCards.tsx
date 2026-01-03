@@ -54,16 +54,6 @@ function getHealthColor(status: HealthStatus): string {
   }
 }
 
-function getHealthLabel(status: HealthStatus): string {
-  switch (status) {
-    case 'critical':
-      return 'critical';
-    case 'warning':
-      return 'degraded';
-    case 'healthy':
-      return 'healthy';
-  }
-}
 
 /**
  * Format large numbers with K/M suffixes.
@@ -226,7 +216,6 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
   const navigate = useNavigate();
   const status = getHealthStatus(item.errorRate);
   const statusColor = getHealthColor(status);
-  const statusLabel = getHealthLabel(status);
 
   // Calculate throughput (requests per minute, assuming 15-min window)
   const throughputPerMin = item.totalCount / 15;
@@ -381,20 +370,12 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
             </p>
           </div>
 
-          {/* Status indicator */}
+          {/* Status indicator and signal badges */}
           <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
-              <span
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: statusColor }}
-              />
-              <span
-                className="text-sm font-medium"
-                style={{ color: statusColor }}
-              >
-                {statusLabel}
-              </span>
-            </div>
+            <span
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: statusColor }}
+            />
 
             {/* Signal badges */}
             <div className="flex gap-1.5">

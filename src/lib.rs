@@ -43,6 +43,9 @@ fn parse_content_metadata(mut header: impl FnMut(&str) -> Option<String>) -> (bo
 }
 
 #[cfg(target_arch = "wasm32")]
+mod stats;
+
+#[cfg(target_arch = "wasm32")]
 mod wasm;
 
 #[cfg(not(target_arch = "wasm32"))]
