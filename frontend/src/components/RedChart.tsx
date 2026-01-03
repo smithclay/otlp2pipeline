@@ -39,6 +39,9 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
       if (!viewer || data.length === 0) return;
 
       try {
+        // Wait for the custom element to be defined
+        await customElements.whenDefined('perspective-viewer');
+
         const worker = await getPerspectiveWorker();
 
         // Perspective expects column-oriented data: { column: [values] }

@@ -253,10 +253,15 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
           </button>
           <button
             type="submit"
-            className="rounded bg-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-600 transition-colors"
+            disabled={!filter.trim()}
+            className={`rounded px-3 py-1.5 text-xs transition-colors ${
+              filter.trim()
+                ? 'bg-cyan-600 text-white hover:bg-cyan-500'
+                : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+            }`}
             title="Apply SQL WHERE clause filter"
           >
-            SQL
+            Apply
           </button>
         </form>
       </div>
