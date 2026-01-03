@@ -4,6 +4,9 @@ import { useCredentials } from '../hooks/useCredentials';
 import { useDuckDB, type QueryResult } from '../hooks/useDuckDB';
 import { getPerspectiveWorker } from '../lib/perspective';
 import { usePerspectiveConfig, type ViewConfig } from '../hooks/usePerspectiveConfig';
+import { parseCommand, isTailCommand, type Signal } from '../lib/parseCommand';
+import { useLiveTail } from '../hooks/useLiveTail';
+import type { TailStatus, TailRecord } from '../hooks/useLiveTail';
 import type { Table } from '@finos/perspective';
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
 
@@ -71,6 +74,24 @@ export function RecordsExplorer() {
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
+
+  // Live tail state (will be wired up in subsequent tasks)
+  const [tailConfig, setTailConfig] = useState<{ service: string; signal: Signal; limit: number } | null>(null);
+  const [mode, setMode] = useState<'query' | 'tail'>('query');
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  // Detect if current input looks like a TAIL command (for UI hints)
+  const inputLooksTail = isTailCommand(sql);
+
+  // TODO: These will be used in subsequent tasks - suppress unused warnings for now
+  void parseCommand; void useLiveTail;
+  void tailConfig; void setTailConfig;
+  void mode; void setMode;
+  void parseError; void setParseError;
+  void inputLooksTail;
+  // Type placeholders - will be used in subsequent tasks
+  const _tailStatusType: TailStatus | null = null; void _tailStatusType;
+  const _tailRecordType: TailRecord | null = null; void _tailRecordType;
 
   // Update SQL when navigating with a new query
   useEffect(() => {
