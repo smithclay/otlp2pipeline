@@ -24,19 +24,22 @@ LIMIT 100`;
 type PerspectiveValue = string | number | boolean | Date;
 
 /**
- * Convert QueryResult to column-oriented format for Perspective.
+ * Convert generic records to column-oriented format for Perspective.
  * Handles BigInt conversion to Number for Perspective compatibility.
  */
-function toColumnarData(result: QueryResult): Record<string, PerspectiveValue[]> {
+function toColumnarData(records: Record<string, unknown>[]): Record<string, PerspectiveValue[]> | null {
+  if (!records || records.length === 0) return null;
+
+  const columns = Object.keys(records[0]);
   const columnar: Record<string, PerspectiveValue[]> = {};
 
-  for (const col of result.columns) {
+  for (const col of columns) {
     columnar[col] = [];
   }
 
-  for (const row of result.rows) {
-    for (const col of result.columns) {
-      let value = row[col];
+  for (const record of records) {
+    for (const col of columns) {
+      let value = record[col];
       // Convert BigInt to Number for Perspective compatibility
       if (typeof value === 'bigint') {
         value = Number(value);
@@ -83,12 +86,26 @@ export function RecordsExplorer() {
   // Detect if current input looks like a TAIL command (for UI hints)
   const inputLooksTail = isTailCommand(sql);
 
+  // Live tail hook - only active when we have a tail config
+  const {
+    start: startTail,
+    stop: stopTail,
+    status: tailStatus,
+    records: tailRecords,
+    droppedCount,
+  } = useLiveTail(
+    credentials?.workerUrl ?? null,
+    tailConfig?.service ?? '',
+    tailConfig?.signal ?? 'logs',
+    tailConfig?.limit ?? 500
+  );
+
   // TODO: These will be used in subsequent tasks - suppress unused warnings for now
-  void parseCommand; void useLiveTail;
-  void tailConfig; void setTailConfig;
-  void mode; void setMode;
+  void parseCommand;
+  void setTailConfig; void setMode;
   void parseError; void setParseError;
   void inputLooksTail;
+  void startTail; void stopTail; void tailStatus; void droppedCount;
   // Type placeholders - will be used in subsequent tasks
   const _tailStatusType: TailStatus | null = null; void _tailStatusType;
   const _tailRecordType: TailRecord | null = null; void _tailRecordType;
@@ -103,6 +120,10 @@ export function RecordsExplorer() {
   // Perspective refs
   const viewerRef = useRef<HTMLPerspectiveViewerElement | null>(null);
   const tableRef = useRef<Table | null>(null);
+
+  // Debounce refs for tail updates
+  const tailUpdateTimeoutRef = useRef<number | null>(null);
+  const pendingTailRecordsRef = useRef<TailRecord[]>([]);
 
   // Run the query
   const runQuery = useCallback(async () => {
@@ -159,7 +180,8 @@ export function RecordsExplorer() {
         await customElements.whenDefined('perspective-viewer');
 
         const worker = await getPerspectiveWorker();
-        const columnarData = toColumnarData(queryResult);
+        const columnarData = toColumnarData(queryResult.rows);
+        if (!columnarData) return;
 
         // Create new table with the data
         const newTable = await worker.table(columnarData);
@@ -214,6 +236,66 @@ export function RecordsExplorer() {
       tableRef.current = null;
     };
   }, [queryResult, save, load]);
+
+  // Update Perspective viewer when tail records change (debounced)
+  useEffect(() => {
+    if (mode !== 'tail' || tailRecords.length === 0) {
+      return;
+    }
+
+    // Store pending records
+    pendingTailRecordsRef.current = tailRecords;
+
+    // Debounce updates to every 250ms
+    if (tailUpdateTimeoutRef.current !== null) {
+      return; // Update already scheduled
+    }
+
+    tailUpdateTimeoutRef.current = window.setTimeout(async () => {
+      tailUpdateTimeoutRef.current = null;
+      const records = pendingTailRecordsRef.current;
+      const viewer = viewerRef.current;
+
+      if (!viewer || records.length === 0) return;
+
+      try {
+        await customElements.whenDefined('perspective-viewer');
+        const worker = await getPerspectiveWorker();
+
+        // Convert records to columnar format using shared function
+        const columnar = toColumnarData(records);
+        if (!columnar) return;
+
+        // Create or replace table
+        if (tableRef.current) {
+          await tableRef.current.delete();
+        }
+        const newTable = await worker.table(columnar);
+        tableRef.current = newTable;
+        await viewer.load(newTable);
+
+        // Apply default config for tail mode
+        await viewer.restore({
+          plugin: 'Datagrid',
+          settings: true,
+        } as unknown as Parameters<typeof viewer.restore>[0]);
+      } catch (err) {
+        console.error('Failed to update Perspective for tail:', err);
+      }
+    }, 250);
+
+    return () => {
+      if (tailUpdateTimeoutRef.current !== null) {
+        clearTimeout(tailUpdateTimeoutRef.current);
+        tailUpdateTimeoutRef.current = null;
+      }
+      // Cleanup table on mode change
+      if (tableRef.current) {
+        tableRef.current.delete().catch(console.error);
+        tableRef.current = null;
+      }
+    };
+  }, [mode, tailRecords]);
 
   // Cleanup table on unmount
   useEffect(() => {
