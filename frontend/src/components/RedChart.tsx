@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getPerspectiveWorker } from '../lib/perspective';
 import type { Table } from '@finos/perspective';
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
+import { usePerspectiveConfig, type ViewConfig } from '../hooks/usePerspectiveConfig';
 
 // Import Perspective viewer element, plugins, and styles
 import '@finos/perspective-viewer';
@@ -18,6 +19,10 @@ interface RedChartProps {
   title: string;
   data: ChartDataPoint[];
   yLabel: string;
+  /** Unique ID for config persistence (e.g., "service-logs-rate") */
+  configId?: string;
+  /** Show settings panel (default: false) */
+  showSettings?: boolean;
   /** Callback when a data point is clicked */
   onPointClick?: (minute: string) => void;
 }
@@ -25,10 +30,11 @@ interface RedChartProps {
 /**
  * Chart component using Perspective viewer for RED metrics visualization.
  */
-export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
+export function RedChart({ title, data, yLabel, configId, showSettings = false, onPointClick }: RedChartProps) {
   const viewerRef = useRef<HTMLPerspectiveViewerElement | null>(null);
   const tableRef = useRef<Table | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { save, load } = usePerspectiveConfig(configId ?? 'default');
 
   useEffect(() => {
     let mounted = true;
@@ -75,14 +81,17 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
         if (hasTraces) columns.push('traces');
 
         // Configure viewer for line chart
-        await viewer.restore({
+        const savedConfig = configId ? load() : null;
+        const defaultConfig: ViewConfig = {
           plugin: 'Y Line',
           columns: columns.length > 0 ? columns : ['logs', 'traces'],
           group_by: ['minute'],
-          settings: false,
+          settings: showSettings,
           theme: 'Pro Dark',
           title: yLabel,
-        });
+        };
+        // Cast to unknown first since ViewConfig is compatible but not identical to PerspectiveViewerConfig
+        await viewer.restore((savedConfig ?? defaultConfig) as unknown as Parameters<typeof viewer.restore>[0]);
 
         setError(null);
       } catch (err) {
@@ -105,9 +114,24 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
       }
     }) as EventListener;
 
+    // Create config change handler for persistence
+    const handleConfigChange = async () => {
+      if (viewer && configId) {
+        try {
+          const config = await viewer.save();
+          save(config as ViewConfig);
+        } catch (err) {
+          console.warn('Failed to save Perspective config:', err);
+        }
+      }
+    };
+
     initChart().then(() => {
       if (viewer && onPointClick) {
         viewer.addEventListener('perspective-click', handleClick);
+      }
+      if (viewer) {
+        viewer.addEventListener('perspective-config-update', handleConfigChange);
       }
     });
 
@@ -116,13 +140,14 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
       // Remove click listener using captured ref
       if (viewer) {
         viewer.removeEventListener('perspective-click', handleClick);
+        viewer.removeEventListener('perspective-config-update', handleConfigChange);
       }
       // Note: We don't manually delete tables here because the viewer manages
       // the view lifecycle. Deleting a table with an active view causes errors.
       // Tables will be garbage collected when no longer referenced.
       tableRef.current = null;
     };
-  }, [data, yLabel, onPointClick]);
+  }, [data, yLabel, onPointClick, showSettings, configId, save, load]);
 
   // Handle clicking on the chart to view records for the middle time point
   const handleViewRecords = () => {
