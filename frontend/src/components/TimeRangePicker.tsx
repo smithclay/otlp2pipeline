@@ -20,7 +20,12 @@ export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
           }
         }}
         aria-label="Select time range"
-        className="appearance-none rounded-md border border-slate-700 bg-slate-800 px-4 py-2 pr-8 text-sm text-slate-100 hover:border-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-colors cursor-pointer"
+        className="appearance-none rounded-md px-4 py-2 pr-8 text-sm font-medium transition-colors cursor-pointer"
+        style={{
+          backgroundColor: 'white',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-text-secondary)',
+        }}
       >
         {TIME_RANGES.map((range) => (
           <option key={range.value} value={range.value}>
@@ -29,19 +34,21 @@ export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
         ))}
       </select>
       {/* Dropdown arrow */}
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+      <div
+        className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
         <svg
-          className="h-4 w-4 text-slate-400"
+          className="h-4 w-4"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
+          strokeWidth={1.5}
         >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
+            d="M19.5 8.25l-7.5 7.5-7.5-7.5"
           />
         </svg>
       </div>

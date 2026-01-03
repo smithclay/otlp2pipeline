@@ -120,10 +120,11 @@ export async function connectToR2(
 
   // Create Iceberg secret with R2 token
   // See: https://duckdb.org/2025/12/16/iceberg-in-the-browser
+  // Use OR REPLACE to handle re-initialization (React StrictMode, navigation)
   try {
     const escapedToken = escapeSqlString(config.r2Token);
     await conn.query(`
-      CREATE SECRET r2_secret (
+      CREATE OR REPLACE SECRET r2_secret (
         TYPE ICEBERG,
         TOKEN '${escapedToken}'
       );
@@ -144,6 +145,8 @@ export async function connectToR2(
     ? `${escapeSqlString(config.workerUrl)}/v1/iceberg`
     : `https://catalog.cloudflarestorage.com/${escapedAccountId}/${escapedBucketName}`;
   try {
+    // Detach first if already attached (handles React StrictMode, navigation)
+    await conn.query(`DETACH DATABASE IF EXISTS r2_catalog;`);
     await conn.query(`
       ATTACH '${warehouse}' AS r2_catalog (
         TYPE ICEBERG,

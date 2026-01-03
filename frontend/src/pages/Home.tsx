@@ -1,62 +1,10 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useCredentials } from '../hooks/useCredentials';
 import { useServices } from '../hooks/useServices';
-import { useStats, TIME_RANGES, TimeRange, LogStats, TraceStats } from '../hooks/useStats';
+import { useStats, TIME_RANGES } from '../hooks/useStats';
 import { useServiceStats } from '../hooks/useServiceStats';
-import { TimeRangePicker } from '../components/TimeRangePicker';
-import { HoneycombGrid, type ServiceWithStats } from '../components/HoneycombGrid';
-import { RedChart, type ChartDataPoint } from '../components/RedChart';
+import { ServiceHealthCards, type ServiceWithStats } from '../components/ServiceHealthCards';
 import { LoadingSpinner, ErrorMessage } from '../components/LoadingState';
-
-/**
- * Convert a minute bucket (Unix timestamp / 60) to an ISO timestamp string.
- */
-function minuteBucketToTimestamp(minuteBucket: string): string {
-  const bucket = parseInt(minuteBucket, 10);
-  return new Date(bucket * 60 * 1000).toISOString();
-}
-
-/**
- * Merge log and trace stats into chart data points.
- * Extracts the specified field from each stat type and groups by minute.
- * Converts minute buckets to ISO timestamps for display.
- */
-function mergeStatsToChartData(
-  logStats: LogStats[],
-  traceStats: TraceStats[],
-  logField: keyof LogStats,
-  traceField: keyof TraceStats
-): ChartDataPoint[] {
-  const minuteMap = new Map<string, ChartDataPoint>();
-
-  for (const stat of logStats) {
-    const value = stat[logField];
-    if (typeof value !== 'number') continue;
-    const timestamp = minuteBucketToTimestamp(stat.minute);
-    const existing = minuteMap.get(stat.minute);
-    if (existing) {
-      existing.logs = value;
-    } else {
-      minuteMap.set(stat.minute, { minute: timestamp, logs: value });
-    }
-  }
-
-  for (const stat of traceStats) {
-    const value = stat[traceField];
-    if (typeof value !== 'number') continue;
-    const timestamp = minuteBucketToTimestamp(stat.minute);
-    const existing = minuteMap.get(stat.minute);
-    if (existing) {
-      existing.traces = value;
-    } else {
-      minuteMap.set(stat.minute, { minute: timestamp, traces: value });
-    }
-  }
-
-  return Array.from(minuteMap.values()).sort(
-    (a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime()
-  );
-}
 
 export function Home() {
   const { credentials } = useCredentials();
@@ -65,8 +13,11 @@ export function Home() {
   // State for selected service (toggle selection on click)
   const [selectedService, setSelectedService] = useState<string | null>(null);
 
-  // Default to last 1 hour for charts
-  const [timeRange, setTimeRange] = useState<TimeRange>(TIME_RANGES[1]);
+  // Search filter for services
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Fixed time range for detail stats (1 hour)
+  const timeRange = TIME_RANGES[1];
 
   // Fetch list of services
   const {
@@ -88,8 +39,6 @@ export function Home() {
     logStats,
     traceStats,
     loading: detailLoading,
-    error: detailError,
-    refetch: refetchDetail,
   } = useStats(workerUrl, selectedService ?? '', timeRange);
 
   // Combined loading state (services or stats loading)
@@ -98,55 +47,70 @@ export function Home() {
   // Primary error to display (services error takes precedence)
   const error = servicesError ?? statsError;
 
-  // Combine services with their error rates for the HoneycombGrid
+  // Combine services with their error rates for the cards
   const servicesWithStats = useMemo<ServiceWithStats[]>(() => {
-    return services.map((service) => {
+    const allServices = services.map((service) => {
       const stats = serviceStats.get(service.name);
       return {
         service,
         errorRate: stats?.errorRate ?? 0,
+        totalCount: stats?.totalCount ?? 0,
+        errorCount: stats?.errorCount ?? 0,
       };
     });
-  }, [services, serviceStats]);
+
+    // Filter by search query
+    if (!searchQuery.trim()) return allServices;
+    const query = searchQuery.toLowerCase();
+    return allServices.filter((s) => s.service.name.toLowerCase().includes(query));
+  }, [services, serviceStats, searchQuery]);
 
   // Handle service selection (toggle on click)
-  const handleSelectService = useCallback((name: string) => {
-    setSelectedService((prev) => (prev === name ? null : name));
+  const handleSelectService = useCallback((name: string | null) => {
+    setSelectedService(name);
   }, []);
 
-  // Transform stats data for Rate chart (logs and traces count over time)
-  const rateData = useMemo<ChartDataPoint[]>(
-    () => mergeStatsToChartData(logStats, traceStats, 'count', 'count'),
-    [logStats, traceStats]
-  );
-
-  // Transform stats data for Error Rate chart
-  const errorData = useMemo<ChartDataPoint[]>(
-    () => mergeStatsToChartData(logStats, traceStats, 'error_count', 'error_count'),
-    [logStats, traceStats]
-  );
-
-  // Transform stats data for Latency chart (traces only, average latency)
-  const latencyData = useMemo<ChartDataPoint[]>(() => {
-    return traceStats
-      .filter((stat) => stat.latency_sum_us !== undefined)
-      .map((stat) => {
-        // Calculate average latency in milliseconds
-        const avgLatencyMs = stat.count > 0 ? (stat.latency_sum_us ?? 0) / stat.count / 1000 : 0;
-        return {
-          minute: minuteBucketToTimestamp(stat.minute),
-          traces: Math.round(avgLatencyMs * 100) / 100, // Round to 2 decimal places
-        };
-      })
-      .sort((a, b) => new Date(a.minute).getTime() - new Date(b.minute).getTime());
-  }, [traceStats]);
+  // Detail stats for the selected service
+  const detailStats = useMemo(() => {
+    if (!selectedService) return undefined;
+    return { logStats, traceStats };
+  }, [selectedService, logStats, traceStats]);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-100">Services</h1>
-        <TimeRangePicker value={timeRange} onChange={setTimeRange} />
+      {/* Search filter */}
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          {servicesWithStats.length} of {services.length} services
+        </p>
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter services..."
+            className="w-64 px-4 py-2 pl-10 text-sm rounded-lg transition-colors"
+            style={{
+              backgroundColor: 'white',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text-primary)',
+            }}
+          />
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+            style={{ color: 'var(--color-text-muted)' }}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+        </div>
       </div>
 
       {/* Loading state */}
@@ -155,69 +119,15 @@ export function Home() {
       {/* Error state */}
       {error && !loading && <ErrorMessage message={error} onRetry={refetchServices} />}
 
-      {/* Main content */}
+      {/* Service health cards */}
       {!loading && !error && (
-        <>
-          {/* Honeycomb grid of services */}
-          <HoneycombGrid
-            services={servicesWithStats}
-            selectedService={selectedService}
-            onSelectService={handleSelectService}
-          />
-
-          {/* Selected service detail section */}
-          {selectedService && (
-            <>
-              {/* Divider */}
-              <div className="border-t border-slate-700" />
-
-              {/* Service detail header */}
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-medium text-cyan-500">{selectedService}</h2>
-                <button
-                  onClick={() => setSelectedService(null)}
-                  className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-
-              {/* Detail loading state */}
-              {detailLoading && <LoadingSpinner />}
-
-              {/* Detail error state */}
-              {detailError && !detailLoading && (
-                <ErrorMessage message={detailError} onRetry={refetchDetail} />
-              )}
-
-              {/* RED Charts */}
-              {!detailLoading && !detailError && (
-                <div className="space-y-4">
-                  {/* Request Rate Chart */}
-                  <RedChart
-                    title="Request Rate"
-                    data={rateData}
-                    yLabel="Requests per minute"
-                  />
-
-                  {/* Error Rate Chart */}
-                  <RedChart
-                    title="Error Rate"
-                    data={errorData}
-                    yLabel="Errors per minute"
-                  />
-
-                  {/* Latency Chart (traces only) */}
-                  <RedChart
-                    title="Latency (traces only)"
-                    data={latencyData}
-                    yLabel="Average latency (ms)"
-                  />
-                </div>
-              )}
-            </>
-          )}
-        </>
+        <ServiceHealthCards
+          services={servicesWithStats}
+          selectedService={selectedService}
+          onSelectService={handleSelectService}
+          detailStats={detailStats}
+          detailLoading={detailLoading}
+        />
       )}
     </div>
   );

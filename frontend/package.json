@@ -14,6 +14,7 @@
     "@finos/perspective-viewer": "^2.7.0",
     "@finos/perspective-viewer-d3fc": "^2.10.1",
     "@finos/perspective-viewer-datagrid": "^2.10.1",
+    "framer-motion": "^12.23.26",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hexgrid": "^2.0.1",

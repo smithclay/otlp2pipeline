@@ -87,7 +87,7 @@ export function RedChart({ title, data, yLabel, configId, showSettings = false, 
           columns: columns.length > 0 ? columns : ['logs', 'traces'],
           group_by: ['minute'],
           settings: showSettings,
-          theme: 'Pro Dark',
+          theme: 'Pro Light',
           title: yLabel,
         };
         // Cast to unknown first since ViewConfig is compatible but not identical to PerspectiveViewerConfig
@@ -159,24 +159,48 @@ export function RedChart({ title, data, yLabel, configId, showSettings = false, 
   };
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-300">{title}</h3>
+    <div
+      className="rounded-lg p-5"
+      style={{
+        backgroundColor: 'white',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-sm)',
+      }}
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <h3
+          className="text-sm font-semibold uppercase tracking-wide"
+          style={{ color: 'var(--color-text-tertiary)' }}
+        >
+          {title}
+        </h3>
         {data.length > 0 && onPointClick && (
           <button
             onClick={handleViewRecords}
-            className="rounded bg-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-600 transition-colors"
+            className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              color: 'var(--color-accent)',
+              backgroundColor: 'rgba(30, 64, 175, 0.08)',
+            }}
+            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(30, 64, 175, 0.15)'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'rgba(30, 64, 175, 0.08)'}
           >
             View Records
           </button>
         )}
       </div>
       {error ? (
-        <div className="flex h-48 items-center justify-center text-red-400 text-sm">
+        <div
+          className="flex h-48 items-center justify-center text-sm"
+          style={{ color: 'var(--color-error)' }}
+        >
           {error}
         </div>
       ) : data.length === 0 ? (
-        <div className="flex h-48 items-center justify-center text-slate-500 text-sm">
+        <div
+          className="flex h-48 items-center justify-center text-sm"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
           No data available
         </div>
       ) : (

@@ -156,29 +156,46 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-lg bg-slate-800 p-8 shadow-xl relative">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)' }}
+    >
+      <div
+        className="w-full max-w-md rounded-lg p-8 relative"
+        style={{
+          backgroundColor: 'white',
+          boxShadow: 'var(--shadow-lg)',
+        }}
+      >
         {/* Close button (only when editing existing settings) */}
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition-colors"
+            className="absolute top-4 right-4 rounded-full p-1.5 transition-colors"
+            style={{ color: 'var(--color-text-muted)' }}
+            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.05)'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             aria-label="Close settings"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         )}
 
         {/* Logo */}
         <div className="mb-6 text-center">
-          <span className="text-2xl font-semibold text-cyan-500">frostbit</span>
+          <span className="headline text-2xl" style={{ color: 'var(--color-text-primary)' }}>
+            frostbit
+          </span>
         </div>
 
         {/* Headline */}
-        <h1 className="mb-6 text-center text-xl font-medium text-slate-100">
+        <h1
+          className="mb-6 text-center text-lg font-medium"
+          style={{ color: 'var(--color-text-secondary)' }}
+        >
           {onClose ? 'Update Settings' : 'Connect to your Cloudflare environment'}
         </h1>
 
@@ -188,7 +205,8 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
           <div>
             <label
               htmlFor="workerUrl"
-              className="mb-1 block text-sm font-medium text-slate-300"
+              className="mb-1.5 block text-sm font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
             >
               Worker URL
             </label>
@@ -198,7 +216,12 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
               value={workerUrl}
               onChange={(e) => setWorkerUrl(e.target.value)}
               placeholder="https://frostbit.example.workers.dev"
-              className="w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 placeholder-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-md px-3 py-2 text-sm"
+              style={{
+                backgroundColor: 'var(--color-paper-warm)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-primary)',
+              }}
               required
             />
           </div>
@@ -207,7 +230,8 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
           <div>
             <label
               htmlFor="accountId"
-              className="mb-1 block text-sm font-medium text-slate-300"
+              className="mb-1.5 block text-sm font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
             >
               Cloudflare Account ID
             </label>
@@ -217,7 +241,12 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
               placeholder="e.g. 1a2b3c4d5e6f7g8h9i0j"
-              className="w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 placeholder-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-md px-3 py-2 text-sm"
+              style={{
+                backgroundColor: 'var(--color-paper-warm)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-primary)',
+              }}
               required
             />
           </div>
@@ -226,7 +255,8 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
           <div>
             <label
               htmlFor="r2Token"
-              className="mb-1 block text-sm font-medium text-slate-300"
+              className="mb-1.5 block text-sm font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
             >
               R2 API Token
             </label>
@@ -236,7 +266,12 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
               value={r2Token}
               onChange={(e) => setR2Token(e.target.value)}
               placeholder="Enter your R2 API token"
-              className="w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 placeholder-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-md px-3 py-2 text-sm"
+              style={{
+                backgroundColor: 'var(--color-paper-warm)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-primary)',
+              }}
               required
             />
           </div>
@@ -245,7 +280,8 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
           <div>
             <label
               htmlFor="bucketName"
-              className="mb-1 block text-sm font-medium text-slate-300"
+              className="mb-1.5 block text-sm font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
             >
               Bucket Name
             </label>
@@ -255,21 +291,40 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
               value={bucketName}
               onChange={(e) => setBucketName(e.target.value)}
               placeholder="frostbit-prod"
-              className="w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 placeholder-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-md px-3 py-2 text-sm"
+              style={{
+                backgroundColor: 'var(--color-paper-warm)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-primary)',
+              }}
               required
             />
           </div>
 
           {/* Error Message */}
           {status === 'error' && (
-            <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-400">
+            <div
+              className="rounded-md p-3 text-sm"
+              style={{
+                backgroundColor: 'var(--color-error-bg)',
+                border: '1px solid var(--color-error)',
+                color: 'var(--color-error)',
+              }}
+            >
               {errorMessage}
             </div>
           )}
 
           {/* Success Message */}
           {status === 'success' && (
-            <div className="rounded-md border border-green-500/50 bg-green-500/10 p-3 text-sm text-green-400">
+            <div
+              className="rounded-md p-3 text-sm"
+              style={{
+                backgroundColor: 'var(--color-healthy-bg)',
+                border: '1px solid var(--color-healthy)',
+                color: 'var(--color-healthy)',
+              }}
+            >
               Connection successful!
             </div>
           )}
@@ -278,7 +333,8 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
           <button
             type="submit"
             disabled={!isFormValid || status === 'testing'}
-            className="w-full rounded-md bg-cyan-600 px-4 py-2 font-medium text-white transition-colors hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-md px-4 py-2.5 font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: 'var(--color-accent)' }}
           >
             {status === 'testing' ? (
               <span className="flex items-center justify-center gap-2">
