@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { SetupModal } from './components/SetupModal';
-import { ServiceList } from './pages/ServiceList';
-import { ServiceDetail } from './pages/ServiceDetail';
+import { Home } from './pages/Home';
+import { RecordsExplorer } from './pages/RecordsExplorer';
 import { useCredentials } from './hooks/useCredentials';
 
 export function App() {
@@ -27,8 +27,8 @@ export function App() {
       )}
       <Layout onOpenSettings={handleOpenSettings}>
         <Routes>
-          <Route path="/" element={<ServiceList />} />
-          <Route path="/services/:name" element={<ServiceDetail />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/records" element={<RecordsExplorer />} />
         </Routes>
       </Layout>
     </BrowserRouter>
