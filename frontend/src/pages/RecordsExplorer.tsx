@@ -100,9 +100,6 @@ export function RecordsExplorer() {
     tailConfig?.limit ?? 500
   );
 
-  // TODO: These will be used in subsequent tasks - suppress unused warnings for now
-  void droppedCount;
-  void parseError; // Display will be added in UI update task
   // Type placeholders - will be used in subsequent tasks
   const _tailStatusType: TailStatus | null = null; void _tailStatusType;
   const _tailRecordType: TailRecord | null = null; void _tailRecordType;
@@ -387,18 +384,46 @@ export function RecordsExplorer() {
       <div className="flex items-center justify-between">
         <div>
           <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Explore your telemetry data with SQL
+            Explore your telemetry data with SQL or stream live with TAIL
           </p>
         </div>
-        {queryTimeMs !== null && (
-          <span
-            className="text-sm font-medium mono"
-            style={{ color: 'var(--color-text-tertiary)' }}
-          >
-            {queryTimeMs}ms
-            {queryResult && ` · ${queryResult.rows.length} rows`}
-          </span>
-        )}
+        <div className="flex items-center gap-4">
+          {/* Tail status indicator */}
+          {mode === 'tail' && tailStatus.state !== 'idle' && (
+            <div className="flex items-center gap-2 text-sm">
+              {tailStatus.state === 'connected' && (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                  </span>
+                  <span style={{ color: 'var(--color-text-secondary)' }}>
+                    Live · {tailRecords.length} records
+                    {droppedCount > 0 && ` · ${droppedCount} dropped`}
+                  </span>
+                </>
+              )}
+              {tailStatus.state === 'connecting' && (
+                <span style={{ color: 'var(--color-text-muted)' }}>Connecting...</span>
+              )}
+              {tailStatus.state === 'reconnecting' && (
+                <span style={{ color: 'var(--color-warning)' }}>
+                  Reconnecting ({tailStatus.attempt}/3)...
+                </span>
+              )}
+            </div>
+          )}
+          {/* Query time indicator */}
+          {mode === 'query' && queryTimeMs !== null && (
+            <span
+              className="text-sm font-medium mono"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              {queryTimeMs}ms
+              {queryResult && ` · ${queryResult.rows.length} rows`}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* SQL Input */}
@@ -444,7 +469,37 @@ export function RecordsExplorer() {
         </div>
       </div>
 
-      {/* Error Display */}
+      {/* Parse Error Display */}
+      {parseError && (
+        <div
+          className="rounded-lg p-4"
+          style={{
+            backgroundColor: 'var(--color-error-bg)',
+            border: '1px solid var(--color-error)',
+          }}
+        >
+          <p className="font-mono text-sm" style={{ color: 'var(--color-error)' }}>
+            {parseError}
+          </p>
+        </div>
+      )}
+
+      {/* Tail Error Display */}
+      {tailStatus.state === 'error' && (
+        <div
+          className="rounded-lg p-4"
+          style={{
+            backgroundColor: 'var(--color-error-bg)',
+            border: '1px solid var(--color-error)',
+          }}
+        >
+          <p className="font-mono text-sm" style={{ color: 'var(--color-error)' }}>
+            {tailStatus.message}
+          </p>
+        </div>
+      )}
+
+      {/* Query Error Display */}
       {queryError && (
         <div
           className="rounded-lg p-4"
