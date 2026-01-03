@@ -13,6 +13,7 @@
     "@finos/perspective": "^2.7.0",
     "@finos/perspective-viewer": "^2.7.0",
     "@finos/perspective-viewer-d3fc": "^2.10.1",
+    "@finos/perspective-viewer-datagrid": "^2.10.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0"
