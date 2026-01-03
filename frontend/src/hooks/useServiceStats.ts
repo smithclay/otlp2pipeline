@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Service } from '../lib/api';
 import { fetchAllServicesStats } from '../lib/api';
 
@@ -14,6 +14,8 @@ export interface UseServiceStatsResult {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  lastUpdated: Date | null;
+  isStale: boolean;
 }
 
 /**
@@ -28,16 +30,26 @@ export function useServiceStats(
   const [stats, setStats] = useState<Map<string, ServiceErrorStats>>(new Map());
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Data is stale if last successful fetch was more than 1 minute ago
+  const isStale = lastUpdated !== null && Date.now() - lastUpdated.getTime() > 60000;
+
+  // Stable key for dependency tracking - only refetch when service list changes
+  const serviceKey = useMemo(
+    () => services.map((s) => s.name).sort().join(','),
+    [services]
+  );
 
   const fetchData = useCallback(async () => {
     if (!workerUrl || services.length === 0) {
-      setStats(new Map());
       setError(null);
       return;
     }
 
     setLoading(true);
     setError(null);
+    // Don't clear stats here - keep showing previous data while loading
 
     // Query last 15 minutes for traffic light calculation
     const from = new Date(Date.now() - 15 * 60 * 1000);
@@ -91,6 +103,7 @@ export function useServiceStats(
       }
 
       setStats(newStats);
+      setLastUpdated(new Date());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch stats';
       console.error('Stats fetch error:', err);
@@ -98,7 +111,8 @@ export function useServiceStats(
     } finally {
       setLoading(false);
     }
-  }, [workerUrl, services]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- serviceKey tracks service list changes
+  }, [workerUrl, serviceKey]);
 
   useEffect(() => {
     fetchData();
@@ -106,16 +120,18 @@ export function useServiceStats(
 
   // Poll every 30 seconds
   useEffect(() => {
-    if (!workerUrl || services.length === 0) return;
+    if (!workerUrl || !serviceKey) return;
 
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [workerUrl, services, fetchData]);
+  }, [workerUrl, serviceKey, fetchData]);
 
   return {
     stats,
     loading,
     error,
     refetch: fetchData,
+    lastUpdated,
+    isStale,
   };
 }

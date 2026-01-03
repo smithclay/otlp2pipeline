@@ -1,4 +1,4 @@
-import { useMemo, forwardRef } from 'react';
+import { useMemo, useRef, forwardRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Service } from '../lib/api';
@@ -359,7 +359,7 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
               {item.service.name}
             </h3>
 
-            {/* Health summary */}
+            {/* Health summary with inline signal indicators */}
             <p className="mt-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               <span className="mono" style={{ color: statusColor }}>
                 {item.errorRate.toFixed(1)}%
@@ -367,53 +367,25 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
               {' errors · '}
               <span className="mono">{formatCount(Math.round(throughputPerMin))}</span>
               {' req/min'}
+              {/* Inline signal indicators */}
+              <span style={{ color: 'var(--color-text-muted)' }}>
+                {' · '}
+                <span className="mono text-xs tracking-wide">
+                  {item.service.has_logs && 'L'}
+                  {item.service.has_logs && item.service.has_traces && ' '}
+                  {item.service.has_traces && 'T'}
+                  {(item.service.has_logs || item.service.has_traces) && item.service.has_metrics && ' '}
+                  {item.service.has_metrics && 'M'}
+                </span>
+              </span>
             </p>
           </div>
 
-          {/* Status indicator and signal badges */}
-          <div className="flex flex-col items-end gap-2">
-            <span
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: statusColor }}
-            />
-
-            {/* Signal badges */}
-            <div className="flex gap-1.5">
-              {item.service.has_logs && (
-                <span
-                  className="px-2 py-0.5 text-xs font-medium rounded"
-                  style={{
-                    backgroundColor: 'rgba(21, 101, 192, 0.1)',
-                    color: '#1565c0',
-                  }}
-                >
-                  Logs
-                </span>
-              )}
-              {item.service.has_traces && (
-                <span
-                  className="px-2 py-0.5 text-xs font-medium rounded"
-                  style={{
-                    backgroundColor: 'rgba(123, 31, 162, 0.1)',
-                    color: '#7b1fa2',
-                  }}
-                >
-                  Traces
-                </span>
-              )}
-              {item.service.has_metrics && (
-                <span
-                  className="px-2 py-0.5 text-xs font-medium rounded"
-                  style={{
-                    backgroundColor: 'rgba(5, 150, 105, 0.1)',
-                    color: '#059669',
-                  }}
-                >
-                  Metrics
-                </span>
-              )}
-            </div>
-          </div>
+          {/* Status indicator */}
+          <span
+            className="w-3 h-3 rounded-full shrink-0"
+            style={{ backgroundColor: statusColor }}
+          />
         </div>
       </motion.button>
 
@@ -556,18 +528,38 @@ export function ServiceHealthCards({
   detailStats,
   detailLoading,
 }: ServiceHealthCardsProps) {
-  // Sort services: critical first, then warning, then healthy
+  // Stable sort order - only re-sort when services are added/removed
+  const sortOrderRef = useRef<string[]>([]);
+
   const sortedServices = useMemo(() => {
-    return [...services].sort((a, b) => {
-      const statusA = getHealthStatus(a.errorRate);
-      const statusB = getHealthStatus(b.errorRate);
-      const order = { critical: 0, warning: 1, healthy: 2 };
-      if (order[statusA] !== order[statusB]) {
-        return order[statusA] - order[statusB];
-      }
-      // Secondary sort by error rate descending
-      return b.errorRate - a.errorRate;
-    });
+    const currentNames = new Set(services.map((s) => s.service.name));
+    const prevOrder = sortOrderRef.current;
+
+    // Check if service list changed (different size or new names)
+    const needsResort =
+      prevOrder.length !== currentNames.size ||
+      prevOrder.some((name) => !currentNames.has(name));
+
+    if (needsResort) {
+      // Re-sort: critical first, then warning, then healthy, then alphabetical
+      const sorted = [...services].sort((a, b) => {
+        const statusA = getHealthStatus(a.errorRate);
+        const statusB = getHealthStatus(b.errorRate);
+        const order = { critical: 0, warning: 1, healthy: 2 };
+        if (order[statusA] !== order[statusB]) {
+          return order[statusA] - order[statusB];
+        }
+        return a.service.name.localeCompare(b.service.name);
+      });
+      sortOrderRef.current = sorted.map((s) => s.service.name);
+      return sorted;
+    }
+
+    // Preserve existing order, just update the data
+    const serviceMap = new Map(services.map((s) => [s.service.name, s]));
+    return prevOrder
+      .map((name) => serviceMap.get(name))
+      .filter((s): s is ServiceWithStats => s !== undefined);
   }, [services]);
 
   if (services.length === 0) {

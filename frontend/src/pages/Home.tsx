@@ -6,6 +6,15 @@ import { useServiceStats } from '../hooks/useServiceStats';
 import { ServiceHealthCards, type ServiceWithStats } from '../components/ServiceHealthCards';
 import { LoadingSpinner, ErrorMessage } from '../components/LoadingState';
 
+function formatTimeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
 export function Home() {
   const { credentials } = useCredentials();
   const workerUrl = credentials?.workerUrl ?? null;
@@ -25,6 +34,7 @@ export function Home() {
     loading: servicesLoading,
     error: servicesError,
     refetch: refetchServices,
+    isStale: servicesStale,
   } = useServices(workerUrl);
 
   // Fetch error stats for all services (for traffic light display)
@@ -32,6 +42,9 @@ export function Home() {
     stats: serviceStats,
     loading: statsLoading,
     error: statsError,
+    refetch: refetchStats,
+    isStale: statsStale,
+    lastUpdated: statsLastUpdated,
   } = useServiceStats(workerUrl, services);
 
   // Fetch detailed stats for selected service
@@ -46,6 +59,20 @@ export function Home() {
 
   // Primary error to display (services error takes precedence)
   const error = servicesError ?? statsError;
+
+  // Combined stale indicator
+  const isStale = servicesStale || statsStale;
+
+  // Combined refetch that handles both error sources
+  const handleRetry = useCallback(() => {
+    if (servicesError) refetchServices();
+    if (statsError) refetchStats();
+    // If neither has an error but we're stale, refetch both
+    if (!servicesError && !statsError) {
+      refetchServices();
+      refetchStats();
+    }
+  }, [servicesError, statsError, refetchServices, refetchStats]);
 
   // Combine services with their error rates for the cards
   const servicesWithStats = useMemo<ServiceWithStats[]>(() => {
@@ -113,21 +140,52 @@ export function Home() {
         </div>
       </div>
 
-      {/* Loading state */}
-      {loading && <LoadingSpinner />}
+      {/* Error state - keep visible during loading so users know there's a problem */}
+      {error && <ErrorMessage message={error} onRetry={handleRetry} />}
 
-      {/* Error state */}
-      {error && !loading && <ErrorMessage message={error} onRetry={refetchServices} />}
+      {/* Staleness indicator - show when data is old but no error */}
+      {!error && isStale && statsLastUpdated && (
+        <div
+          className="flex items-center justify-between px-4 py-2 rounded-lg text-sm"
+          style={{
+            backgroundColor: 'rgba(234, 179, 8, 0.1)',
+            border: '1px solid rgba(234, 179, 8, 0.3)',
+            color: '#b45309',
+          }}
+        >
+          <span>
+            Data may be stale (last updated {formatTimeAgo(statsLastUpdated)})
+          </span>
+          <button
+            onClick={handleRetry}
+            className="px-3 py-1 rounded text-sm font-medium hover:opacity-80 transition-opacity"
+            style={{ backgroundColor: 'rgba(234, 179, 8, 0.2)' }}
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
-      {/* Service health cards */}
-      {!loading && !error && (
-        <ServiceHealthCards
-          services={servicesWithStats}
-          selectedService={selectedService}
-          onSelectService={handleSelectService}
-          detailStats={detailStats}
-          detailLoading={detailLoading}
-        />
+      {/* Service health cards - always render if we have data, even while refreshing */}
+      {servicesWithStats.length > 0 || !loading ? (
+        <div className="relative">
+          <ServiceHealthCards
+            services={servicesWithStats}
+            selectedService={selectedService}
+            onSelectService={handleSelectService}
+            detailStats={detailStats}
+            detailLoading={detailLoading}
+          />
+          {/* Overlay spinner for refreshes (not initial load) */}
+          {loading && servicesWithStats.length > 0 && (
+            <div className="absolute inset-0 bg-white/50 flex items-center justify-center rounded-xl pointer-events-none">
+              <LoadingSpinner />
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Initial loading state (no data yet) */
+        loading && <LoadingSpinner />
       )}
     </div>
   );

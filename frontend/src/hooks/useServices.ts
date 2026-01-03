@@ -6,12 +6,18 @@ export interface UseServicesResult {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  lastUpdated: Date | null;
+  isStale: boolean;
 }
 
 export function useServices(workerUrl: string | null): UseServicesResult {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Data is stale if last successful fetch was more than 1 minute ago
+  const isStale = lastUpdated !== null && Date.now() - lastUpdated.getTime() > 60000;
 
   const fetchData = useCallback(async () => {
     if (!workerUrl) {
@@ -26,10 +32,11 @@ export function useServices(workerUrl: string | null): UseServicesResult {
     try {
       const data = await fetchServices(workerUrl);
       setServices(data);
+      setLastUpdated(new Date());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch services';
       setError(message);
-      setServices([]);
+      // Keep previous services on error - don't clear
     } finally {
       setLoading(false);
     }
@@ -44,5 +51,7 @@ export function useServices(workerUrl: string | null): UseServicesResult {
     loading,
     error,
     refetch: fetchData,
+    lastUpdated,
+    isStale,
   };
 }
