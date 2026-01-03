@@ -101,7 +101,6 @@ export function RecordsExplorer() {
   );
 
   // TODO: These will be used in subsequent tasks - suppress unused warnings for now
-  void inputLooksTail;
   void droppedCount;
   void parseError; // Display will be added in UI update task
   // Type placeholders - will be used in subsequent tasks
@@ -361,7 +360,26 @@ export function RecordsExplorer() {
     };
   }, []);
 
-  const canRun = isConnected && !queryLoading && !duckdbLoading;
+  const isTailing = mode === 'tail' && tailStatus.state !== 'idle' && tailStatus.state !== 'error';
+  const canRun = inputLooksTail
+    ? (credentials?.workerUrl && !queryLoading) // Tail mode: need worker URL
+    : (isConnected && !queryLoading && !duckdbLoading); // Query mode: need DuckDB
+
+  // Determine button text and style
+  const getButtonConfig = () => {
+    if (isTailing) {
+      return { text: 'Stop', className: 'bg-red-500 hover:bg-red-600' };
+    }
+    if (queryLoading) {
+      return { text: 'Running...', className: '' };
+    }
+    if (inputLooksTail) {
+      return { text: 'Start Tail', className: '' };
+    }
+    return { text: 'Run Query', className: '' };
+  };
+
+  const buttonConfig = getButtonConfig();
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -407,19 +425,21 @@ export function RecordsExplorer() {
         />
         <div className="flex items-center justify-between mt-3">
           <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Press Cmd+Enter to run query
+            {inputLooksTail
+              ? 'Press Cmd+Enter to start tail'
+              : 'Press Cmd+Enter to run query'}
           </span>
           <button
             type="button"
             onClick={handleRun}
-            disabled={!canRun}
-            className="px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            disabled={!canRun && !isTailing}
+            className={`px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${buttonConfig.className}`}
             style={{
-              backgroundColor: 'var(--color-accent)',
+              backgroundColor: isTailing ? undefined : 'var(--color-accent)',
               color: 'white',
             }}
           >
-            {queryLoading ? 'Running...' : 'Run Query'}
+            {buttonConfig.text}
           </button>
         </div>
       </div>
