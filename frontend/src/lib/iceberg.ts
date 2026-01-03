@@ -151,7 +151,7 @@ export async function listNamespaces(
   r2Token: string
 ): Promise<string[][]> {
   const catalogUrl = buildCatalogUrl(workerUrl);
-  const url = `${catalogUrl}/v1/${encodeURIComponent(warehouse)}/namespaces`;
+  const url = `${catalogUrl}/${encodeURIComponent(warehouse)}/namespaces`;
 
   const data = await catalogFetch<ListNamespacesResponse>(url, r2Token);
 
@@ -190,7 +190,7 @@ export async function listTables(
   namespace: string
 ): Promise<TableIdentifier[]> {
   const catalogUrl = buildCatalogUrl(workerUrl);
-  const url = `${catalogUrl}/v1/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables`;
+  const url = `${catalogUrl}/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables`;
 
   const data = await catalogFetch<ListTablesResponse>(url, r2Token);
 
@@ -249,7 +249,7 @@ export async function loadTable(
   tableName: string
 ): Promise<LoadTableResponse> {
   const catalogUrl = buildCatalogUrl(workerUrl);
-  const url = `${catalogUrl}/v1/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables/${encodeURIComponent(tableName)}`;
+  const url = `${catalogUrl}/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables/${encodeURIComponent(tableName)}`;
 
   return catalogFetch<LoadTableResponse>(url, r2Token);
 }

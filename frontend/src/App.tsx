@@ -1,33 +1,21 @@
-import { useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { SetupModal } from './components/SetupModal';
 import { Home } from './pages/Home';
 import { RecordsExplorer } from './pages/RecordsExplorer';
 import { Settings } from './pages/Settings';
 import { useCredentials } from './hooks/useCredentials';
 
 export function App() {
-  const { credentials, isConfigured, setCredentials } = useCredentials();
-  const [showSettings, setShowSettings] = useState(!isConfigured);
-
-  const handleOpenSettings = () => setShowSettings(true);
-  const handleCloseSettings = () => setShowSettings(false);
+  const { isConfigured } = useCredentials();
 
   return (
     <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      {showSettings && (
-        <SetupModal
-          onSave={(creds) => {
-            setCredentials(creds);
-            setShowSettings(false);
-          }}
-          onClose={isConfigured ? handleCloseSettings : undefined}
-          initialValues={credentials ?? undefined}
-        />
-      )}
-      <Layout onOpenSettings={handleOpenSettings}>
+      <Layout>
         <Routes>
+          {/* Redirect to settings if not configured */}
+          {!isConfigured && (
+            <Route path="*" element={<Navigate to="/settings" replace />} />
+          )}
           <Route path="/" element={<Home />} />
           <Route path="/records" element={<RecordsExplorer />} />
           <Route path="/settings" element={<Settings />} />

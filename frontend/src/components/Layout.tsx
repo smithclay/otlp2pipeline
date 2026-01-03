@@ -3,10 +3,9 @@ import { NavLink } from 'react-router-dom';
 
 interface LayoutProps {
   children: ReactNode;
-  onOpenSettings?: () => void;
 }
 
-export function Layout({ children, onOpenSettings }: LayoutProps) {
+export function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-paper)' }}>
       {/* Header - clean editorial style */}
@@ -58,9 +57,13 @@ export function Layout({ children, onOpenSettings }: LayoutProps) {
             </nav>
 
             {/* Settings - minimal */}
-            <button
-              onClick={onOpenSettings}
-              className="rounded-full p-2 transition-colors hover:bg-black/5"
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                `rounded-full p-2 transition-colors ${
+                  isActive ? 'bg-black/5' : 'hover:bg-black/5'
+                }`
+              }
               style={{ color: 'var(--color-text-tertiary)' }}
               aria-label="Settings"
             >
@@ -82,7 +85,7 @@ export function Layout({ children, onOpenSettings }: LayoutProps) {
                   d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
                 />
               </svg>
-            </button>
+            </NavLink>
           </div>
         </div>
       </header>
