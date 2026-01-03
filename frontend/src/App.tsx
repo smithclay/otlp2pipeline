@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { SetupModal } from './components/SetupModal';
 import { Home } from './pages/Home';
 import { RecordsExplorer } from './pages/RecordsExplorer';
+import { Settings } from './pages/Settings';
 import { useCredentials } from './hooks/useCredentials';
 
 export function App() {
@@ -29,6 +30,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/records" element={<RecordsExplorer />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
     </BrowserRouter>
