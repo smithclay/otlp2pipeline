@@ -3,7 +3,7 @@ use anyhow::Result;
 use super::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
 use crate::cli::auth;
 use crate::cli::CreateArgs;
-use crate::cloudflare::{CloudflareClient, SchemaField};
+use crate::cloudflare::{CloudflareClient, CorsAllowed, CorsRule, SchemaField};
 
 /// Signal configuration
 struct SignalConfig {
@@ -71,6 +71,23 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         Some(_) => eprintln!("    Created"),
         None => eprintln!("    Already exists"),
     }
+
+    // Step 1b: Set CORS for browser access (enables DuckDB Iceberg queries from browser)
+    eprintln!("\n==> Setting bucket CORS policy...");
+    client
+        .set_bucket_cors(
+            &bucket,
+            vec![CorsRule {
+                allowed: CorsAllowed {
+                    origins: vec!["*".to_string()],
+                    methods: vec!["GET".to_string(), "HEAD".to_string()],
+                    headers: vec!["*".to_string()],
+                },
+                max_age_seconds: 86400,
+            }],
+        )
+        .await?;
+    eprintln!("    Set");
 
     // Step 2: Enable catalog
     eprintln!("\n==> Enabling R2 Data Catalog...");

@@ -2,9 +2,10 @@ import { ReactNode } from 'react';
 
 interface LayoutProps {
   children: ReactNode;
+  onOpenSettings?: () => void;
 }
 
-export function Layout({ children }: LayoutProps) {
+export function Layout({ children, onOpenSettings }: LayoutProps) {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       {/* Header */}
@@ -17,6 +18,7 @@ export function Layout({ children }: LayoutProps) {
 
           {/* Settings */}
           <button
+            onClick={onOpenSettings}
             className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100 transition-colors"
             aria-label="Settings"
           >

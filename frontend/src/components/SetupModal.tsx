@@ -3,6 +3,8 @@ import { Credentials } from '../hooks/useCredentials';
 
 interface SetupModalProps {
   onSave: (credentials: Credentials) => void;
+  onClose?: () => void;
+  initialValues?: Credentials;
 }
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
@@ -105,11 +107,11 @@ async function testConnection(url: string): Promise<ConnectionTestResult> {
   }
 }
 
-export function SetupModal({ onSave }: SetupModalProps) {
-  const [workerUrl, setWorkerUrl] = useState('');
-  const [r2Token, setR2Token] = useState('');
-  const [bucketName, setBucketName] = useState('');
-  const [accountId, setAccountId] = useState('');
+export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) {
+  const [workerUrl, setWorkerUrl] = useState(initialValues?.workerUrl ?? '');
+  const [r2Token, setR2Token] = useState(initialValues?.r2Token ?? '');
+  const [bucketName, setBucketName] = useState(initialValues?.bucketName ?? '');
+  const [accountId, setAccountId] = useState(initialValues?.accountId ?? '');
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -155,7 +157,21 @@ export function SetupModal({ onSave }: SetupModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-lg bg-slate-800 p-8 shadow-xl">
+      <div className="w-full max-w-md rounded-lg bg-slate-800 p-8 shadow-xl relative">
+        {/* Close button (only when editing existing settings) */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition-colors"
+            aria-label="Close settings"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+
         {/* Logo */}
         <div className="mb-6 text-center">
           <span className="text-2xl font-semibold text-cyan-500">frostbit</span>
@@ -163,7 +179,7 @@ export function SetupModal({ onSave }: SetupModalProps) {
 
         {/* Headline */}
         <h1 className="mb-6 text-center text-xl font-medium text-slate-100">
-          Connect to your Cloudflare environment
+          {onClose ? 'Update Settings' : 'Connect to your Cloudflare environment'}
         </h1>
 
         {/* Form */}
@@ -287,8 +303,10 @@ export function SetupModal({ onSave }: SetupModalProps) {
                 </svg>
                 Testing Connection...
               </span>
+            ) : onClose ? (
+              'Save Settings'
             ) : (
-              'Test Connection'
+              'Connect'
             )}
           </button>
         </form>

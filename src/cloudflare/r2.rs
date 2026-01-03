@@ -8,6 +8,26 @@ struct CreateBucketRequest<'a> {
     name: &'a str,
 }
 
+/// CORS rule for R2 bucket (matches Cloudflare API format)
+#[derive(Serialize)]
+pub struct CorsRule {
+    pub allowed: CorsAllowed,
+    #[serde(rename = "maxAgeSeconds")]
+    pub max_age_seconds: u32,
+}
+
+#[derive(Serialize)]
+pub struct CorsAllowed {
+    pub origins: Vec<String>,
+    pub methods: Vec<String>,
+    pub headers: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct CorsConfig {
+    rules: Vec<CorsRule>,
+}
+
 #[derive(Serialize)]
 struct SetCredentialRequest<'a> {
     token: &'a str,
@@ -46,6 +66,15 @@ impl CloudflareClient {
     /// Delete an R2 bucket
     pub async fn delete_bucket(&self, name: &str) -> Result<()> {
         self.delete(&format!("/r2/buckets/{}", name)).await
+    }
+
+    /// Set CORS configuration for an R2 bucket
+    pub async fn set_bucket_cors(&self, bucket: &str, rules: Vec<CorsRule>) -> Result<()> {
+        self.put_void(
+            &format!("/r2/buckets/{}/cors", bucket),
+            &CorsConfig { rules },
+        )
+        .await
     }
 
     /// Enable R2 Data Catalog for a bucket

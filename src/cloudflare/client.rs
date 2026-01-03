@@ -189,6 +189,32 @@ impl CloudflareClient {
         Ok(())
     }
 
+    /// PUT request to Cloudflare API (expects success but no result)
+    pub async fn put_void<B: Serialize>(&self, path: &str, body: &B) -> Result<()> {
+        let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);
+        let response: ApiResponse<serde_json::Value> = self
+            .client
+            .put(&url)
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("PUT {}", path))?
+            .json()
+            .await?;
+
+        if !response.success {
+            let msg = response
+                .errors
+                .first()
+                .map(|e| e.message.as_str())
+                .unwrap_or("Unknown error");
+            bail!("API error: {}", msg);
+        }
+
+        Ok(())
+    }
+
     /// DELETE request to Cloudflare API
     pub async fn delete(&self, path: &str) -> Result<()> {
         let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);

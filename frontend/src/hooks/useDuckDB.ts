@@ -210,16 +210,16 @@ export function buildRecordsQuery(
   const additionalFilter = validatedClause ? ` AND (${validatedClause})` : '';
 
   return `
-    SELECT 'LOG' as type, timestamp_ms, body as message, severity_text
+    SELECT 'LOG' as type, epoch_ms(timestamp) as timestamp_ms, body as message, severity_text
     FROM ${logsTable}
-    WHERE service = '${escapedService}'
-      AND timestamp_ms BETWEEN ${from} AND ${to}
+    WHERE service_name = '${escapedService}'
+      AND timestamp BETWEEN make_timestamp(${from} * 1000) AND make_timestamp(${to} * 1000)
       ${additionalFilter}
     UNION ALL
-    SELECT 'SPAN' as type, timestamp_ms, name as message, status_code::VARCHAR as severity_text
+    SELECT 'SPAN' as type, epoch_ms(timestamp) as timestamp_ms, span_name as message, status_code::VARCHAR as severity_text
     FROM ${tracesTable}
-    WHERE service = '${escapedService}'
-      AND timestamp_ms BETWEEN ${from} AND ${to}
+    WHERE service_name = '${escapedService}'
+      AND timestamp BETWEEN make_timestamp(${from} * 1000) AND make_timestamp(${to} * 1000)
       ${additionalFilter}
     ORDER BY timestamp_ms DESC
     LIMIT ${limit}

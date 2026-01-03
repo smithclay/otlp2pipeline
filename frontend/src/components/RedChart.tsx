@@ -41,29 +41,26 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
       try {
         const worker = await getPerspectiveWorker();
 
-        // Clean up previous table if exists
-        if (tableRef.current) {
-          await tableRef.current.delete();
-          tableRef.current = null;
-        }
-
         // Perspective expects column-oriented data: { column: [values] }
-        const chartData: Record<string, (string | number)[]> = {
-          minute: data.map((d) => d.minute),
+        // Convert ISO strings to Date objects for proper datetime handling
+        const chartData: Record<string, (Date | number)[]> = {
+          minute: data.map((d) => new Date(d.minute)),
           logs: data.map((d) => d.logs ?? 0),
           traces: data.map((d) => d.traces ?? 0),
         };
 
         // Create table from column-oriented data
         const table = await worker.table(chartData);
-        tableRef.current = table;
 
         if (!mounted) {
           await table.delete();
           return;
         }
 
-        // Load table into viewer
+        // Store reference (old table will be orphaned but GC'd)
+        tableRef.current = table;
+
+        // Load table into viewer - viewer manages view lifecycle automatically
         await viewer.load(table);
 
         // Determine which columns have data
@@ -97,7 +94,11 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
     const handleClick = ((event: CustomEvent) => {
       const row = event.detail?.row;
       if (row && row.minute && onPointClick) {
-        onPointClick(row.minute);
+        // Perspective returns Date objects as ISO strings or timestamps
+        const minuteValue = row.minute instanceof Date
+          ? row.minute.toISOString()
+          : String(row.minute);
+        onPointClick(minuteValue);
       }
     }) as EventListener;
 
@@ -113,17 +114,35 @@ export function RedChart({ title, data, yLabel, onPointClick }: RedChartProps) {
       if (viewer) {
         viewer.removeEventListener('perspective-click', handleClick);
       }
-      // Cleanup table on unmount
-      if (tableRef.current) {
-        tableRef.current.delete().catch(console.error);
-        tableRef.current = null;
-      }
+      // Note: We don't manually delete tables here because the viewer manages
+      // the view lifecycle. Deleting a table with an active view causes errors.
+      // Tables will be garbage collected when no longer referenced.
+      tableRef.current = null;
     };
   }, [data, yLabel, onPointClick]);
 
+  // Handle clicking on the chart to view records for the middle time point
+  const handleViewRecords = () => {
+    if (data.length > 0 && onPointClick) {
+      // Use the middle data point's timestamp
+      const middleIndex = Math.floor(data.length / 2);
+      onPointClick(data[middleIndex].minute);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
-      <h3 className="mb-3 text-sm font-medium text-slate-300">{title}</h3>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-slate-300">{title}</h3>
+        {data.length > 0 && onPointClick && (
+          <button
+            onClick={handleViewRecords}
+            className="rounded bg-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-600 transition-colors"
+          >
+            View Records
+          </button>
+        )}
+      </div>
       {error ? (
         <div className="flex h-48 items-center justify-center text-red-400 text-sm">
           {error}

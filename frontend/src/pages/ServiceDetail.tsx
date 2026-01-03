@@ -16,8 +16,17 @@ interface DrilldownTimeRange {
 }
 
 /**
+ * Convert a minute bucket (Unix timestamp / 60) to an ISO timestamp string.
+ */
+function minuteBucketToTimestamp(minuteBucket: string): string {
+  const bucket = parseInt(minuteBucket, 10);
+  return new Date(bucket * 60 * 1000).toISOString();
+}
+
+/**
  * Merge log and trace stats into chart data points.
  * Extracts the specified field from each stat type and groups by minute.
+ * Converts minute buckets to ISO timestamps for display.
  */
 function mergeStatsToChartData(
   logStats: LogStats[],
@@ -30,22 +39,24 @@ function mergeStatsToChartData(
   for (const stat of logStats) {
     const value = stat[logField];
     if (typeof value !== 'number') continue;
+    const timestamp = minuteBucketToTimestamp(stat.minute);
     const existing = minuteMap.get(stat.minute);
     if (existing) {
       existing.logs = value;
     } else {
-      minuteMap.set(stat.minute, { minute: stat.minute, logs: value });
+      minuteMap.set(stat.minute, { minute: timestamp, logs: value });
     }
   }
 
   for (const stat of traceStats) {
     const value = stat[traceField];
     if (typeof value !== 'number') continue;
+    const timestamp = minuteBucketToTimestamp(stat.minute);
     const existing = minuteMap.get(stat.minute);
     if (existing) {
       existing.traces = value;
     } else {
-      minuteMap.set(stat.minute, { minute: stat.minute, traces: value });
+      minuteMap.set(stat.minute, { minute: timestamp, traces: value });
     }
   }
 
@@ -91,7 +102,7 @@ export function ServiceDetail() {
         // Calculate average latency in milliseconds
         const avgLatencyMs = stat.count > 0 ? (stat.latency_sum_us ?? 0) / stat.count / 1000 : 0;
         return {
-          minute: stat.minute,
+          minute: minuteBucketToTimestamp(stat.minute),
           traces: Math.round(avgLatencyMs * 100) / 100, // Round to 2 decimal places
         };
       })
@@ -100,9 +111,8 @@ export function ServiceDetail() {
 
   // Handle chart point click for drilldown
   const handleChartClick = useCallback((minute: string) => {
-    // The minute value is a Unix minute bucket (timestamp / 60), convert to milliseconds
-    const minuteBucket = parseInt(minute, 10);
-    const clickedTime = new Date(minuteBucket * 60 * 1000);
+    // The minute value is now an ISO timestamp
+    const clickedTime = new Date(minute);
     // Create a time range of +/- 30 seconds around the clicked point
     const from = new Date(clickedTime.getTime() - 30 * 1000);
     const to = new Date(clickedTime.getTime() + 30 * 1000);

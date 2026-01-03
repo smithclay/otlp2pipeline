@@ -20,10 +20,13 @@ use crate::transform::init_programs;
 fn with_cors(response: Response) -> Result<Response> {
     let headers = Headers::new();
     headers.set("Access-Control-Allow-Origin", "*")?;
-    headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")?;
+    headers.set(
+        "Access-Control-Allow-Methods",
+        "GET, POST, PUT, DELETE, OPTIONS",
+    )?;
     headers.set(
         "Access-Control-Allow-Headers",
-        "Content-Type, Accept, Content-Encoding",
+        "Content-Type, Accept, Content-Encoding, Authorization, X-User-Agent, X-Iceberg-Access-Delegation",
     )?;
     headers.set("Access-Control-Max-Age", "86400")?;
 

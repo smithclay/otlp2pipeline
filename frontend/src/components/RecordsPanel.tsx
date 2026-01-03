@@ -160,11 +160,10 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
       // Detect CORS/catalog errors and show helpful message
       if (message.includes('Catalog') && message.includes('does not exist')) {
         setQueryError(
-          'R2 Data Catalog connection failed. Browser-based Iceberg queries may not be supported due to CORS. ' +
-          'Use the CLI: frostbit query <env>'
+          'R2 Data Catalog connection failed. Check your R2 credentials in Settings.'
         );
       } else {
-        setQueryError(`Failed to query records: ${message}. Check your R2 credentials and bucket configuration.`);
+        setQueryError(`Failed to query records: ${message}`);
       }
       setQueryResult(null);
     } finally {
@@ -293,10 +292,10 @@ export function RecordsPanel({ service, timeRange, onClose }: RecordsPanelProps)
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
-              {queryResult.rows.map((row: Record<string, unknown>) => {
+              {queryResult.rows.map((row: Record<string, unknown>, index: number) => {
                 const record = row as unknown as RecordRow;
-                // Use composite key from unique fields
-                const key = `${record.type}-${record.timestamp_ms}-${record.message?.slice(0, 50) ?? ''}`;
+                // Use index for guaranteed uniqueness
+                const key = `${index}-${record.type}-${record.timestamp_ms}`;
                 return (
                   <tr
                     key={key}
