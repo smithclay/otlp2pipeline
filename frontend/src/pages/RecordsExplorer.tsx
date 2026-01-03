@@ -101,11 +101,9 @@ export function RecordsExplorer() {
   );
 
   // TODO: These will be used in subsequent tasks - suppress unused warnings for now
-  void parseCommand;
-  void setTailConfig; void setMode;
-  void parseError; void setParseError;
   void inputLooksTail;
-  void startTail; void stopTail; void tailStatus; void droppedCount;
+  void droppedCount;
+  void parseError; // Display will be added in UI update task
   // Type placeholders - will be used in subsequent tasks
   const _tailStatusType: TailStatus | null = null; void _tailStatusType;
   const _tailRecordType: TailRecord | null = null; void _tailRecordType;
@@ -125,40 +123,96 @@ export function RecordsExplorer() {
   const tailUpdateTimeoutRef = useRef<number | null>(null);
   const pendingTailRecordsRef = useRef<TailRecord[]>([]);
 
-  // Run the query
-  const runQuery = useCallback(async () => {
-    if (!isConnected || queryLoading) return;
+  // Track previous tail config to detect changes
+  const prevTailConfigRef = useRef<typeof tailConfig>(null);
 
-    setQueryLoading(true);
-    setQueryError(null);
-    setQueryTimeMs(null);
+  // Unified run handler for both query and tail modes
+  const handleRun = useCallback(async () => {
+    setParseError(null);
 
-    const startTime = performance.now();
-
-    try {
-      const result = await executeQuery(sql);
-      const endTime = performance.now();
-      setQueryTimeMs(Math.round(endTime - startTime));
-      setQueryResult(result);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Query execution failed';
-      setQueryError(message);
-      setQueryResult(null);
-    } finally {
-      setQueryLoading(false);
+    // If currently tailing, stop
+    if (mode === 'tail' && tailStatus.state !== 'idle') {
+      stopTail();
+      setMode('query');
+      return;
     }
-  }, [isConnected, queryLoading, executeQuery, sql]);
+
+    // Parse the input
+    const result = parseCommand(sql);
+
+    if (result.type === 'error') {
+      setParseError(result.message);
+      return;
+    }
+
+    if (result.type === 'query') {
+      // SQL query mode
+      if (!isConnected || queryLoading) return;
+
+      setMode('query');
+      setTailConfig(null);
+      setQueryLoading(true);
+      setQueryError(null);
+      setQueryTimeMs(null);
+
+      const startTime = performance.now();
+
+      try {
+        const queryResult = await executeQuery(result.sql);
+        const endTime = performance.now();
+        setQueryTimeMs(Math.round(endTime - startTime));
+        setQueryResult(queryResult);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Query execution failed';
+        setQueryError(message);
+        setQueryResult(null);
+      } finally {
+        setQueryLoading(false);
+      }
+    } else {
+      // Tail mode
+      setMode('tail');
+      setTailConfig({ service: result.service, signal: result.signal, limit: result.limit });
+      setQueryResult(null);
+      setQueryError(null);
+      setQueryTimeMs(null);
+
+      // Start will be triggered by effect when tailConfig changes
+    }
+  }, [sql, mode, tailStatus.state, stopTail, isConnected, queryLoading, executeQuery]);
 
   // Handle keyboard shortcut (Cmd/Ctrl+Enter)
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault();
-        runQuery();
+        handleRun();
       }
     },
-    [runQuery]
+    [handleRun]
   );
+
+  // Start tail when config changes or when entering tail mode
+  useEffect(() => {
+    if (mode !== 'tail' || !tailConfig) {
+      prevTailConfigRef.current = null;
+      return;
+    }
+
+    const configChanged = prevTailConfigRef.current !== null &&
+      (prevTailConfigRef.current.service !== tailConfig.service ||
+       prevTailConfigRef.current.signal !== tailConfig.signal ||
+       prevTailConfigRef.current.limit !== tailConfig.limit);
+
+    if (tailStatus.state === 'idle' || configChanged) {
+      // Stop existing connection if config changed while connected
+      if (configChanged && tailStatus.state !== 'idle') {
+        stopTail();
+      }
+      prevTailConfigRef.current = tailConfig;
+      startTail();
+    }
+  }, [mode, tailConfig, tailStatus.state, startTail, stopTail]);
 
   // Config persistence for the explorer
   const { save, load } = usePerspectiveConfig('records-explorer');
@@ -357,7 +411,7 @@ export function RecordsExplorer() {
           </span>
           <button
             type="button"
-            onClick={runQuery}
+            onClick={handleRun}
             disabled={!canRun}
             className="px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             style={{
