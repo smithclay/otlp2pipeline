@@ -128,18 +128,6 @@ function TableRowSkeleton() {
       </td>
       <td className="py-3 px-4 text-right">
         <div
-          className="h-4 w-12 rounded animate-pulse ml-auto"
-          style={{ backgroundColor: 'var(--color-border-light)' }}
-        />
-      </td>
-      <td className="py-3 px-4 text-right">
-        <div
-          className="h-4 w-16 rounded animate-pulse ml-auto"
-          style={{ backgroundColor: 'var(--color-border-light)' }}
-        />
-      </td>
-      <td className="py-3 px-4 text-right">
-        <div
           className="h-4 w-10 rounded animate-pulse ml-auto"
           style={{ backgroundColor: 'var(--color-border-light)' }}
         />
@@ -216,18 +204,6 @@ function TableRow({ table }: { table: TableStats }) {
         className="py-3 px-4 text-right mono text-sm"
         style={{ color: 'var(--color-text-secondary)' }}
       >
-        {formatNumber(table.fileCount)}
-      </td>
-      <td
-        className="py-3 px-4 text-right mono text-sm"
-        style={{ color: 'var(--color-text-secondary)' }}
-      >
-        {formatNumber(table.recordCount)}
-      </td>
-      <td
-        className="py-3 px-4 text-right mono text-sm"
-        style={{ color: 'var(--color-text-secondary)' }}
-      >
         {table.snapshotCount > 0 ? formatNumber(table.snapshotCount) : '—'}
       </td>
       <td
@@ -285,26 +261,20 @@ export function CatalogOverview({
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         {isLoading ? (
           <>
-            <StatCardSkeleton />
-            <StatCardSkeleton />
             <StatCardSkeleton />
             <StatCardSkeleton />
           </>
         ) : stats ? (
           <>
             <StatCard label="Tables" value={stats.totals.tableCount} />
-            <StatCard label="Files" value={stats.totals.fileCount} />
-            <StatCard label="Records" value={stats.totals.recordCount} />
             <StatCard label="Snapshots" value={stats.totals.snapshotCount} />
           </>
         ) : !error ? (
           <>
             <StatCard label="Tables" value="—" />
-            <StatCard label="Files" value="—" />
-            <StatCard label="Records" value="—" />
             <StatCard label="Snapshots" value="—" />
           </>
         ) : null}
@@ -337,18 +307,6 @@ export function CatalogOverview({
                 className="py-3 px-4 text-right text-xs font-medium uppercase tracking-wider"
                 style={{ color: 'var(--color-text-tertiary)' }}
               >
-                Files
-              </th>
-              <th
-                className="py-3 px-4 text-right text-xs font-medium uppercase tracking-wider"
-                style={{ color: 'var(--color-text-tertiary)' }}
-              >
-                Records
-              </th>
-              <th
-                className="py-3 px-4 text-right text-xs font-medium uppercase tracking-wider"
-                style={{ color: 'var(--color-text-tertiary)' }}
-              >
                 Snapshots
               </th>
               <th
@@ -374,7 +332,7 @@ export function CatalogOverview({
               ))
             ) : !error ? (
               <tr>
-                <td colSpan={5} className="py-12 text-center">
+                <td colSpan={3} className="py-12 text-center">
                   <p style={{ color: 'var(--color-text-secondary)' }}>
                     No tables found
                   </p>
@@ -388,7 +346,7 @@ export function CatalogOverview({
               </tr>
             ) : (
               <tr>
-                <td colSpan={5} className="py-8 text-center">
+                <td colSpan={3} className="py-8 text-center">
                   <p style={{ color: 'var(--color-text-muted)' }}>
                     Unable to load table data
                   </p>

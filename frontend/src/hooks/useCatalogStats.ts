@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
+  getCatalogConfig,
   listNamespaces,
   listTables,
   loadTable,
@@ -14,6 +15,17 @@ interface WorkerConfig {
   accountId: string | null;
   bucketName: string | null;
   icebergProxyEnabled: boolean;
+}
+
+/**
+ * Fetch worker config from /v1/config endpoint.
+ */
+async function fetchWorkerConfig(workerUrl: string): Promise<WorkerConfig> {
+  const response = await fetch(`${workerUrl}/v1/config`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch worker config: ${response.status}`);
+  }
+  return response.json();
 }
 
 /**
@@ -51,16 +63,6 @@ export interface UseCatalogStatsResult {
   refresh: () => void;
 }
 
-/**
- * Fetch worker config from /v1/config endpoint.
- */
-async function fetchWorkerConfig(workerUrl: string): Promise<WorkerConfig> {
-  const response = await fetch(`${workerUrl}/v1/config`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch worker config: ${response.status}`);
-  }
-  return response.json();
-}
 
 /**
  * Extract stats from a loaded table response.
@@ -136,18 +138,24 @@ export function useCatalogStats(
 
     try {
       // Step 1: Fetch worker config to get accountId and bucketName
-      const config = await fetchWorkerConfig(workerUrl);
+      const workerConfig = await fetchWorkerConfig(workerUrl);
 
-      if (!config.accountId || !config.bucketName) {
-        throw new Error('Worker is not configured with R2 catalog settings (accountId or bucketName missing)');
+      if (!workerConfig.accountId || !workerConfig.bucketName) {
+        throw new Error('Worker is not configured with R2 catalog settings');
       }
 
-      if (!config.icebergProxyEnabled) {
+      if (!workerConfig.icebergProxyEnabled) {
         throw new Error('Iceberg proxy is not enabled on this worker');
       }
 
-      // Step 2: Construct warehouse identifier
-      const warehouse = `${config.accountId}_${config.bucketName}`;
+      // Step 2: Fetch Iceberg catalog config to get the warehouse prefix (UUID)
+      const warehouseParam = `${workerConfig.accountId}_${workerConfig.bucketName}`;
+      const catalogConfig = await getCatalogConfig(workerUrl, warehouseParam, r2Token);
+
+      const warehouse = catalogConfig.overrides?.prefix;
+      if (!warehouse) {
+        throw new Error('Catalog config does not contain a warehouse prefix');
+      }
 
       // Step 3: List all namespaces
       const namespaces = await listNamespaces(workerUrl, warehouse, r2Token);

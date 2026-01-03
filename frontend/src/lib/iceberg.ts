@@ -114,6 +114,52 @@ function buildCatalogUrl(workerUrl: string): string {
 }
 
 /**
+ * Iceberg REST Catalog config response.
+ */
+export interface CatalogConfig {
+  defaults?: Record<string, string>;
+  overrides?: {
+    prefix?: string;
+    's3.signer.uri'?: string;
+  };
+  endpoints?: string[];
+}
+
+/**
+ * Fetch the Iceberg catalog configuration.
+ * Returns the warehouse prefix (UUID) to use for API calls.
+ *
+ * @param workerUrl - Worker URL (catalog proxy)
+ * @param warehouse - Warehouse identifier (accountId_bucketName) to get config for
+ * @param r2Token - R2 API token for authentication
+ * @returns Catalog config including the warehouse prefix in overrides.prefix
+ */
+export async function getCatalogConfig(
+  workerUrl: string,
+  warehouse: string,
+  r2Token: string
+): Promise<CatalogConfig> {
+  const catalogUrl = buildCatalogUrl(workerUrl);
+  const url = `${catalogUrl}/v1/config?warehouse=${encodeURIComponent(warehouse)}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${r2Token}`,
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(
+      `Failed to fetch catalog config: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
  * Make an authenticated request to the Iceberg REST Catalog.
  */
 async function catalogFetch<T>(
@@ -151,7 +197,7 @@ export async function listNamespaces(
   r2Token: string
 ): Promise<string[][]> {
   const catalogUrl = buildCatalogUrl(workerUrl);
-  const url = `${catalogUrl}/${encodeURIComponent(warehouse)}/namespaces`;
+  const url = `${catalogUrl}/v1/${encodeURIComponent(warehouse)}/namespaces`;
 
   const data = await catalogFetch<ListNamespacesResponse>(url, r2Token);
 
@@ -190,7 +236,7 @@ export async function listTables(
   namespace: string
 ): Promise<TableIdentifier[]> {
   const catalogUrl = buildCatalogUrl(workerUrl);
-  const url = `${catalogUrl}/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables`;
+  const url = `${catalogUrl}/v1/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables`;
 
   const data = await catalogFetch<ListTablesResponse>(url, r2Token);
 
@@ -249,7 +295,7 @@ export async function loadTable(
   tableName: string
 ): Promise<LoadTableResponse> {
   const catalogUrl = buildCatalogUrl(workerUrl);
-  const url = `${catalogUrl}/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables/${encodeURIComponent(tableName)}`;
+  const url = `${catalogUrl}/v1/${encodeURIComponent(warehouse)}/namespaces/${encodeURIComponent(namespace)}/tables/${encodeURIComponent(tableName)}`;
 
   return catalogFetch<LoadTableResponse>(url, r2Token);
 }
