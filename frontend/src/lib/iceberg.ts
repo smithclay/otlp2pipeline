@@ -80,6 +80,30 @@ interface ListTablesResponse {
 }
 
 /**
+ * Type guard for namespace arrays.
+ * Validates that each namespace is an array of strings.
+ */
+function isNamespaceArray(obj: unknown): obj is string[][] {
+  if (!Array.isArray(obj)) return false;
+  return obj.every(
+    (ns) => Array.isArray(ns) && ns.every((n) => typeof n === 'string')
+  );
+}
+
+/**
+ * Type guard for TableIdentifier objects.
+ */
+function isTableIdentifier(obj: unknown): obj is TableIdentifier {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const t = obj as Record<string, unknown>;
+  return (
+    Array.isArray(t.namespace) &&
+    t.namespace.every((n) => typeof n === 'string') &&
+    typeof t.name === 'string'
+  );
+}
+
+/**
  * Build the catalog base URL from worker URL.
  * The worker proxies Iceberg REST Catalog requests at /v1/iceberg.
  */
@@ -131,9 +155,20 @@ export async function listNamespaces(
 
   const data = await catalogFetch<ListNamespacesResponse>(url, r2Token);
 
+  // Warn about pagination - not currently implemented
+  if (data['next-page-token']) {
+    console.warn('Pagination detected but not implemented. Results may be incomplete.');
+  }
+
   if (!data.namespaces || !Array.isArray(data.namespaces)) {
-    console.warn('Unexpected namespaces response:', data);
-    return [];
+    console.error('Invalid namespaces response:', data);
+    throw new Error('API returned data in unexpected format. Check API version compatibility.');
+  }
+
+  // Validate each namespace is an array of strings
+  if (!isNamespaceArray(data.namespaces)) {
+    console.error('Invalid namespace format in response:', data.namespaces);
+    throw new Error('API returned data in unexpected format. Check API version compatibility.');
   }
 
   return data.namespaces;
@@ -159,12 +194,41 @@ export async function listTables(
 
   const data = await catalogFetch<ListTablesResponse>(url, r2Token);
 
-  if (!data.identifiers || !Array.isArray(data.identifiers)) {
-    console.warn('Unexpected tables response:', data);
-    return [];
+  // Warn about pagination - not currently implemented
+  if (data['next-page-token']) {
+    console.warn('Pagination detected but not implemented. Results may be incomplete.');
   }
 
-  return data.identifiers;
+  if (!data.identifiers || !Array.isArray(data.identifiers)) {
+    console.error('Invalid tables response:', data);
+    throw new Error('API returned data in unexpected format. Check API version compatibility.');
+  }
+
+  // Validate and filter table identifiers
+  const validTables: TableIdentifier[] = [];
+  const invalidIndices: number[] = [];
+
+  for (let i = 0; i < data.identifiers.length; i++) {
+    if (isTableIdentifier(data.identifiers[i])) {
+      validTables.push(data.identifiers[i]);
+    } else {
+      console.warn('Invalid table identifier at index', i, ':', data.identifiers[i]);
+      invalidIndices.push(i);
+    }
+  }
+
+  // If ALL items were invalid, this indicates an API compatibility issue
+  if (data.identifiers.length > 0 && validTables.length === 0) {
+    console.error('All table identifiers failed validation:', data.identifiers);
+    throw new Error('API returned data in unexpected format. Check API version compatibility.');
+  }
+
+  // Log prominently if significant portion dropped
+  if (invalidIndices.length > 0) {
+    console.error(`Dropped ${invalidIndices.length} of ${data.identifiers.length} table identifiers due to validation failure`);
+  }
+
+  return validTables;
 }
 
 /**

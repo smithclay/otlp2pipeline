@@ -27,12 +27,9 @@ flowchart TB
 
 ## Why?
 
-There are dozens on excellent open-source and paid monitoring tools and products to choose from, including many that store observerability data in parquet format in object storage.
+Purpose of this project is to explore the idea of a "serverless" observability backend built around object storage using emerging managed services from Cloudflare.
 
-The purpose of this project is to explore:
-
-1. How advanced of a telemetry platform can we build, for cheap, using emerging services from Cloudflare like Pipelines, Durable Objects, and R2 Data Catalog?
-2. How can we make long-term observability data easily accessible from analytics tools that support Apache Iceberg like duckdb, pandas, Trino, Anthena, etc?
+Using new query engines like duckdb, this makes long term analytics of observability data cheap and feasible with any tool that can query Apache Iceberg data sources (duckdb, pandas, Trino, Athena, etc).
 
 ## Setup
 
