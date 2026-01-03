@@ -110,16 +110,10 @@ async function testConnection(url: string): Promise<ConnectionTestResult> {
 export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) {
   const [workerUrl, setWorkerUrl] = useState(initialValues?.workerUrl ?? '');
   const [r2Token, setR2Token] = useState(initialValues?.r2Token ?? '');
-  const [bucketName, setBucketName] = useState(initialValues?.bucketName ?? '');
-  const [accountId, setAccountId] = useState(initialValues?.accountId ?? '');
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const isFormValid =
-    workerUrl.trim().length > 0 &&
-    r2Token.trim().length > 0 &&
-    bucketName.trim().length > 0 &&
-    accountId.trim().length > 0;
+  const isFormValid = workerUrl.trim().length > 0 && r2Token.trim().length > 0;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -149,8 +143,6 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
       onSave({
         workerUrl: normalizedUrl,
         r2Token: r2Token.trim(),
-        bucketName: bucketName.trim(),
-        accountId: accountId.trim(),
       });
     }, 500);
   }
@@ -226,31 +218,6 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
             />
           </div>
 
-          {/* Account ID */}
-          <div>
-            <label
-              htmlFor="accountId"
-              className="mb-1.5 block text-sm font-medium"
-              style={{ color: 'var(--color-text-secondary)' }}
-            >
-              Cloudflare Account ID
-            </label>
-            <input
-              id="accountId"
-              type="text"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              placeholder="e.g. 1a2b3c4d5e6f7g8h9i0j"
-              className="w-full rounded-md px-3 py-2 text-sm"
-              style={{
-                backgroundColor: 'var(--color-paper-warm)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text-primary)',
-              }}
-              required
-            />
-          </div>
-
           {/* R2 API Token */}
           <div>
             <label
@@ -266,31 +233,6 @@ export function SetupModal({ onSave, onClose, initialValues }: SetupModalProps) 
               value={r2Token}
               onChange={(e) => setR2Token(e.target.value)}
               placeholder="Enter your R2 API token"
-              className="w-full rounded-md px-3 py-2 text-sm"
-              style={{
-                backgroundColor: 'var(--color-paper-warm)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text-primary)',
-              }}
-              required
-            />
-          </div>
-
-          {/* Bucket Name */}
-          <div>
-            <label
-              htmlFor="bucketName"
-              className="mb-1.5 block text-sm font-medium"
-              style={{ color: 'var(--color-text-secondary)' }}
-            >
-              Bucket Name
-            </label>
-            <input
-              id="bucketName"
-              type="text"
-              value={bucketName}
-              onChange={(e) => setBucketName(e.target.value)}
-              placeholder="frostbit-prod"
               className="w-full rounded-md px-3 py-2 text-sm"
               style={{
                 backgroundColor: 'var(--color-paper-warm)',

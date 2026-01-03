@@ -1,5 +1,11 @@
 /**
- * localStorage wrapper for credential storage
+ * localStorage wrapper for credential storage.
+ *
+ * workerUrl and r2Token are stored locally. R2 catalog config (accountId, bucketName)
+ * is fetched from the worker's /v1/config endpoint.
+ *
+ * The r2Token is needed client-side because DuckDB's Iceberg extension makes direct
+ * requests to R2 for parquet data files (catalog requests go through the proxy).
  */
 
 const STORAGE_KEY = 'frostbit:credentials';
@@ -7,12 +13,7 @@ const STORAGE_KEY = 'frostbit:credentials';
 export interface Credentials {
   workerUrl: string;
   r2Token: string;
-  bucketName: string;
-  accountId: string;
 }
-
-/** @deprecated Use Credentials instead */
-export type StoredCredentials = Credentials;
 
 export function getStoredCredentials(): Credentials | null {
   try {
@@ -24,11 +25,11 @@ export function getStoredCredentials(): Credentials | null {
     // Validate shape
     if (
       typeof parsed.workerUrl === 'string' &&
+      parsed.workerUrl.length > 0 &&
       typeof parsed.r2Token === 'string' &&
-      typeof parsed.bucketName === 'string' &&
-      typeof parsed.accountId === 'string'
+      parsed.r2Token.length > 0
     ) {
-      return parsed as Credentials;
+      return { workerUrl: parsed.workerUrl, r2Token: parsed.r2Token };
     }
 
     // Invalid shape - clear corrupted data

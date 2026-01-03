@@ -62,13 +62,34 @@ export function getDuckDB(): duckdb.AsyncDuckDB | null {
 
 /**
  * R2 Data Catalog connection configuration.
+ * Only workerUrl and r2Token are required - accountId/bucketName are fetched from the worker.
  */
 export interface R2Config {
-  bucketName: string;
+  /** Worker URL for API and proxying R2 Data Catalog requests */
+  workerUrl: string;
+  /** R2 API token for direct data access (parquet files) */
   r2Token: string;
-  accountId: string;
-  /** Worker URL for proxying R2 Data Catalog requests (CORS workaround) */
-  workerUrl?: string;
+}
+
+/**
+ * Config response from worker's /v1/config endpoint.
+ */
+interface WorkerConfig {
+  accountId: string | null;
+  bucketName: string | null;
+  icebergProxyEnabled: boolean;
+}
+
+/**
+ * Fetch R2 catalog configuration from the worker.
+ * @throws Error if the worker is not configured for R2 catalog access
+ */
+async function fetchWorkerConfig(workerUrl: string): Promise<WorkerConfig> {
+  const response = await fetch(`${workerUrl}/v1/config`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch worker config: ${response.status}`);
+  }
+  return response.json();
 }
 
 /**
@@ -93,6 +114,7 @@ export interface ConnectionStatus {
  * Create a connection configured for R2 Data Catalog/Iceberg access.
  *
  * Uses DuckDB's Iceberg extension with Cloudflare R2 Data Catalog.
+ * Fetches accountId/bucketName from the worker's /v1/config endpoint.
  * See: https://developers.cloudflare.com/r2/data-catalog/config-examples/duckdb/
  *
  * @throws Error if Iceberg configuration fails
@@ -105,6 +127,24 @@ export async function connectToR2(
   const warnings: string[] = [];
   let icebergAvailable = false;
   let catalogAttached = false;
+
+  // Fetch R2 catalog config from worker
+  let workerConfig: WorkerConfig;
+  try {
+    workerConfig = await fetchWorkerConfig(config.workerUrl);
+  } catch (error) {
+    await conn.close();
+    throw new Error(
+      `Failed to fetch config from worker. Ensure the worker is running and accessible.`
+    );
+  }
+
+  if (!workerConfig.icebergProxyEnabled || !workerConfig.accountId || !workerConfig.bucketName) {
+    await conn.close();
+    throw new Error(
+      'R2 Data Catalog is not configured on the worker. Set R2_CATALOG_ACCOUNT_ID, R2_CATALOG_BUCKET, and R2_CATALOG_TOKEN.'
+    );
+  }
 
   // Load required extensions for R2 Data Catalog access
   try {
@@ -137,13 +177,12 @@ export async function connectToR2(
 
   // Attach R2 Data Catalog
   // Warehouse format is: <account_id>_<bucket_name>
-  // If workerUrl is provided, use it as a CORS proxy, otherwise try direct access
-  const escapedAccountId = escapeSqlString(config.accountId);
-  const escapedBucketName = escapeSqlString(config.bucketName);
+  // Use worker as CORS proxy for catalog requests
+  const escapedAccountId = escapeSqlString(workerConfig.accountId);
+  const escapedBucketName = escapeSqlString(workerConfig.bucketName);
   const warehouse = `${escapedAccountId}_${escapedBucketName}`;
-  const catalogEndpoint = config.workerUrl
-    ? `${escapeSqlString(config.workerUrl)}/v1/iceberg`
-    : `https://catalog.cloudflarestorage.com/${escapedAccountId}/${escapedBucketName}`;
+  const catalogEndpoint = `${escapeSqlString(config.workerUrl)}/v1/iceberg`;
+
   try {
     // Detach first if already attached (handles React StrictMode, navigation)
     await conn.query(`DETACH DATABASE IF EXISTS r2_catalog;`);
@@ -162,7 +201,7 @@ export async function connectToR2(
     if (message.includes('forbidden') || message.includes('401') || message.includes('403')) {
       throw new Error('R2 token does not have permission to access the catalog. Check token permissions.');
     } else if (message.includes('not found') || message.includes('404')) {
-      throw new Error('R2 Data Catalog not found. Verify your Account ID and Bucket Name.');
+      throw new Error('R2 Data Catalog not found. Verify the worker R2 configuration.');
     } else {
       throw new Error(`Failed to connect to R2 Data Catalog: ${message}`);
     }

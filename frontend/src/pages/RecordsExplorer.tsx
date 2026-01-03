@@ -57,10 +57,8 @@ export function RecordsExplorer() {
   const location = useLocation();
   const { credentials, isConfigured } = useCredentials();
   const { executeQuery, loading: duckdbLoading, error: duckdbError, isConnected } = useDuckDB(
-    credentials?.bucketName ?? null,
-    credentials?.r2Token ?? null,
-    credentials?.accountId ?? null,
-    credentials?.workerUrl ?? null
+    credentials?.workerUrl ?? null,
+    credentials?.r2Token ?? null
   );
 
   // Get initial query from navigation state

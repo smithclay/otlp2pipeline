@@ -32,12 +32,11 @@ export function useCredentials(): UseCredentialsResult {
   }, []);
 
   // Simple computation - no memoization needed
+  // Only workerUrl and r2Token are required - accountId/bucketName come from /v1/config
   const isConfigured =
     credentials !== null &&
     credentials.workerUrl.length > 0 &&
-    credentials.r2Token.length > 0 &&
-    credentials.bucketName.length > 0 &&
-    credentials.accountId.length > 0;
+    credentials.r2Token.length > 0;
 
   return {
     credentials,

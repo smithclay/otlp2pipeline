@@ -87,6 +87,7 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Post, "/v1/metrics") => handle_metrics_worker(req, env, ctx).await,
         (Method::Post, "/services/collector/event") => handle_hec_logs_worker(req, env, ctx).await,
         (Method::Get, "/health") => Response::ok("ok"),
+        (Method::Get, "/v1/config") => handle_config(env),
         (Method::Get, "/v1/services") => handle_services_list(env).await,
         // Stats API endpoints
         (Method::Get, path) if path.starts_with("/v1/services/") => {
@@ -201,6 +202,29 @@ async fn handle_services_list(env: Env) -> Result<Response> {
         Ok(services) => Response::from_json(&services),
         Err(e) => Response::error(format!("Failed to get services: {}", e), 500),
     }
+}
+
+/// Return R2 catalog configuration for frontend DuckDB connection.
+/// The token is NOT returned - it's injected by the /v1/iceberg proxy.
+fn handle_config(env: Env) -> Result<Response> {
+    let account_id = env.var("R2_CATALOG_ACCOUNT_ID").map(|v| v.to_string()).ok();
+    let bucket_name = env.var("R2_CATALOG_BUCKET").map(|v| v.to_string()).ok();
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ConfigResponse {
+        account_id: Option<String>,
+        bucket_name: Option<String>,
+        iceberg_proxy_enabled: bool,
+    }
+
+    let config = ConfigResponse {
+        iceberg_proxy_enabled: account_id.is_some() && bucket_name.is_some(),
+        account_id,
+        bucket_name,
+    };
+
+    Response::from_json(&config)
 }
 
 async fn handle_stats_query(path: &str, req: Request, env: Env) -> Result<Response> {
