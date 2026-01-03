@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useCredentials } from '../hooks/useCredentials';
 import { useServices } from '../hooks/useServices';
 import { useStats, TIME_RANGES } from '../hooks/useStats';
@@ -25,6 +25,13 @@ export function Home() {
   // Search filter for services
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Tick to force timestamp re-render every 10s
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 10000);
+    return () => clearInterval(id);
+  }, []);
+
   // Fixed time range for detail stats (1 hour)
   const timeRange = TIME_RANGES[1];
 
@@ -34,7 +41,6 @@ export function Home() {
     loading: servicesLoading,
     error: servicesError,
     refetch: refetchServices,
-    isStale: servicesStale,
   } = useServices(workerUrl);
 
   // Fetch error stats for all services (for traffic light display)
@@ -43,7 +49,6 @@ export function Home() {
     loading: statsLoading,
     error: statsError,
     refetch: refetchStats,
-    isStale: statsStale,
     lastUpdated: statsLastUpdated,
   } = useServiceStats(workerUrl, services);
 
@@ -59,9 +64,6 @@ export function Home() {
 
   // Primary error to display (services error takes precedence)
   const error = servicesError ?? statsError;
-
-  // Combined stale indicator
-  const isStale = servicesStale || statsStale;
 
   // Combined refetch that handles both error sources
   const handleRetry = useCallback(() => {
@@ -109,6 +111,9 @@ export function Home() {
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
           {servicesWithStats.length} of {services.length} services
+          {statsLastUpdated && (
+            <span> · updated {formatTimeAgo(statsLastUpdated)}</span>
+          )}
         </p>
         <div className="relative">
           <input
@@ -142,29 +147,6 @@ export function Home() {
 
       {/* Error state - keep visible during loading so users know there's a problem */}
       {error && <ErrorMessage message={error} onRetry={handleRetry} />}
-
-      {/* Staleness indicator - show when data is old but no error */}
-      {!error && isStale && statsLastUpdated && (
-        <div
-          className="flex items-center justify-between px-4 py-2 rounded-lg text-sm"
-          style={{
-            backgroundColor: 'rgba(234, 179, 8, 0.1)',
-            border: '1px solid rgba(234, 179, 8, 0.3)',
-            color: '#b45309',
-          }}
-        >
-          <span>
-            Data may be stale (last updated {formatTimeAgo(statsLastUpdated)})
-          </span>
-          <button
-            onClick={handleRetry}
-            className="px-3 py-1 rounded text-sm font-medium hover:opacity-80 transition-opacity"
-            style={{ backgroundColor: 'rgba(234, 179, 8, 0.2)' }}
-          >
-            Refresh
-          </button>
-        </div>
-      )}
 
       {/* Service health cards - always render if we have data, even while refreshing */}
       {servicesWithStats.length > 0 || !loading ? (
