@@ -157,43 +157,25 @@ function MetricSparkline({
 }
 
 /**
- * Query suggestion chip.
+ * Minimal text link for queries.
  */
-function QueryChip({
-  icon,
+function QueryLink({
   label,
-  description,
   onClick,
 }: {
-  icon: string;
   label: string;
-  description: string;
   onClick: () => void;
 }) {
   return (
-    <motion.button
+    <button
       onClick={onClick}
-      className="flex flex-col items-start gap-1 p-3 rounded-lg text-left transition-colors"
-      style={{
-        backgroundColor: 'var(--color-paper-warm)',
-        border: '1px solid var(--color-border)',
-      }}
-      whileHover={{
-        backgroundColor: 'var(--color-paper-cool)',
-        borderColor: 'var(--color-accent-light)',
-      }}
-      whileTap={{ scale: 0.98 }}
+      className="text-sm transition-colors hover:underline"
+      style={{ color: 'var(--color-text-secondary)' }}
+      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-accent)')}
+      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-base">{icon}</span>
-        <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-          {label}
-        </span>
-      </div>
-      <span className="text-xs mono" style={{ color: 'var(--color-text-muted)' }}>
-        {description}
-      </span>
-    </motion.button>
+      {label}
+    </button>
   );
 }
 
@@ -276,57 +258,16 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
 
   const handleQueryClick = (type: 'logs' | 'traces', filter?: string) => {
     const query = buildQuery(type, filter);
-    // Navigate to records with query as state
     navigate('/records', { state: { initialQuery: query } });
   };
 
-  // Suggested queries based on service state
-  const suggestedQueries = useMemo(() => {
-    const queries: Array<{
-      icon: string;
-      label: string;
-      description: string;
-      type: 'logs' | 'traces';
-      filter?: string;
-    }> = [];
+  const handleLiveTail = (signal: 'logs' | 'traces') => {
+    const tailCommand = `TAIL ${item.service.name} ${signal}`;
+    navigate('/records', { state: { initialQuery: tailCommand } });
+  };
 
-    if (status === 'critical' || status === 'warning') {
-      queries.push({
-        icon: '🚨',
-        label: 'Recent Errors',
-        description: 'severity >= ERROR',
-        type: 'logs',
-        filter: 'severity_number >= 17',
-      });
-    }
-
-    if (item.service.has_traces) {
-      queries.push({
-        icon: '🐢',
-        label: 'Slow Requests',
-        description: 'duration > 500ms',
-        type: 'traces',
-        filter: 'duration_ms > 500',
-      });
-      queries.push({
-        icon: '🔗',
-        label: 'All Traces',
-        description: 'last 100',
-        type: 'traces',
-      });
-    }
-
-    if (item.service.has_logs) {
-      queries.push({
-        icon: '📋',
-        label: 'All Logs',
-        description: 'last 100',
-        type: 'logs',
-      });
-    }
-
-    return queries.slice(0, 4);
-  }, [status, item.service]);
+  // Show errors link if service has issues
+  const showErrors = status === 'critical' || status === 'warning';
 
   return (
     <motion.div
@@ -455,47 +396,71 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
                 </motion.div>
               )}
 
-              {/* Suggested Queries */}
-              {!detailLoading && suggestedQueries.length > 0 && (
+              {/* Query Links */}
+              {!detailLoading && (item.service.has_traces || item.service.has_logs) && (
                 <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  className="pt-3 mt-3 space-y-2"
+                  style={{ borderTop: '1px solid var(--color-border)' }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
                   transition={{ delay: 0.2, duration: 0.3 }}
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <div
-                      className="flex-1 h-px"
-                      style={{ backgroundColor: 'var(--color-border)' }}
-                    />
-                    <span
-                      className="text-xs font-medium uppercase tracking-wider"
-                      style={{ color: 'var(--color-text-muted)' }}
-                    >
-                      Suggested Queries
-                    </span>
-                    <div
-                      className="flex-1 h-px"
-                      style={{ backgroundColor: 'var(--color-border)' }}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    {suggestedQueries.map((query, index) => (
-                      <motion.div
-                        key={query.label}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.25 + index * 0.05, duration: 0.2 }}
+                  {item.service.has_traces && (
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="text-xs font-medium w-12"
+                        style={{ color: 'var(--color-text-muted)' }}
                       >
-                        <QueryChip
-                          icon={query.icon}
-                          label={query.label}
-                          description={query.description}
-                          onClick={() => handleQueryClick(query.type, query.filter)}
+                        Traces
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <QueryLink
+                          label="Slow"
+                          onClick={() => handleQueryClick('traces', 'duration_ms > 500')}
                         />
-                      </motion.div>
-                    ))}
-                  </div>
+                        <span style={{ color: 'var(--color-border)' }}>·</span>
+                        <QueryLink
+                          label="All"
+                          onClick={() => handleQueryClick('traces')}
+                        />
+                        <span style={{ color: 'var(--color-border)' }}>·</span>
+                        <QueryLink
+                          label="Live"
+                          onClick={() => handleLiveTail('traces')}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {item.service.has_logs && (
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="text-xs font-medium w-12"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
+                        Logs
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {showErrors && (
+                          <>
+                            <QueryLink
+                              label="Errors"
+                              onClick={() => handleQueryClick('logs', 'severity_number >= 17')}
+                            />
+                            <span style={{ color: 'var(--color-border)' }}>·</span>
+                          </>
+                        )}
+                        <QueryLink
+                          label="All"
+                          onClick={() => handleQueryClick('logs')}
+                        />
+                        <span style={{ color: 'var(--color-border)' }}>·</span>
+                        <QueryLink
+                          label="Live"
+                          onClick={() => handleLiveTail('logs')}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
 
