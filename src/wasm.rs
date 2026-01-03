@@ -96,9 +96,10 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Get, path) if path.starts_with("/v1/services/") && path.ends_with("/stats") => {
             handle_stats_query(path, req, env).await
         }
-        // Live tail WebSocket upgrade
+        // Live tail WebSocket upgrade - return directly without CORS wrapper
+        // WebSocket responses use status 101 which can't be reconstructed
         (Method::Get, path) if path.starts_with("/v1/tail/") => {
-            handle_tail_upgrade(path, req, env).await
+            return handle_tail_upgrade(path, req, env).await;
         }
         // R2 Data Catalog proxy for browser DuckDB (CORS workaround)
         (_, path) if path.starts_with("/v1/iceberg/") => handle_iceberg_proxy(path, req, env).await,
@@ -353,7 +354,7 @@ async fn handle_tail_upgrade(path: &str, req: Request, env: Env) -> Result<Respo
     let id = namespace.id_from_name(&do_name)?;
     let stub = id.get_stub()?;
 
-    // Forward WebSocket upgrade to DO
+    // Build headers for WebSocket upgrade
     let headers = worker::Headers::new();
     if let Ok(Some(upgrade)) = req.headers().get("Upgrade") {
         headers.set("Upgrade", &upgrade)?;
@@ -365,14 +366,16 @@ async fn handle_tail_upgrade(path: &str, req: Request, env: Env) -> Result<Respo
         headers.set("Sec-WebSocket-Version", &version)?;
     }
 
-    let request = worker::Request::new_with_init(
+    let do_request = worker::Request::new_with_init(
         "http://do/websocket",
         worker::RequestInit::new()
             .with_method(worker::Method::Get)
             .with_headers(headers),
     )?;
 
-    stub.fetch_with_request(request).await
+    // Forward to Durable Object and return response directly
+    // Note: WebSocket responses (status 101) cannot be modified or wrapped with CORS
+    stub.fetch_with_request(do_request).await
 }
 
 // Re-export AggregatorDO from aggregator module
