@@ -18,43 +18,44 @@ export function Layout({ children }: LayoutProps) {
       >
         <div className="mx-auto max-w-7xl">
           <div className="flex h-16 items-center justify-between px-6 lg:px-8">
-            {/* Logo - editorial serif */}
-            <NavLink to="/" className="flex items-center gap-2">
-              <span
-                className="headline text-2xl"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                frostbit
-              </span>
-            </NavLink>
+            {/* Logo + Navigation grouped together */}
+            <div className="flex items-center gap-8">
+              <NavLink to="/" className="flex items-center">
+                <span
+                  className="headline text-2xl"
+                  style={{ color: 'var(--color-text-primary)' }}
+                >
+                  frostbit
+                </span>
+              </NavLink>
 
-            {/* Navigation - understated */}
-            <nav className="flex items-center gap-8">
-              <NavLink
-                to="/"
-                className={({ isActive }) =>
-                  `text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'text-[var(--color-text-primary)]'
-                      : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
-                  }`
-                }
-              >
-                Services
-              </NavLink>
-              <NavLink
-                to="/records"
-                className={({ isActive }) =>
-                  `text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'text-[var(--color-text-primary)]'
-                      : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
-                  }`
-                }
-              >
-                Query
-              </NavLink>
-            </nav>
+              <nav className="flex items-center gap-6">
+                <NavLink
+                  to="/"
+                  className={({ isActive }) =>
+                    `text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'text-[var(--color-text-primary)]'
+                        : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
+                    }`
+                  }
+                >
+                  Services
+                </NavLink>
+                <NavLink
+                  to="/records"
+                  className={({ isActive }) =>
+                    `text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'text-[var(--color-text-primary)]'
+                        : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
+                    }`
+                  }
+                >
+                  Query
+                </NavLink>
+              </nav>
+            </div>
 
             {/* Settings - minimal */}
             <NavLink
