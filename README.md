@@ -16,7 +16,7 @@ flowchart TB
         HEC[Splunk HEC] --> W
         W --> P[Pipelines]
         W --> DOs[(Durable Objects)]
-        P --> R2[(R2 Iceberg)]
+        P --> R2[(R2 Data Catalog)]
     end
 
     subgraph Query["Query"]
