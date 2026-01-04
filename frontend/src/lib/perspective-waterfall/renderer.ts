@@ -60,16 +60,20 @@ function truncateText(
 export function render(rc: RenderContext): void {
   const { ctx, layout, width, height, dpr, scrollTop } = rc;
 
-  // Clear canvas
+  // Clear canvas and set up scaling
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
+
+  // Optimize text rendering for legibility
+  ctx.textRendering = 'optimizeLegibility';
+
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, width, height);
 
   if (layout.spans.length === 0) {
     // Empty state
     ctx.fillStyle = COLORS.textMuted;
-    ctx.font = '14px system-ui, sans-serif';
+    ctx.font = '500 14px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('No spans to display', width / 2, height / 2);
     return;
@@ -108,11 +112,28 @@ export function render(rc: RenderContext): void {
 }
 
 /**
- * Draw time axis at top
+ * Calculate nice round tick interval
+ */
+function niceTickInterval(duration: number, maxTicks: number): number {
+  const rough = duration / maxTicks;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+  const normalized = rough / magnitude;
+
+  let nice: number;
+  if (normalized <= 1) nice = 1;
+  else if (normalized <= 2) nice = 2;
+  else if (normalized <= 5) nice = 5;
+  else nice = 10;
+
+  return nice * magnitude;
+}
+
+/**
+ * Draw time axis at top with vertical grid lines
  */
 function drawTimeAxis(rc: RenderContext): void {
-  const { ctx, layout, width } = rc;
-  const timelineWidth = width - LAYOUT.TREE_PANEL_WIDTH;
+  const { ctx, layout, width, height } = rc;
+  const timelineWidth = width - LAYOUT.TREE_PANEL_WIDTH - LAYOUT.TIMELINE_PADDING_RIGHT;
 
   // Background
   ctx.fillStyle = COLORS.background;
@@ -126,37 +147,45 @@ function drawTimeAxis(rc: RenderContext): void {
   ctx.lineTo(width, LAYOUT.TIME_AXIS_HEIGHT);
   ctx.stroke();
 
-  // Calculate tick interval
+  // Calculate nice round tick interval
   const totalDuration = layout.total_duration;
-  const tickCount = Math.max(2, Math.min(10, Math.floor(timelineWidth / 80)));
-  const tickInterval = totalDuration / tickCount;
+  const maxTicks = Math.floor(timelineWidth / 80);
+  const tickInterval = niceTickInterval(totalDuration, maxTicks);
 
   ctx.fillStyle = COLORS.textSecondary;
-  ctx.font = '11px system-ui, sans-serif';
+  ctx.font = '500 11px system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'center';
 
-  for (let i = 0; i <= tickCount; i++) {
-    const time = i * tickInterval;
-    const x = LAYOUT.TREE_PANEL_WIDTH + (i / tickCount) * timelineWidth;
+  // Draw ticks at round intervals
+  for (let time = 0; time <= totalDuration; time += tickInterval) {
+    const x = LAYOUT.TREE_PANEL_WIDTH + (time / totalDuration) * timelineWidth;
 
-    // Tick line
+    // Vertical grid line (full height, very light)
+    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, LAYOUT.TIME_AXIS_HEIGHT);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+
+    // Tick mark at axis
     ctx.strokeStyle = COLORS.gridLine;
     ctx.beginPath();
     ctx.moveTo(x, LAYOUT.TIME_AXIS_HEIGHT - 8);
     ctx.lineTo(x, LAYOUT.TIME_AXIS_HEIGHT);
     ctx.stroke();
 
-    // Label
+    // Label (round numbers)
     ctx.fillText(formatDuration(time), x, LAYOUT.TIME_AXIS_HEIGHT - 12);
   }
 }
 
 /**
- * Draw a single span row
+ * Draw a single span row (two-line layout)
  */
 function drawSpan(rc: RenderContext, span: LayoutSpan): void {
   const { ctx, layout, width, scrollTop, selectedSpanId, hoveredSpanId } = rc;
-  const timelineWidth = width - LAYOUT.TREE_PANEL_WIDTH;
+  const timelineWidth = width - LAYOUT.TREE_PANEL_WIDTH - LAYOUT.TIMELINE_PADDING_RIGHT;
 
   const y = LAYOUT.TIME_AXIS_HEIGHT + span.row_index * LAYOUT.ROW_HEIGHT - scrollTop;
 
@@ -177,47 +206,89 @@ function drawSpan(rc: RenderContext, span: LayoutSpan): void {
     ctx.fillRect(0, y, width, LAYOUT.ROW_HEIGHT);
   }
 
-  // Tree panel: service dot + span name
-  const indent = 12 + span.depth * LAYOUT.INDENT_PER_DEPTH;
-  const serviceColor = getServiceColor(span.service_name);
-
-  // Service dot
+  // Row separator line
+  ctx.strokeStyle = COLORS.gridLine;
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(indent, y + LAYOUT.ROW_HEIGHT / 2, LAYOUT.SERVICE_DOT_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = serviceColor;
-  ctx.fill();
+  ctx.moveTo(0, y + LAYOUT.ROW_HEIGHT);
+  ctx.lineTo(width, y + LAYOUT.ROW_HEIGHT);
+  ctx.stroke();
 
-  // Span name
+  // === Tree panel: two-line layout ===
+  const indent = 12 + span.depth * LAYOUT.INDENT_PER_DEPTH;
+  const line1Y = y + 16;  // Span name line
+  const line2Y = y + 30;  // Service name line
+
+  // Status indicator (positioned for first line)
+  if (span.is_error) {
+    // Error: red X
+    ctx.strokeStyle = COLORS.errorBorder;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    const size = 4;
+    ctx.beginPath();
+    ctx.moveTo(indent - size, line1Y - size);
+    ctx.lineTo(indent + size, line1Y + size);
+    ctx.moveTo(indent + size, line1Y - size);
+    ctx.lineTo(indent - size, line1Y + size);
+    ctx.stroke();
+  } else {
+    // OK: green checkmark
+    ctx.strokeStyle = '#4caf50';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(indent - 4, line1Y);
+    ctx.lineTo(indent - 1, line1Y + 3);
+    ctx.lineTo(indent + 5, line1Y - 3);
+    ctx.stroke();
+  }
+
+  // Line 1: Span name
   ctx.fillStyle = COLORS.textPrimary;
-  ctx.font = '12px system-ui, sans-serif';
+  ctx.font = '500 12px system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'left';
-  const nameX = indent + LAYOUT.SERVICE_DOT_RADIUS + 8;
+  const nameX = indent + 12;
   const maxNameWidth = LAYOUT.TREE_PANEL_WIDTH - nameX - 8;
   const truncatedName = truncateText(ctx, span.span_name, maxNameWidth);
-  ctx.fillText(truncatedName, nameX, y + LAYOUT.ROW_HEIGHT / 2 + 4);
+  ctx.fillText(truncatedName, nameX, line1Y + 4);
 
-  // Timeline bar
+  // Line 2: Service name (muted)
+  ctx.fillStyle = COLORS.textMuted;
+  ctx.font = '400 11px system-ui, -apple-system, sans-serif';
+  const truncatedService = truncateText(ctx, span.service_name, maxNameWidth);
+  ctx.fillText(truncatedService, nameX, line2Y + 2);
+
+  // === Timeline bar ===
   const barX = LAYOUT.TREE_PANEL_WIDTH +
     ((span.timestamp - layout.trace_start) / layout.total_duration) * timelineWidth;
   const barWidth = Math.max(2, (span.duration / layout.total_duration) * timelineWidth);
   const barY = y + LAYOUT.BAR_PADDING;
 
-  // Bar fill
-  ctx.fillStyle = serviceColor;
-  ctx.fillRect(barX, barY, barWidth, LAYOUT.BAR_HEIGHT);
-
-  // Error border
+  // Bar fill - error bars get red fill, OK bars get service color
   if (span.is_error) {
-    ctx.strokeStyle = COLORS.errorBorder;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(barX, barY, barWidth, LAYOUT.BAR_HEIGHT);
+    ctx.fillStyle = COLORS.error;  // Red fill for errors
+  } else {
+    ctx.fillStyle = getServiceColor(span.service_name);
   }
+  ctx.fillRect(barX, barY, barWidth, LAYOUT.BAR_HEIGHT);
 
   // Selection border
   if (isSelected) {
     ctx.strokeStyle = COLORS.selectedBorder;
     ctx.lineWidth = 2;
     ctx.strokeRect(barX - 1, barY - 1, barWidth + 2, LAYOUT.BAR_HEIGHT + 2);
+  }
+
+  // === Duration label at end of bar ===
+  ctx.fillStyle = COLORS.textSecondary;
+  ctx.font = '500 10px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'left';
+  const durationText = formatDuration(span.duration);
+  const labelX = barX + barWidth + 6;
+  // Only show if it fits
+  if (labelX + ctx.measureText(durationText).width < width - 8) {
+    ctx.fillText(durationText, labelX, barY + LAYOUT.BAR_HEIGHT / 2 + 3);
   }
 }
 

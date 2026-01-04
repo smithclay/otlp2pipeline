@@ -45,11 +45,11 @@ export interface TraceLayout {
  * Rendering constants
  */
 export const LAYOUT = {
-  ROW_HEIGHT: 28,
+  ROW_HEIGHT: 44,           // Increased for two-line rows
   TREE_PANEL_WIDTH: 280,
   INDENT_PER_DEPTH: 16,
-  BAR_HEIGHT: 18,
-  BAR_PADDING: 5,
+  BAR_HEIGHT: 16,
+  BAR_PADDING: 8,           // Center bar in taller row
   TIME_AXIS_HEIGHT: 32,
-  SERVICE_DOT_RADIUS: 4,
+  TIMELINE_PADDING_RIGHT: 60, // Space for duration labels
 } as const;

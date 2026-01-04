@@ -8,6 +8,7 @@ import perspective, { type Table } from '@finos/perspective'
 import '@finos/perspective-viewer'
 import '@finos/perspective-viewer-datagrid'
 import '@finos/perspective-viewer-d3fc'
+import '@finos/perspective-viewer/dist/css/themes.css'
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer'
 
 interface PerspectiveWrapperProps {
@@ -107,6 +108,22 @@ export function PerspectiveWrapper({
         }}
       >
         <p style={{ color: 'var(--color-error)' }}>{error}</p>
+      </div>
+    )
+  }
+
+  // Handle empty data case - Perspective can't infer schema from empty array
+  if (data.length === 0) {
+    return (
+      <div
+        className="flex items-center justify-center p-8 rounded-lg"
+        style={{
+          height,
+          backgroundColor: 'var(--color-bg-secondary, #f5f5f5)',
+          border: '1px solid var(--color-border, #e0e0e0)',
+        }}
+      >
+        <p style={{ color: 'var(--color-text-secondary, #666)' }}>No data to display</p>
       </div>
     )
   }

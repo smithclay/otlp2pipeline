@@ -32,7 +32,7 @@ export const COLORS = {
  * Hash a service name to a consistent palette color.
  * Same service always gets same color across sessions.
  */
-export function hashServiceColor(serviceName: string): string {
+export function getServiceColor(serviceName: string): string {
   let hash = 0;
   for (let i = 0; i < serviceName.length; i++) {
     const char = serviceName.charCodeAt(i);
@@ -40,8 +40,4 @@ export function hashServiceColor(serviceName: string): string {
     hash = hash & hash; // Convert to 32-bit int
   }
   return SERVICE_PALETTE[Math.abs(hash) % SERVICE_PALETTE.length];
-}
-
-export function getServiceColor(serviceName: string): string {
-  return hashServiceColor(serviceName);
 }

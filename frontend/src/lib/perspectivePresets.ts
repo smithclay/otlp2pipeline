@@ -40,6 +40,7 @@ export interface ColumnStyleConfig {
  */
 export interface PerspectivePreset {
   plugin: 'Datagrid';
+  theme: string;
   settings: boolean;
   columns?: string[];
   sort?: [string, 'asc' | 'desc'][];
@@ -357,6 +358,7 @@ export function createPreset(
   // Base configuration
   const preset: PerspectivePreset = {
     plugin: 'Datagrid',
+    theme: 'Pro Light',
     settings: mode === 'query', // hide settings panel in tail mode
     plugin_config: {
       columns: columnsConfig,
