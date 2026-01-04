@@ -63,7 +63,7 @@ function formatRelativeTime(timestampMs: number | null): string {
  * Format bytes as human-readable string.
  */
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
+  if (bytes <= 0) return '0 B';  // Handle zero AND negative
 
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const k = 1024;
@@ -263,9 +263,20 @@ function TableRow({ table, isExpanded, onToggle }: TableRowProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.2 }}
-        className="border-t cursor-pointer"
-        style={{ borderColor: 'var(--color-border-light)' }}
+        className="border-t cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        style={{
+          borderColor: 'var(--color-border-light)',
+        }}
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        aria-expanded={isExpanded}
       >
         <td
           className="py-3 px-4 mono text-sm"
