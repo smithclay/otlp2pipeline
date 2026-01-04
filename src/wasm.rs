@@ -213,6 +213,23 @@ async fn handle_services_list(env: Env) -> Result<Response> {
 fn handle_config(env: Env) -> Result<Response> {
     let account_id = env.var("R2_CATALOG_ACCOUNT_ID").map(|v| v.to_string()).ok();
     let bucket_name = env.var("R2_CATALOG_BUCKET").map(|v| v.to_string()).ok();
+    let token_configured = env.secret("R2_CATALOG_TOKEN").is_ok();
+    let mut missing = Vec::new();
+    if account_id.is_none() {
+        missing.push("R2_CATALOG_ACCOUNT_ID");
+    }
+    if bucket_name.is_none() {
+        missing.push("R2_CATALOG_BUCKET");
+    }
+    if !token_configured {
+        missing.push("R2_CATALOG_TOKEN");
+    }
+    if !missing.is_empty() {
+        tracing::warn!(
+            missing = ?missing,
+            "Iceberg catalog proxy disabled: missing configuration"
+        );
+    }
 
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -223,7 +240,7 @@ fn handle_config(env: Env) -> Result<Response> {
     }
 
     let config = ConfigResponse {
-        iceberg_proxy_enabled: account_id.is_some() && bucket_name.is_some(),
+        iceberg_proxy_enabled: missing.is_empty(),
         account_id,
         bucket_name,
     };

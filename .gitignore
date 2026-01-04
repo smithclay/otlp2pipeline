@@ -6,3 +6,5 @@
 docs/plans
 wrangler.toml
 .uv-cache
+
+frontend/.ladle
