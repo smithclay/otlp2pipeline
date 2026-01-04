@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { CatalogStats, TableStats } from '../hooks/useCatalogStats';
 
 export interface CatalogOverviewProps {
@@ -56,6 +57,45 @@ function formatRelativeTime(timestampMs: number | null): string {
     day: 'numeric',
     year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
   });
+}
+
+/**
+ * Format bytes as human-readable string.
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const k = 1024;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const unitIndex = Math.min(i, units.length - 1);
+
+  const value = bytes / Math.pow(k, unitIndex);
+  // Show decimals only for values >= 1 KB
+  const formatted = unitIndex === 0 ? value.toString() : value.toFixed(1);
+
+  return `${formatted} ${units[unitIndex]}`;
+}
+
+/**
+ * Format schema fields as a preview string.
+ */
+function formatSchemaPreview(
+  fields: Array<{ name: string; type: string }>,
+  maxShow = 5
+): string {
+  if (fields.length === 0) return 'No fields';
+
+  const shown = fields.slice(0, maxShow);
+  const remaining = fields.length - maxShow;
+
+  const preview = shown.map((f) => f.name).join(', ');
+
+  if (remaining > 0) {
+    return `${preview}, ... +${remaining} more`;
+  }
+
+  return preview;
 }
 
 /**
@@ -181,38 +221,152 @@ function RefreshButton({ onClick, disabled }: { onClick: () => void; disabled?: 
 }
 
 /**
- * Table row for displaying stats of a single table.
+ * Chevron icon that rotates when expanded.
  */
-function TableRow({ table }: { table: TableStats }) {
+function ChevronIcon({ isExpanded }: { isExpanded: boolean }) {
+  return (
+    <motion.svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ color: 'var(--color-text-muted)' }}
+      animate={{ rotate: isExpanded ? 180 : 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </motion.svg>
+  );
+}
+
+interface TableRowProps {
+  table: TableStats;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+/**
+ * Table row for displaying stats of a single table.
+ * Expandable to show partition, storage, and schema details.
+ */
+function TableRow({ table, isExpanded, onToggle }: TableRowProps) {
   const fullName = `${table.namespace}.${table.name}`;
 
   return (
-    <motion.tr
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.2 }}
-      className="border-t"
-      style={{ borderColor: 'var(--color-border-light)' }}
-    >
-      <td
-        className="py-3 px-4 mono text-sm"
-        style={{ color: 'var(--color-text-primary)' }}
+    <>
+      <motion.tr
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+        className="border-t cursor-pointer"
+        style={{ borderColor: 'var(--color-border-light)' }}
+        onClick={onToggle}
       >
-        {fullName}
-      </td>
-      <td
-        className="py-3 px-4 text-right mono text-sm"
-        style={{ color: 'var(--color-text-secondary)' }}
-      >
-        {table.snapshotCount > 0 ? formatNumber(table.snapshotCount) : '—'}
-      </td>
-      <td
-        className="py-3 px-4 text-right text-sm"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        {formatRelativeTime(table.lastUpdatedMs)}
-      </td>
-    </motion.tr>
+        <td
+          className="py-3 px-4 mono text-sm"
+          style={{ color: 'var(--color-text-primary)' }}
+        >
+          <div className="flex items-center gap-2">
+            <ChevronIcon isExpanded={isExpanded} />
+            <span>{fullName}</span>
+          </div>
+        </td>
+        <td
+          className="py-3 px-4 text-right mono text-sm"
+          style={{ color: 'var(--color-text-secondary)' }}
+        >
+          {table.snapshotCount > 0 ? formatNumber(table.snapshotCount) : '—'}
+        </td>
+        <td
+          className="py-3 px-4 text-right text-sm"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          {formatRelativeTime(table.lastUpdatedMs)}
+        </td>
+      </motion.tr>
+
+      {/* Expanded content row */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.tr
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{
+              height: { duration: 0.35, ease: [0.4, 0, 0.2, 1] },
+              opacity: { duration: 0.25 },
+            }}
+            style={{ backgroundColor: 'var(--color-paper-warm)' }}
+          >
+            <td colSpan={3} className="overflow-hidden">
+              <motion.div
+                className="px-4 py-4 pl-10 space-y-3"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.2 }}
+              >
+                {/* Partition */}
+                <div className="flex items-start gap-4">
+                  <span
+                    className="text-xs font-medium uppercase tracking-wider w-20 shrink-0"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    Partition
+                  </span>
+                  <span
+                    className="mono text-sm"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    {table.partitionSpec}
+                  </span>
+                </div>
+
+                {/* Storage */}
+                <div className="flex items-start gap-4">
+                  <span
+                    className="text-xs font-medium uppercase tracking-wider w-20 shrink-0"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    Storage
+                  </span>
+                  <span
+                    className="mono text-sm"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    {formatNumber(table.fileCount)} files{' '}
+                    <span style={{ color: 'var(--color-text-muted)' }}>·</span>{' '}
+                    {formatNumber(table.recordCount)} records{' '}
+                    <span style={{ color: 'var(--color-text-muted)' }}>·</span>{' '}
+                    {formatBytes(table.totalSizeBytes)}
+                  </span>
+                </div>
+
+                {/* Schema */}
+                <div className="flex items-start gap-4">
+                  <span
+                    className="text-xs font-medium uppercase tracking-wider w-20 shrink-0"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    Schema
+                  </span>
+                  <span
+                    className="mono text-sm"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    {formatSchemaPreview(table.schemaFields)}
+                  </span>
+                </div>
+              </motion.div>
+            </td>
+          </motion.tr>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
@@ -230,6 +384,13 @@ export function CatalogOverview({
   error,
   onRefresh,
 }: CatalogOverviewProps) {
+  // Track which table row is expanded (only one at a time)
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
+
+  const handleToggleExpand = (tableKey: string) => {
+    setExpandedTable((prev) => (prev === tableKey ? null : tableKey));
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -324,12 +485,17 @@ export function CatalogOverview({
                 <TableRowSkeleton />
               </>
             ) : stats && stats.tables.length > 0 ? (
-              stats.tables.map((table) => (
-                <TableRow
-                  key={`${table.namespace}.${table.name}`}
-                  table={table}
-                />
-              ))
+              stats.tables.map((table) => {
+                const tableKey = `${table.namespace}.${table.name}`;
+                return (
+                  <TableRow
+                    key={tableKey}
+                    table={table}
+                    isExpanded={expandedTable === tableKey}
+                    onToggle={() => handleToggleExpand(tableKey)}
+                  />
+                );
+              })
             ) : !error ? (
               <tr>
                 <td colSpan={3} className="py-12 text-center">
