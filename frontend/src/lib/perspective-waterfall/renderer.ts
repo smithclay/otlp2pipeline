@@ -226,7 +226,7 @@ function drawSpan(rc: RenderContext, span: LayoutSpan): void {
  */
 export function hitTest(
   rc: RenderContext,
-  x: number,
+  _x: number,
   y: number
 ): LayoutSpan | null {
   const { layout, scrollTop } = rc;

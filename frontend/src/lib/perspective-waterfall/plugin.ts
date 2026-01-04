@@ -260,6 +260,13 @@ export class WaterfallElement extends HTMLElement {
     this._selectedSpanId = null;
     this._scheduleRender();
   }
+
+  /**
+   * Get the current Perspective view (if any)
+   */
+  getView(): perspective.View | null {
+    return this._view;
+  }
 }
 
 /**

@@ -34,7 +34,7 @@ export function computeLayout(rawSpans: RawSpan[]): TraceLayout {
       ...raw,
       depth: 0,
       row_index: 0,
-      is_error: raw.status_code === 2 || raw.status_code === '2' || raw.status_code === 'ERROR',
+      is_error: String(raw.status_code) === '2' || raw.status_code === 'ERROR',
       children: [],
     };
     spanMap.set(raw.span_id, span);
