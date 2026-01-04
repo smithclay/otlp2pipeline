@@ -64,12 +64,14 @@ export interface PartitionSpec {
 /**
  * Field in a table schema.
  * Defines a column with its type and nullability.
+ * Type can be a primitive string (e.g., "long", "string") or a complex
+ * nested type object (struct, list, map) per the Iceberg spec.
  */
 export interface SchemaField {
   id: number;
   name: string;
   required: boolean;
-  type: string;
+  type: string | Record<string, unknown>;
 }
 
 /**

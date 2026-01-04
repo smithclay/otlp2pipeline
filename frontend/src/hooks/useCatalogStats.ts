@@ -95,9 +95,12 @@ function formatPartitionSpec(metadata: TableMetadata): string {
     return 'not partitioned';
   }
 
-  // Find the default partition spec
-  const defaultSpec = specs.find((s) => s['spec-id'] === defaultSpecId);
-  if (!defaultSpec || defaultSpec.fields.length === 0) {
+  // Find the default partition spec, fallback to first spec if not found
+  let defaultSpec = specs.find((s) => s['spec-id'] === defaultSpecId);
+  if (!defaultSpec) {
+    defaultSpec = specs[0];
+  }
+  if (defaultSpec.fields.length === 0) {
     return 'not partitioned';
   }
 
@@ -108,8 +111,12 @@ function formatPartitionSpec(metadata: TableMetadata): string {
 
   if (schemas && schemas.length > 0) {
     currentSchema = schemas.find((s) => s['schema-id'] === currentSchemaId);
-    // Fallback to first schema if current not found
     if (!currentSchema) {
+      console.warn(
+        `Schema with ID ${currentSchemaId} not found. ` +
+        `Falling back to first schema (ID: ${schemas[0]['schema-id']}). ` +
+        'This may indicate inconsistent table metadata.'
+      );
       currentSchema = schemas[0];
     }
   }
@@ -125,7 +132,14 @@ function formatPartitionSpec(metadata: TableMetadata): string {
   const parts: string[] = [];
   for (const field of defaultSpec.fields) {
     const sourceId = field['source-id'];
-    const columnName = fieldIdToName.get(sourceId) || `field_${sourceId}`;
+    let columnName = fieldIdToName.get(sourceId);
+    if (!columnName) {
+      console.warn(
+        `Partition field references unknown source-id ${sourceId}. ` +
+        'The referenced column may have been deleted or renamed.'
+      );
+      columnName = `field_${sourceId}`;
+    }
     const transform = field.transform;
 
     // Skip if transform is missing (defensive)
@@ -165,8 +179,12 @@ function extractSchemaFields(metadata: TableMetadata): SchemaFieldInfo[] {
 
   // Find the current schema
   let currentSchema = schemas.find((s) => s['schema-id'] === currentSchemaId);
-  // Fallback to first schema if current not found
   if (!currentSchema) {
+    console.warn(
+      `Schema with ID ${currentSchemaId} not found. ` +
+      `Falling back to first schema (ID: ${schemas[0]['schema-id']}). ` +
+      'This may indicate inconsistent table metadata.'
+    );
     currentSchema = schemas[0];
   }
 
