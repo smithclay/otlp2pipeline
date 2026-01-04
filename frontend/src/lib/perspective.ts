@@ -6,9 +6,13 @@
  */
 
 import perspective, { type PerspectiveWorker } from '@finos/perspective';
+import { registerWaterfallPlugin } from './perspective-waterfall';
 
 // Singleton worker instance
 let worker: PerspectiveWorker | null = null;
+
+// Register waterfall plugin on module load
+registerWaterfallPlugin();
 
 /**
  * Get the shared Perspective worker instance.
