@@ -16,6 +16,8 @@ import { useLiveTail } from '../hooks/useLiveTail';
 import type { TailStatus, TailRecord } from '../hooks/useLiveTail';
 import type { Table } from '@finos/perspective';
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
+import { SpanDetailsPanel } from '../components/SpanDetailsPanel';
+import type { LayoutSpan } from '../lib/perspective-waterfall';
 
 import '@finos/perspective-viewer';
 import '@finos/perspective-viewer-datagrid';
@@ -79,6 +81,24 @@ function toColumnarData(records: Record<string, unknown>[]): Record<string, Pers
   return columnar;
 }
 
+/**
+ * Check if query result represents a single trace (all rows have same trace_id)
+ * and has the required columns for waterfall visualization.
+ */
+function isSingleTrace(rows: Record<string, unknown>[]): boolean {
+  if (rows.length === 0) return false;
+
+  // Check for required columns
+  const firstRow = rows[0];
+  if (!('trace_id' in firstRow) || !('span_id' in firstRow)) {
+    return false;
+  }
+
+  // Check if all rows have same trace_id
+  const traceIds = new Set(rows.map(r => r.trace_id));
+  return traceIds.size === 1;
+}
+
 interface LocationState {
   initialQuery?: string;
 }
@@ -106,6 +126,9 @@ export function RecordsExplorer() {
   const [tailConfig, setTailConfig] = useState<{ service: string; signal: Signal; limit: number } | null>(null);
   const [mode, setMode] = useState<'query' | 'tail'>('query');
   const [parseError, setParseError] = useState<string | null>(null);
+
+  // Waterfall state
+  const [selectedSpan, setSelectedSpan] = useState<LayoutSpan | null>(null);
 
   // Detect if current input looks like a TAIL command (for UI hints)
   const inputLooksTail = isTailCommand(sql);
@@ -294,6 +317,23 @@ export function RecordsExplorer() {
 
         // Apply merged config
         await viewer.restore(finalConfig as unknown as Parameters<typeof viewer.restore>[0]);
+
+        // Auto-switch to waterfall if single trace detected
+        if (isSingleTrace(queryResult.rows)) {
+          // Small delay to let viewer initialize
+          setTimeout(async () => {
+            try {
+              // Check current plugin by saving config
+              const config = await viewer.save();
+              if ((config as { plugin?: string }).plugin !== 'perspective-waterfall') {
+                await viewer.restore({ plugin: 'perspective-waterfall' } as any);
+              }
+            } catch (err) {
+              // Waterfall plugin might not be available, that's ok
+              console.debug('Could not switch to waterfall:', err);
+            }
+          }, 100);
+        }
       } catch (err) {
         console.error('Failed to update Perspective:', err);
       }
@@ -394,6 +434,22 @@ export function RecordsExplorer() {
       // Note: Don't delete table here - handled by unmount effect below
     };
   }, [mode, tailRecords, tailConfig]);
+
+  // Listen for waterfall span selection events
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    const handleSpanSelect = (e: Event) => {
+      const customEvent = e as CustomEvent<{ span: LayoutSpan }>;
+      setSelectedSpan(customEvent.detail.span);
+    };
+
+    viewer.addEventListener('span-select', handleSpanSelect);
+    return () => {
+      viewer.removeEventListener('span-select', handleSpanSelect);
+    };
+  }, []);
 
   // Cleanup table on unmount
   useEffect(() => {
@@ -633,10 +689,16 @@ export function RecordsExplorer() {
             boxShadow: 'var(--shadow-sm)',
           }}
         >
-          <perspective-viewer
-            ref={viewerRef}
-            style={{ flex: 1, minHeight: '400px' }}
-          />
+          <div className="relative flex-1" style={{ minHeight: '400px' }}>
+            <perspective-viewer
+              ref={viewerRef}
+              style={{ width: '100%', height: '100%' }}
+            />
+            <SpanDetailsPanel
+              span={selectedSpan}
+              onClose={() => setSelectedSpan(null)}
+            />
+          </div>
         </div>
       )}
 
