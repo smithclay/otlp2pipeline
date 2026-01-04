@@ -8,3 +8,4 @@ export { parseColumnarData } from './arrow';
 export type { RawSpan, LayoutSpan, TraceLayout } from './types';
 export { LAYOUT } from './types';
 export { COLORS, getServiceColor } from './colors';
+export { formatDuration } from './renderer';

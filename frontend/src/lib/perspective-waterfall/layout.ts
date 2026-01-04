@@ -5,6 +5,15 @@
 import type { RawSpan, LayoutSpan, TraceLayout } from './types';
 
 /**
+ * Sort spans by start time ASC, then duration DESC (longer first), then span_id ASC.
+ */
+const spanComparator = (a: LayoutSpan, b: LayoutSpan): number => {
+  if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+  if (a.duration !== b.duration) return b.duration - a.duration;
+  return a.span_id.localeCompare(b.span_id);
+};
+
+/**
  * Parse raw span data and compute tree layout.
  *
  * Algorithm:
@@ -56,15 +65,7 @@ export function computeLayout(rawSpans: RawSpan[]): TraceLayout {
 
   // Sort children: start_time ASC, then duration DESC, then span_id ASC
   for (const children of childrenMap.values()) {
-    children.sort((a, b) => {
-      if (a.timestamp !== b.timestamp) {
-        return a.timestamp - b.timestamp;
-      }
-      if (a.duration !== b.duration) {
-        return b.duration - a.duration; // Longer first
-      }
-      return a.span_id.localeCompare(b.span_id);
-    });
+    children.sort(spanComparator);
   }
 
   // Link children to parents
@@ -85,15 +86,7 @@ export function computeLayout(rawSpans: RawSpan[]): TraceLayout {
   }
 
   // Sort roots same as children
-  roots.sort((a, b) => {
-    if (a.timestamp !== b.timestamp) {
-      return a.timestamp - b.timestamp;
-    }
-    if (a.duration !== b.duration) {
-      return b.duration - a.duration;
-    }
-    return a.span_id.localeCompare(b.span_id);
-  });
+  roots.sort(spanComparator);
 
   // DFS to assign depth and row_index
   const orderedSpans: LayoutSpan[] = [];

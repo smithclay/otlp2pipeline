@@ -21,7 +21,7 @@ export interface RenderContext {
 /**
  * Format duration for display
  */
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (ms < 1) {
     return `${(ms * 1000).toFixed(0)}μs`;
   }
@@ -222,11 +222,10 @@ function drawSpan(rc: RenderContext, span: LayoutSpan): void {
 }
 
 /**
- * Hit test: find span at coordinates
+ * Hit test: find span at y coordinate (row-based selection)
  */
 export function hitTest(
   rc: RenderContext,
-  _x: number,
   y: number
 ): LayoutSpan | null {
   const { layout, scrollTop } = rc;

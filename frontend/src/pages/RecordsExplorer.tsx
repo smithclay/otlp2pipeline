@@ -4,16 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCredentials } from '../hooks/useCredentials';
 import { useDuckDB, type QueryResult } from '../hooks/useDuckDB';
 import { getPerspectiveWorker } from '../lib/perspective';
-import { usePerspectiveConfig, type ViewConfig } from '../hooks/usePerspectiveConfig';
 import {
   createPreset,
-  mergeWithUserConfig,
   detectSignalFromSchema,
-  type PerspectivePreset,
 } from '../lib/perspectivePresets';
 import { parseCommand, isTailCommand, type Signal } from '../lib/parseCommand';
 import { useLiveTail } from '../hooks/useLiveTail';
-import type { TailStatus, TailRecord } from '../hooks/useLiveTail';
+import type { TailRecord } from '../hooks/useLiveTail';
 import type { Table } from '@finos/perspective';
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
 import { SpanDetailsPanel } from '../components/SpanDetailsPanel';
@@ -147,10 +144,6 @@ export function RecordsExplorer() {
     tailConfig?.limit ?? 500
   );
 
-  // Type placeholders - will be used in subsequent tasks
-  const _tailStatusType: TailStatus | null = null; void _tailStatusType;
-  const _tailRecordType: TailRecord | null = null; void _tailRecordType;
-
   // Update SQL when navigating with a new query
   useEffect(() => {
     if (locationState?.initialQuery) {
@@ -257,9 +250,6 @@ export function RecordsExplorer() {
     }
   }, [mode, tailConfig, tailStatus.state, startTail, stopTail]);
 
-  // Config persistence for the explorer
-  const { save, load } = usePerspectiveConfig('records-explorer');
-
   // Update Perspective when query result changes
   useEffect(() => {
     if (!queryResult || queryResult.rows.length === 0) {
@@ -286,18 +276,9 @@ export function RecordsExplorer() {
         // Detect signal type from schema (logs vs traces)
         const detectedSignal = detectSignalFromSchema(schemaColumns);
 
-        // Create preset for query mode
+        // Create preset for query mode (no persistence - schema varies per query)
         const preset = createPreset(
           { signal: detectedSignal, mode: 'query' },
-          schemaColumns
-        );
-
-        // Merge with user's saved config (user preferences take precedence)
-        // Pass schemaColumns to filter out invalid columns from saved config
-        const savedConfig = load();
-        const finalConfig = mergeWithUserConfig(
-          preset,
-          savedConfig as Partial<PerspectivePreset> | null,
           schemaColumns
         );
 
@@ -315,8 +296,8 @@ export function RecordsExplorer() {
         // Load into viewer
         await viewer.load(newTable);
 
-        // Apply merged config
-        await viewer.restore(finalConfig as unknown as Parameters<typeof viewer.restore>[0]);
+        // Apply preset config
+        await viewer.restore(preset as unknown as Parameters<typeof viewer.restore>[0]);
 
         // Auto-switch to waterfall if single trace detected
         if (isSingleTrace(queryResult.rows)) {
@@ -339,33 +320,14 @@ export function RecordsExplorer() {
       }
     }
 
-    // Save config when it changes
-    const handleConfigChange = async () => {
-      if (viewer) {
-        try {
-          const config = await viewer.save();
-          save(config as ViewConfig);
-        } catch (err) {
-          console.warn('Failed to save Perspective config:', err);
-        }
-      }
-    };
-
-    updatePerspective().then(() => {
-      if (viewer) {
-        viewer.addEventListener('perspective-config-update', handleConfigChange);
-      }
-    });
+    updatePerspective();
 
     return () => {
       mounted = false;
-      if (viewer) {
-        viewer.removeEventListener('perspective-config-update', handleConfigChange);
-      }
       // Note: We don't delete tables here - viewer manages the lifecycle
       tableRef.current = null;
     };
-  }, [queryResult, save, load]);
+  }, [queryResult]);
 
   // Update Perspective viewer when tail records change (debounced)
   useEffect(() => {

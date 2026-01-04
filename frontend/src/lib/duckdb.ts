@@ -148,13 +148,16 @@ export async function connectToR2(
 
   // Load required extensions for R2 Data Catalog access
   try {
+    console.log('[DuckDB] Installing httpfs extension...');
     await conn.query('INSTALL httpfs;');
     await conn.query('LOAD httpfs;');
+    console.log('[DuckDB] Installing iceberg extension...');
     await conn.query('INSTALL iceberg;');
     await conn.query('LOAD iceberg;');
+    console.log('[DuckDB] Extensions loaded successfully');
     icebergAvailable = true;
   } catch (error) {
-    console.error('Failed to load extensions:', error);
+    console.error('[DuckDB] Failed to load extensions:', error);
     warnings.push('Required extensions not available - R2 queries may fail');
   }
 
@@ -185,6 +188,7 @@ export async function connectToR2(
 
   try {
     // Detach first if already attached (handles React StrictMode, navigation)
+    console.log('[DuckDB] Attaching R2 catalog...');
     await conn.query(`DETACH DATABASE IF EXISTS r2_catalog;`);
     await conn.query(`
       ATTACH '${warehouse}' AS r2_catalog (
@@ -192,6 +196,7 @@ export async function connectToR2(
         ENDPOINT '${catalogEndpoint}'
       );
     `);
+    console.log('[DuckDB] R2 catalog attached successfully');
     catalogAttached = true;
   } catch (error) {
     // Catalog attachment failure means queries won't work - fail explicitly
@@ -240,8 +245,15 @@ export async function executeQuery(
   conn: duckdb.AsyncDuckDBConnection,
   sql: string
 ): Promise<QueryResult> {
+  const startTime = performance.now();
+  const queryPreview = sql.trim().slice(0, 100).replace(/\s+/g, ' ');
+  console.log(`[DuckDB] Executing query: ${queryPreview}${sql.length > 100 ? '...' : ''}`);
+
   const result = await conn.query(sql);
+  const queryTime = performance.now() - startTime;
+
   const columns = result.schema.fields.map((f) => f.name);
+  console.log(`[DuckDB] Query completed in ${(queryTime / 1000).toFixed(2)}s, columns: [${columns.join(', ')}]`);
 
   // Convert Arrow table to array of objects
   const rows: Record<string, unknown>[] = [];
@@ -255,6 +267,8 @@ export async function executeQuery(
     }
     rows.push(row);
   }
+
+  console.log(`[DuckDB] Processed ${rows.length} rows in ${((performance.now() - startTime) / 1000).toFixed(2)}s total`);
 
   return { columns, rows };
 }

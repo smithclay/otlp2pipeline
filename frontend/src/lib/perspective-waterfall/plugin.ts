@@ -138,10 +138,10 @@ export class WaterfallElement extends HTMLElement {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const rect = container.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    const rc = this._createRenderContext();
+    if (!rc) return;
+
+    const { width, height, dpr } = rc;
 
     // Size canvas for retina
     canvas.width = width * dpr;
@@ -151,26 +151,6 @@ export class WaterfallElement extends HTMLElement {
         ? LAYOUT.TIME_AXIS_HEIGHT + this._layout.spans.length * LAYOUT.ROW_HEIGHT
         : height
     ) * dpr;
-
-    if (!this._layout) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(dpr, dpr);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-      return;
-    }
-
-    const rc: RenderContext = {
-      canvas,
-      ctx,
-      layout: this._layout,
-      selectedSpanId: this._selectedSpanId,
-      hoveredSpanId: this._hoveredSpanId,
-      scrollTop: this._scrollTop,
-      width,
-      height,
-      dpr,
-    };
 
     render(rc);
   }
@@ -226,11 +206,11 @@ export class WaterfallElement extends HTMLElement {
     }
   };
 
-  private _hitTest(e: MouseEvent): LayoutSpan | null {
+  private _createRenderContext(): RenderContext | null {
     if (!this._canvas || !this._container || !this._layout) return null;
 
     const rect = this._container.getBoundingClientRect();
-    const rc: RenderContext = {
+    return {
       canvas: this._canvas,
       ctx: this._canvas.getContext('2d')!,
       layout: this._layout,
@@ -241,8 +221,12 @@ export class WaterfallElement extends HTMLElement {
       height: rect.height,
       dpr: window.devicePixelRatio || 1,
     };
+  }
 
-    return hitTest(rc, e.offsetX, e.offsetY);
+  private _hitTest(e: MouseEvent): LayoutSpan | null {
+    const rc = this._createRenderContext();
+    if (!rc) return null;
+    return hitTest(rc, e.offsetY);
   }
 
   /**

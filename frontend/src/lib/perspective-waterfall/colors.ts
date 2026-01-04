@@ -42,16 +42,6 @@ export function hashServiceColor(serviceName: string): string {
   return SERVICE_PALETTE[Math.abs(hash) % SERVICE_PALETTE.length];
 }
 
-/**
- * Cache for service colors to avoid rehashing
- */
-const colorCache = new Map<string, string>();
-
 export function getServiceColor(serviceName: string): string {
-  let color = colorCache.get(serviceName);
-  if (!color) {
-    color = hashServiceColor(serviceName);
-    colorCache.set(serviceName, color);
-  }
-  return color;
+  return hashServiceColor(serviceName);
 }

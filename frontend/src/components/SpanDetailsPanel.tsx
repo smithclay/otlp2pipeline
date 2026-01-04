@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { LayoutSpan } from '../lib/perspective-waterfall';
-import { getServiceColor } from '../lib/perspective-waterfall';
+import { getServiceColor, formatDuration } from '../lib/perspective-waterfall';
 
 interface SpanDetailsPanelProps {
   span: LayoutSpan | null;
@@ -276,14 +276,4 @@ function JsonTree({ data, depth = 0 }: { data: unknown; depth?: number }) {
       ))}
     </div>
   );
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1) {
-    return `${(ms * 1000).toFixed(0)}μs`;
-  }
-  if (ms < 1000) {
-    return `${ms.toFixed(1)}ms`;
-  }
-  return `${(ms / 1000).toFixed(2)}s`;
 }

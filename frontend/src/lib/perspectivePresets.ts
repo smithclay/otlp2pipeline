@@ -231,7 +231,7 @@ const TRACE_COLUMN_STYLES: Record<string, ColumnStyleConfig> = {
  * Columns are reordered to show most important first.
  */
 const LOG_TAIL_PRIORITY = [
-  'timestamp_nanos',
+  'timestamp',
   'severity_text',
   'service_name',
   'body',
@@ -243,11 +243,10 @@ const LOG_TAIL_PRIORITY = [
  * Priority order for trace columns in tail mode.
  */
 const TRACE_TAIL_PRIORITY = [
-  'start_time_nanos',
+  'timestamp',
   'service_name',
   'span_name',
-  'duration_us',
-  'duration_ms',
+  'duration',
   'status_code',
   'trace_id',
   'span_id',
@@ -288,15 +287,9 @@ function getTailPriority(signal: Signal): string[] {
 /**
  * Get the timestamp column name for a signal type.
  */
-function getTimestampColumn(signal: Signal): string {
-  switch (signal) {
-    case 'logs':
-      return 'timestamp_nanos';
-    case 'traces':
-      return 'start_time_nanos';
-    default:
-      return 'timestamp';
-  }
+function getTimestampColumn(_signal: Signal): string {
+  // Both logs and traces use 'timestamp' as the primary timestamp column
+  return 'timestamp';
 }
 
 /**
@@ -405,10 +398,24 @@ export function mergeWithUserConfig(
     return preset;
   }
 
-  // Filter user's columns list to only include valid columns
-  let filteredColumns = userConfig.columns;
-  if (filteredColumns && schemaColumns) {
-    filteredColumns = filteredColumns.filter((col) => schemaColumns.includes(col));
+  // For columns: Don't use saved columns if schema has significantly changed.
+  // This prevents old column lists from hiding new schema columns (like 'body').
+  // We detect schema mismatch when >20% of saved columns are missing from schema.
+  let finalColumns = preset.columns;
+  if (userConfig.columns && schemaColumns) {
+    const validSavedColumns = userConfig.columns.filter((col) => schemaColumns.includes(col));
+    const missingRatio = 1 - validSavedColumns.length / userConfig.columns.length;
+
+    // If schema has changed significantly (>20% columns missing), use preset columns
+    // Otherwise, use saved columns but append any new schema columns not in the saved list
+    if (missingRatio > 0.2) {
+      // Schema changed significantly - use preset
+      finalColumns = preset.columns;
+    } else {
+      // Schema similar - use saved columns but add any new columns from schema
+      const newColumns = schemaColumns.filter((col) => !validSavedColumns.includes(col));
+      finalColumns = [...validSavedColumns, ...newColumns];
+    }
   }
 
   // Filter user's plugin_config.columns to only include valid columns
@@ -441,7 +448,7 @@ export function mergeWithUserConfig(
   return {
     ...preset,
     ...userConfig,
-    columns: filteredColumns,
+    columns: finalColumns,
     sort: filteredSort ?? userConfig.sort,
     plugin_config: mergedPluginConfig,
   };
@@ -453,7 +460,7 @@ export function mergeWithUserConfig(
  */
 export function detectSignalFromSchema(columns: string[]): Signal {
   // Check for trace-specific columns
-  const traceIndicators = ['span_name', 'span_kind', 'duration_us', 'parent_span_id'];
+  const traceIndicators = ['span_name', 'span_kind', 'duration', 'parent_span_id'];
   if (traceIndicators.some((col) => columns.includes(col))) {
     return 'traces';
   }
