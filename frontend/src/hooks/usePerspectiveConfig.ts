@@ -1,4 +1,12 @@
 import { useCallback } from 'react';
+import type { ColumnStyleConfig } from '../lib/perspectivePresets';
+
+/**
+ * Plugin-specific configuration for the datagrid.
+ */
+export interface PluginConfig {
+  columns?: Record<string, ColumnStyleConfig>;
+}
 
 /**
  * Perspective viewer configuration type.
@@ -16,6 +24,7 @@ export interface ViewConfig {
   settings?: boolean;
   theme?: string;
   title?: string;
+  plugin_config?: PluginConfig;
 }
 
 /**

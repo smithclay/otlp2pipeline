@@ -1,9 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useCredentials } from '../hooks/useCredentials';
 import { useDuckDB, type QueryResult } from '../hooks/useDuckDB';
 import { getPerspectiveWorker } from '../lib/perspective';
 import { usePerspectiveConfig, type ViewConfig } from '../hooks/usePerspectiveConfig';
+import {
+  createPreset,
+  mergeWithUserConfig,
+  detectSignalFromSchema,
+  type PerspectivePreset,
+} from '../lib/perspectivePresets';
 import { parseCommand, isTailCommand, type Signal } from '../lib/parseCommand';
 import { useLiveTail } from '../hooks/useLiveTail';
 import type { TailStatus, TailRecord } from '../hooks/useLiveTail';
@@ -24,8 +31,21 @@ LIMIT 100`;
 type PerspectiveValue = string | number | boolean | Date;
 
 /**
+ * Column names that should be converted to Date objects for Perspective.
+ * Perspective requires Date objects (not numbers) to format as datetime.
+ */
+const TIMESTAMP_COLUMNS = new Set([
+  'timestamp',
+  '__ingest_ts',
+  'observed_timestamp',
+  'end_timestamp',
+  'start_timestamp',
+]);
+
+/**
  * Convert generic records to column-oriented format for Perspective.
  * Handles BigInt conversion to Number for Perspective compatibility.
+ * Converts timestamp columns to Date objects for proper datetime formatting.
  */
 function toColumnarData(records: Record<string, unknown>[]): Record<string, PerspectiveValue[]> | null {
   if (!records || records.length === 0) return null;
@@ -47,6 +67,10 @@ function toColumnarData(records: Record<string, unknown>[]): Record<string, Pers
       // Convert null/undefined to empty string for Perspective compatibility
       if (value === undefined || value === null) {
         value = '';
+      }
+      // Convert timestamp columns to Date objects for Perspective datetime formatting
+      if (TIMESTAMP_COLUMNS.has(col) && typeof value === 'number') {
+        value = new Date(value);
       }
       columnar[col].push(value as PerspectiveValue);
     }
@@ -233,6 +257,27 @@ export function RecordsExplorer() {
         const columnarData = toColumnarData(queryResult.rows);
         if (!columnarData) return;
 
+        // Get schema columns from the data
+        const schemaColumns = Object.keys(columnarData);
+
+        // Detect signal type from schema (logs vs traces)
+        const detectedSignal = detectSignalFromSchema(schemaColumns);
+
+        // Create preset for query mode
+        const preset = createPreset(
+          { signal: detectedSignal, mode: 'query' },
+          schemaColumns
+        );
+
+        // Merge with user's saved config (user preferences take precedence)
+        // Pass schemaColumns to filter out invalid columns from saved config
+        const savedConfig = load();
+        const finalConfig = mergeWithUserConfig(
+          preset,
+          savedConfig as Partial<PerspectivePreset> | null,
+          schemaColumns
+        );
+
         // Create new table with the data
         const newTable = await worker.table(columnarData);
 
@@ -247,13 +292,8 @@ export function RecordsExplorer() {
         // Load into viewer
         await viewer.load(newTable);
 
-        // Apply saved config or default (no theme = uses built-in default)
-        const savedConfig = load();
-        const defaultConfig: ViewConfig = {
-          plugin: 'Datagrid',
-          settings: true,
-        };
-        await viewer.restore((savedConfig ?? defaultConfig) as unknown as Parameters<typeof viewer.restore>[0]);
+        // Apply merged config
+        await viewer.restore(finalConfig as unknown as Parameters<typeof viewer.restore>[0]);
       } catch (err) {
         console.error('Failed to update Perspective:', err);
       }
@@ -289,7 +329,7 @@ export function RecordsExplorer() {
 
   // Update Perspective viewer when tail records change (debounced)
   useEffect(() => {
-    if (mode !== 'tail' || tailRecords.length === 0) {
+    if (mode !== 'tail' || tailRecords.length === 0 || !tailConfig) {
       return;
     }
 
@@ -300,6 +340,9 @@ export function RecordsExplorer() {
     if (tailUpdateTimeoutRef.current !== null) {
       return; // Update already scheduled
     }
+
+    // Capture tailConfig.signal for use in async callback
+    const signal = tailConfig.signal;
 
     tailUpdateTimeoutRef.current = window.setTimeout(async () => {
       tailUpdateTimeoutRef.current = null;
@@ -316,6 +359,16 @@ export function RecordsExplorer() {
         const columnar = toColumnarData(records);
         if (!columnar) return;
 
+        // Get schema columns from the data
+        const schemaColumns = Object.keys(columnar);
+
+        // Create preset for tail mode (ephemeral - not merged with user config)
+        // Uses strict sorting and prioritized column order
+        const preset = createPreset(
+          { signal, mode: 'tail' },
+          schemaColumns
+        );
+
         // Create new table first, then load into viewer, then delete old table
         // (Must load before delete - viewer holds a View on the old table)
         const oldTable = tableRef.current;
@@ -326,11 +379,8 @@ export function RecordsExplorer() {
           await oldTable.delete();
         }
 
-        // Apply default config for tail mode
-        await viewer.restore({
-          plugin: 'Datagrid',
-          settings: true,
-        } as unknown as Parameters<typeof viewer.restore>[0]);
+        // Apply tail preset (no user config merge - tail mode is ephemeral)
+        await viewer.restore(preset as unknown as Parameters<typeof viewer.restore>[0]);
       } catch (err) {
         console.error('Failed to update Perspective for tail:', err);
       }
@@ -343,7 +393,7 @@ export function RecordsExplorer() {
       }
       // Note: Don't delete table here - handled by unmount effect below
     };
-  }, [mode, tailRecords]);
+  }, [mode, tailRecords, tailConfig]);
 
   // Cleanup table on unmount
   useEffect(() => {
@@ -364,6 +414,9 @@ export function RecordsExplorer() {
   const getButtonConfig = () => {
     if (isTailing) {
       return { text: 'Stop', className: 'bg-red-500 hover:bg-red-600' };
+    }
+    if (duckdbLoading && !inputLooksTail) {
+      return { text: 'Connecting...', className: '' };
     }
     if (queryLoading) {
       return { text: 'Running...', className: '' };
@@ -456,13 +509,25 @@ export function RecordsExplorer() {
             type="button"
             onClick={handleRun}
             disabled={!canRun && !isTailing}
-            className={`px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${buttonConfig.className}`}
+            className={`relative px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${buttonConfig.className}`}
             style={{
               backgroundColor: isTailing ? undefined : 'var(--color-accent)',
               color: 'white',
+              minWidth: '180px',
             }}
           >
-            {buttonConfig.text}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={buttonConfig.text}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="block"
+              >
+                {buttonConfig.text}
+              </motion.span>
+            </AnimatePresence>
           </button>
         </div>
       </div>
@@ -537,21 +602,6 @@ export function RecordsExplorer() {
           <p style={{ color: 'var(--color-text-secondary)' }}>
             Configure credentials in Settings to connect to DuckDB.
           </p>
-        </div>
-      )}
-
-      {isConfigured && duckdbLoading && (
-        <div className="flex items-center justify-center py-8">
-          <div
-            className="h-8 w-8 animate-spin rounded-full border-2"
-            style={{
-              borderColor: 'var(--color-border)',
-              borderTopColor: 'var(--color-accent)',
-            }}
-          />
-          <span className="ml-3" style={{ color: 'var(--color-text-muted)' }}>
-            Connecting to DuckDB...
-          </span>
         </div>
       )}
 
