@@ -1,7 +1,10 @@
+//! Iceberg REST Catalog client for Cloudflare R2.
+
 use anyhow::{bail, Context, Result};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+pub use super::iceberg_types::*;
 
 const CATALOG_BASE: &str = "https://catalog.cloudflarestorage.com";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -14,146 +17,6 @@ pub struct IcebergClient {
     bucket: String,
     /// Warehouse prefix (UUID) obtained from config endpoint
     prefix: Option<String>,
-}
-
-/// Response from the Iceberg catalog config endpoint
-#[derive(Debug, Deserialize)]
-struct CatalogConfig {
-    overrides: Option<CatalogOverrides>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CatalogOverrides {
-    prefix: Option<String>,
-}
-
-/// Table metadata from Iceberg REST API
-#[derive(Debug, Deserialize)]
-pub struct TableMetadata {
-    #[serde(rename = "metadata-location")]
-    pub metadata_location: Option<String>,
-    pub metadata: TableMetadataInner,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TableMetadataInner {
-    #[serde(rename = "table-uuid")]
-    pub table_uuid: Option<String>,
-    pub location: Option<String>,
-    #[serde(rename = "current-schema-id")]
-    pub current_schema_id: Option<i32>,
-    #[serde(rename = "last-updated-ms")]
-    pub last_updated_ms: Option<i64>,
-    #[serde(default)]
-    pub schemas: Vec<Schema>,
-    #[serde(rename = "partition-specs", default)]
-    pub partition_specs: Vec<PartitionSpec>,
-    #[serde(rename = "default-spec-id")]
-    pub default_spec_id: Option<i32>,
-    #[serde(rename = "last-partition-id")]
-    pub last_partition_id: Option<i32>,
-    #[serde(default)]
-    pub snapshots: Vec<Snapshot>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Schema {
-    #[serde(rename = "schema-id")]
-    pub schema_id: i32,
-    #[serde(default)]
-    pub fields: Vec<SchemaField>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SchemaField {
-    pub id: i32,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub field_type: serde_json::Value,
-    pub required: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PartitionSpec {
-    #[serde(rename = "spec-id")]
-    pub spec_id: i32,
-    #[serde(default)]
-    pub fields: Vec<PartitionField>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PartitionField {
-    #[serde(rename = "source-id")]
-    pub source_id: i32,
-    #[serde(rename = "field-id")]
-    pub field_id: i32,
-    pub name: String,
-    pub transform: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Snapshot {
-    #[serde(rename = "snapshot-id")]
-    pub snapshot_id: i64,
-}
-
-/// Result of adding a partition spec
-#[derive(Debug)]
-pub enum AddPartitionResult {
-    /// Partition spec was successfully added
-    Added,
-    /// Table already partitioned by service_name
-    AlreadyPartitioned,
-    /// Table does not exist
-    TableNotFound,
-}
-
-/// Commit request for Iceberg table updates
-#[derive(Debug, Serialize)]
-struct CommitRequest {
-    requirements: Vec<CommitRequirement>,
-    updates: Vec<CommitUpdate>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-enum CommitRequirement {
-    #[serde(rename = "assert-table-uuid")]
-    AssertTableUuid { uuid: String },
-    #[serde(rename = "assert-default-spec-id")]
-    AssertDefaultSpecId {
-        #[serde(rename = "default-spec-id")]
-        default_spec_id: i32,
-    },
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "action", rename_all = "kebab-case")]
-enum CommitUpdate {
-    #[serde(rename = "add-spec")]
-    AddSpec { spec: NewPartitionSpec },
-    #[serde(rename = "set-default-spec")]
-    SetDefaultSpec {
-        #[serde(rename = "spec-id")]
-        spec_id: i32,
-    },
-}
-
-#[derive(Debug, Serialize)]
-struct NewPartitionSpec {
-    #[serde(rename = "spec-id")]
-    spec_id: i32,
-    fields: Vec<NewPartitionField>,
-}
-
-#[derive(Debug, Serialize)]
-struct NewPartitionField {
-    name: String,
-    transform: String,
-    #[serde(rename = "source-id")]
-    source_id: i32,
-    #[serde(rename = "field-id")]
-    field_id: i32,
 }
 
 impl IcebergClient {
@@ -299,15 +162,46 @@ impl IcebergClient {
                 .ok_or_else(|| anyhow::anyhow!("Table '{}' has no UUID", table))?;
 
             let default_spec_id = inner.default_spec_id.unwrap_or(0);
+            // Iceberg convention: partition field IDs start at 1000
+            // If last_partition_id is missing, use 999 so first new field gets ID 1000
             let last_partition_id = inner.last_partition_id.unwrap_or(999);
 
             let service_name_field_id = inner
                 .get_service_name_field_id()
                 .ok_or_else(|| anyhow::anyhow!("Table '{}' has no service_name field", table))?;
 
+            // Find the spec that has the day partition (may be current default or an older spec)
+            // We want to preserve the day partition when adding service_name
+            let day_partition_fields: Vec<NewPartitionField> = inner
+                .partition_specs
+                .iter()
+                .find(|spec| spec.fields.iter().any(|f| f.transform == "day"))
+                .map(|spec| {
+                    spec.fields
+                        .iter()
+                        .filter(|f| f.transform == "day") // Only copy day partitions
+                        .map(|f| NewPartitionField {
+                            name: f.name.clone(),
+                            transform: f.transform.clone(),
+                            source_id: f.source_id,
+                            field_id: f.field_id,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
             // Build commit request
             let new_spec_id = default_spec_id + 1;
             let new_partition_field_id = last_partition_id + 1;
+
+            // New spec includes day partition(s) plus service_name
+            let mut new_fields = day_partition_fields;
+            new_fields.push(NewPartitionField {
+                name: "service_name".to_string(),
+                transform: "identity".to_string(),
+                source_id: service_name_field_id,
+                field_id: new_partition_field_id,
+            });
 
             let commit_request = CommitRequest {
                 requirements: vec![
@@ -320,12 +214,7 @@ impl IcebergClient {
                     CommitUpdate::AddSpec {
                         spec: NewPartitionSpec {
                             spec_id: new_spec_id,
-                            fields: vec![NewPartitionField {
-                                name: "service_name".to_string(),
-                                transform: "identity".to_string(),
-                                source_id: service_name_field_id,
-                                field_id: new_partition_field_id,
-                            }],
+                            fields: new_fields,
                         },
                     },
                     CommitUpdate::SetDefaultSpec {
@@ -396,100 +285,4 @@ impl IcebergClient {
 enum CommitError {
     Conflict,
     Other(anyhow::Error),
-}
-
-impl TableMetadataInner {
-    /// Check if the table is already partitioned by service_name
-    pub fn is_partitioned_by_service_name(&self) -> bool {
-        let default_id = self.default_spec_id.unwrap_or(0);
-
-        self.partition_specs
-            .iter()
-            .find(|spec| spec.spec_id == default_id)
-            .is_some_and(|spec| {
-                spec.fields
-                    .iter()
-                    .any(|f| f.name == "service_name" && f.transform == "identity")
-            })
-    }
-
-    /// Get the field ID for service_name from the current schema
-    pub fn get_service_name_field_id(&self) -> Option<i32> {
-        self.current_schema()
-            .and_then(|schema| schema.fields.iter().find(|f| f.name == "service_name"))
-            .map(|f| f.id)
-    }
-
-    /// Get the current schema
-    fn current_schema(&self) -> Option<&Schema> {
-        let current_id = self.current_schema_id.unwrap_or(0);
-        self.schemas.iter().find(|s| s.schema_id == current_id)
-    }
-
-    /// Get field names as comma-separated preview
-    pub fn field_names_preview(&self, max_shown: usize) -> String {
-        let Some(schema) = self.current_schema() else {
-            return String::new();
-        };
-
-        let total = schema.fields.len();
-        let names: Vec<&str> = schema
-            .fields
-            .iter()
-            .take(max_shown)
-            .map(|f| f.name.as_str())
-            .collect();
-
-        if total > max_shown {
-            format!("{}, ... ({} total)", names.join(", "), total)
-        } else {
-            names.join(", ")
-        }
-    }
-
-    /// Format partition specs for display
-    pub fn format_partition_specs(&self) -> Vec<String> {
-        let default_id = self.default_spec_id.unwrap_or(0);
-
-        self.partition_specs
-            .iter()
-            .map(|spec| {
-                let is_default = spec.spec_id == default_id;
-                let default_marker = if is_default { " (default)" } else { "" };
-
-                if spec.fields.is_empty() {
-                    format!(
-                        "spec-id: {}{} - unpartitioned",
-                        spec.spec_id, default_marker
-                    )
-                } else {
-                    let transforms: Vec<String> = spec
-                        .fields
-                        .iter()
-                        .map(|f| format!("{}({})", f.transform, f.name))
-                        .collect();
-                    format!(
-                        "spec-id: {}{} - {}",
-                        spec.spec_id,
-                        default_marker,
-                        transforms.join(", ")
-                    )
-                }
-            })
-            .collect()
-    }
-
-    /// Format last updated time
-    pub fn format_last_updated(&self) -> String {
-        match self.last_updated_ms {
-            Some(ms) => {
-                let secs = ms / 1000;
-                let nanos = ((ms % 1000) * 1_000_000) as u32;
-                chrono::DateTime::from_timestamp(secs, nanos)
-                    .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
-                    .unwrap_or_else(|| "unknown".to_string())
-            }
-            None => "unknown".to_string(),
-        }
-    }
 }

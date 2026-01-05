@@ -1,5 +1,6 @@
 pub mod client;
 pub mod iceberg;
+mod iceberg_types;
 pub mod pipelines;
 pub mod r2;
 
