@@ -186,6 +186,9 @@ function computeOverviewData(
 
 interface LocationState {
   initialQuery?: string;
+  initialTab?: TabId;
+  initialService?: string;
+  initialSignal?: TailSignal;
 }
 
 export function QueryExplorer() {
@@ -211,7 +214,7 @@ export function QueryExplorer() {
 
   // Live tail state
   const [tailConfig, setTailConfig] = useState<{ service: string; signal: Signal; limit: number } | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('query');
+  const [activeTab, setActiveTab] = useState<TabId>(locationState?.initialTab ?? 'query');
 
   // Waterfall state
   const [selectedSpan, setSelectedSpan] = useState<LayoutSpan | null>(null);
@@ -221,8 +224,8 @@ export function QueryExplorer() {
   const [selectedLog, setSelectedLog] = useState<LogRecord | null>(null);
 
   // Tail form state
-  const [tailService, setTailService] = useState('');
-  const [tailSignal, setTailSignal] = useState<TailSignal>('logs');
+  const [tailService, setTailService] = useState(locationState?.initialService ?? '');
+  const [tailSignal, setTailSignal] = useState<TailSignal>(locationState?.initialSignal ?? 'logs');
 
   // Live tail hook - only active when we have a tail config
   const {

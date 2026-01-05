@@ -262,8 +262,13 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
   };
 
   const handleLiveTail = (signal: 'logs' | 'traces') => {
-    const tailCommand = `TAIL ${item.service.name} ${signal}`;
-    navigate('/query', { state: { initialQuery: tailCommand } });
+    navigate('/query', {
+      state: {
+        initialTab: 'tail',
+        initialService: item.service.name,
+        initialSignal: signal,
+      },
+    });
   };
 
   // Show errors link if service has issues
