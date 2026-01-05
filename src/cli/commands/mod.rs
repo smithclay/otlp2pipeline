@@ -1,3 +1,4 @@
+mod bucket;
 mod catalog;
 mod create;
 mod destroy;
@@ -8,6 +9,7 @@ mod services;
 mod status;
 mod tail;
 
+pub use bucket::execute_bucket_delete;
 pub use catalog::{execute_catalog_list, execute_catalog_partition};
 pub use create::execute_create;
 pub use destroy::execute_destroy;

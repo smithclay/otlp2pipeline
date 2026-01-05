@@ -188,6 +188,12 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     eprintln!();
     eprintln!("  2. Deploy:");
     eprintln!("     npx wrangler deploy");
+    eprintln!();
+    eprintln!("  3. IMPORTANT: After ingesting data, add partitioning for query performance:");
+    eprintln!("     frostbit catalog partition --r2-token $R2_API_TOKEN");
+    eprintln!();
+    eprintln!("     This adds service_name partitioning to Iceberg tables. Without it,");
+    eprintln!("     queries will scan all data instead of pruning by service.");
 
     Ok(())
 }

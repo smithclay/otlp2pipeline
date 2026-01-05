@@ -31,12 +31,48 @@ pub enum Commands {
     Tail(TailArgs),
     /// Manage Iceberg catalog
     Catalog(CatalogArgs),
+    /// Manage R2 bucket data
+    Bucket(BucketArgs),
 }
 
 #[derive(clap::Args)]
 pub struct CatalogArgs {
     #[command(subcommand)]
     pub command: CatalogCommands,
+}
+
+#[derive(clap::Args)]
+pub struct BucketArgs {
+    #[command(subcommand)]
+    pub command: BucketCommands,
+}
+
+#[derive(Subcommand)]
+pub enum BucketCommands {
+    /// Delete all objects in the bucket using AWS CLI
+    Delete(BucketDeleteArgs),
+}
+
+#[derive(clap::Args)]
+pub struct BucketDeleteArgs {
+    /// Environment name (bucket will be frostbit-{name})
+    pub name: String,
+
+    /// Override bucket name (use exact name instead of frostbit-{name})
+    #[arg(long)]
+    pub bucket: Option<String>,
+
+    /// AWS Access Key ID for R2 S3 API
+    #[arg(long, env = "AWS_ACCESS_KEY_ID")]
+    pub access_key_id: String,
+
+    /// AWS Secret Access Key for R2 S3 API
+    #[arg(long, env = "AWS_SECRET_ACCESS_KEY")]
+    pub secret_access_key: String,
+
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Subcommand)]

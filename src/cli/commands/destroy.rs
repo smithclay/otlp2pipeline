@@ -86,7 +86,22 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
     eprintln!("\n==> Deleting R2 bucket: {}", bucket);
     match client.delete_bucket(&bucket).await {
         Ok(_) => eprintln!("    Deleted"),
-        Err(e) => eprintln!("    Failed: {} (may need manual cleanup)", e),
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("not empty") || err_str.contains("BucketNotEmpty") {
+                eprintln!("    Failed: bucket is not empty");
+                eprintln!();
+                eprintln!("    To delete all objects first, run:");
+                eprintln!(
+                    "      frostbit bucket delete {} --bucket {}",
+                    args.name, bucket
+                );
+                eprintln!();
+                eprintln!("    Then re-run destroy to delete the empty bucket.");
+            } else {
+                eprintln!("    Failed: {} (may need manual cleanup)", e);
+            }
+        }
     }
 
     eprintln!("\n==> Done");
