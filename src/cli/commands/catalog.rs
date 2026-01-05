@@ -8,13 +8,13 @@ use crate::cloudflare::IcebergClient;
 const TABLES: &[&str] = &["logs", "traces", "gauge", "sum"];
 
 /// Config values read from wrangler.toml
-struct CatalogConfig {
+struct WranglerConfig {
     account_id: String,
     bucket: String,
 }
 
 /// Parse wrangler.toml and extract R2_CATALOG_ACCOUNT_ID and R2_CATALOG_BUCKET
-fn read_catalog_config(config_path: &str) -> Result<CatalogConfig> {
+fn read_catalog_config(config_path: &str) -> Result<WranglerConfig> {
     let path = Path::new(config_path);
     if !path.exists() {
         bail!(
@@ -62,7 +62,7 @@ fn read_catalog_config(config_path: &str) -> Result<CatalogConfig> {
         })?
         .to_string();
 
-    Ok(CatalogConfig { account_id, bucket })
+    Ok(WranglerConfig { account_id, bucket })
 }
 
 pub async fn execute_catalog_list(args: CatalogListArgs) -> Result<()> {
@@ -72,9 +72,14 @@ pub async fn execute_catalog_list(args: CatalogListArgs) -> Result<()> {
     eprintln!("==> Querying Iceberg catalog");
     eprintln!("    Account: {}", config.account_id);
     eprintln!("    Bucket: {}", config.bucket);
-    eprintln!();
 
-    let client = IcebergClient::new(args.r2_token, config.account_id, config.bucket);
+    let mut client = IcebergClient::new(args.r2_token, config.account_id, config.bucket)?;
+
+    // Fetch catalog config to get the warehouse prefix
+    eprint!("    Fetching catalog config... ");
+    client.fetch_config().await?;
+    eprintln!("ok");
+    eprintln!();
 
     for table in TABLES {
         print_table_info(&client, table).await?;

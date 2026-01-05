@@ -1,8 +1,10 @@
 use anyhow::{bail, Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
+use std::time::Duration;
 
 const CATALOG_BASE: &str = "https://catalog.cloudflarestorage.com";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Iceberg REST Catalog client for Cloudflare R2
 pub struct IcebergClient {
@@ -10,6 +12,19 @@ pub struct IcebergClient {
     token: String,
     account_id: String,
     bucket: String,
+    /// Warehouse prefix (UUID) obtained from config endpoint
+    prefix: Option<String>,
+}
+
+/// Response from the Iceberg catalog config endpoint
+#[derive(Debug, Deserialize)]
+struct CatalogConfig {
+    overrides: Option<CatalogOverrides>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CatalogOverrides {
+    prefix: Option<String>,
 }
 
 /// Table metadata from Iceberg REST API
@@ -82,31 +97,87 @@ pub struct Snapshot {
 
 impl IcebergClient {
     /// Create a new Iceberg REST catalog client
-    pub fn new(token: String, account_id: String, bucket: String) -> Self {
+    pub fn new(token: String, account_id: String, bucket: String) -> Result<Self> {
         let client = Client::builder()
             .user_agent("frostbit-cli")
+            .timeout(REQUEST_TIMEOUT)
             .build()
-            .expect("Failed to create HTTP client");
+            .context("Failed to create HTTP client")?;
 
-        Self {
+        Ok(Self {
             client,
             token,
             account_id,
             bucket,
+            prefix: None,
+        })
+    }
+
+    /// Build the catalog base URL (account_id/bucket format)
+    fn catalog_base_url(&self) -> String {
+        format!("{}/{}/{}", CATALOG_BASE, self.account_id, self.bucket)
+    }
+
+    /// Fetch the catalog config to get the warehouse prefix (UUID).
+    /// This must be called before get_table_metadata.
+    pub async fn fetch_config(&mut self) -> Result<()> {
+        let warehouse = format!("{}_{}", self.account_id, self.bucket);
+        let url = format!(
+            "{}/v1/config?warehouse={}",
+            self.catalog_base_url(),
+            warehouse
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .bearer_auth(&self.token)
+            .send()
+            .await
+            .context("Failed to fetch catalog config")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            bail!("Failed to fetch catalog config: HTTP {} - {}", status, body);
         }
+
+        let config: CatalogConfig = response
+            .json()
+            .await
+            .context("Failed to parse catalog config")?;
+
+        self.prefix = config.overrides.and_then(|o| o.prefix).or({
+            // Some catalogs may not have overrides.prefix, use warehouse as fallback
+            None
+        });
+
+        if self.prefix.is_none() {
+            bail!("Catalog config does not contain a warehouse prefix");
+        }
+
+        Ok(())
     }
 
-    /// Build the catalog URL for a table
-    fn table_url(&self, table: &str) -> String {
-        format!(
-            "{}/{}_{}/namespaces/default/tables/{}",
-            CATALOG_BASE, self.account_id, self.bucket, table
-        )
+    /// Build the table URL using the prefix from config
+    fn table_url(&self, table: &str) -> Result<String> {
+        let prefix = self
+            .prefix
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Catalog prefix not set. Call fetch_config() first."))?;
+
+        Ok(format!(
+            "{}/v1/{}/namespaces/default/tables/{}",
+            self.catalog_base_url(),
+            prefix,
+            table
+        ))
     }
 
-    /// Get table metadata, returns None if table doesn't exist
+    /// Get table metadata, returns None if table doesn't exist.
+    /// Requires fetch_config() to be called first.
     pub async fn get_table_metadata(&self, table: &str) -> Result<Option<TableMetadata>> {
-        let url = self.table_url(table);
+        let url = self.table_url(table)?;
 
         let response = self
             .client
