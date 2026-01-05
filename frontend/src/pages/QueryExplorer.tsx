@@ -100,7 +100,7 @@ interface LocationState {
   initialQuery?: string;
 }
 
-export function RecordsExplorer() {
+export function QueryExplorer() {
   const location = useLocation();
   const { credentials, isConfigured } = useCredentials();
   const { executeQuery, loading: duckdbLoading, error: duckdbError, isConnected } = useDuckDB(

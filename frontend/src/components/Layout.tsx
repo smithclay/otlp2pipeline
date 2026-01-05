@@ -43,7 +43,7 @@ export function Layout({ children }: LayoutProps) {
                   Services
                 </NavLink>
                 <NavLink
-                  to="/records"
+                  to="/query"
                   className={({ isActive }) =>
                     `text-sm font-medium transition-colors ${
                       isActive
