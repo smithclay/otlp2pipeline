@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import perspective, { type Table } from '@finos/perspective'
+import perspective, { type Table, type TableData } from '@finos/perspective'
 import '@finos/perspective-viewer'
 import '@finos/perspective-viewer-datagrid'
 import '@finos/perspective-viewer-d3fc'
@@ -12,8 +12,10 @@ import '@finos/perspective-viewer/dist/css/themes.css'
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer'
 
 interface PerspectiveWrapperProps {
-  data: Record<string, unknown>[]
-  config?: Record<string, unknown>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: readonly Record<string, any>[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  config?: Record<string, any>
   height?: number
   onViewerReady?: (viewer: HTMLPerspectiveViewerElement) => void
 }
@@ -46,7 +48,7 @@ export function PerspectiveWrapper({
 
         // Create worker and table
         const worker = await perspective.worker()
-        const table = await worker.table(data)
+        const table = await worker.table(data as unknown as TableData)
         tableRef.current = table
 
         // Load data into viewer
@@ -86,7 +88,7 @@ export function PerspectiveWrapper({
   // Update data when it changes
   useEffect(() => {
     if (tableRef.current && data.length > 0) {
-      tableRef.current.replace(data)
+      tableRef.current.replace(data as unknown as TableData)
     }
   }, [data])
 

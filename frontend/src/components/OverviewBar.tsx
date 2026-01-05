@@ -5,6 +5,8 @@
  * that adapts to the current data type (logs, traces, single trace, tail, SQL).
  */
 
+import { formatNumber, formatMs } from '../lib/format';
+
 /**
  * Discriminated union of all overview data types.
  */
@@ -17,23 +19,6 @@ export type OverviewData =
 
 export interface OverviewBarProps {
   data: OverviewData;
-}
-
-/**
- * Format large numbers with locale-aware separators.
- */
-function formatNumber(n: number): string {
-  return n.toLocaleString('en-US');
-}
-
-/**
- * Format milliseconds with appropriate precision.
- */
-function formatMs(ms: number): string {
-  if (ms >= 1000) {
-    return `${(ms / 1000).toFixed(2)}s`;
-  }
-  return `${Math.round(ms)}ms`;
 }
 
 /**

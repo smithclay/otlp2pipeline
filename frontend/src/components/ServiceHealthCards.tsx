@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Service } from '../lib/api';
 import type { LogStats, TraceStats } from '../hooks/useStats';
+import { formatCompact } from '../lib/format';
 
 /**
  * Service with aggregated stats for display.
@@ -55,18 +56,6 @@ function getHealthColor(status: HealthStatus): string {
 }
 
 
-/**
- * Format large numbers with K/M suffixes.
- */
-function formatCount(count: number): string {
-  if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}M`;
-  }
-  if (count >= 1_000) {
-    return `${(count / 1_000).toFixed(1)}k`;
-  }
-  return count.toString();
-}
 
 /**
  * Mini sparkline component using SVG.
@@ -146,7 +135,7 @@ function MetricSparkline({
         <span className="mono text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
           {typeof value === 'number' && !isNaN(value)
             ? value >= 1000
-              ? formatCount(value)
+              ? formatCompact(value)
               : value.toFixed(1)
             : '—'}
         </span>
@@ -311,7 +300,7 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
                 {item.errorRate.toFixed(1)}%
               </span>
               {' errors · '}
-              <span className="mono">{formatCount(Math.round(throughputPerMin))}</span>
+              <span className="mono">{formatCompact(Math.round(throughputPerMin))}</span>
               {' req/min'}
               {/* Inline signal indicators */}
               <span style={{ color: 'var(--color-text-muted)' }}>

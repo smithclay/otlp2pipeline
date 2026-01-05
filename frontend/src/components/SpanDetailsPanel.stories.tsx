@@ -51,7 +51,7 @@ export const Hidden: Story = () => (
 )
 
 export const TogglePanel: Story = () => {
-  const [span, setSpan] = useState(mockLayoutSpan)
+  const [span] = useState(mockLayoutSpan)
   const [visible, setVisible] = useState(true)
 
   return (

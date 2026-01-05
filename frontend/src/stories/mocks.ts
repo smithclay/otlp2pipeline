@@ -74,7 +74,7 @@ export const mockLogStats: LogStats[] = minutes.map((minute, i) => ({
   error_count: Math.floor(Math.random() * 5),
 }))
 
-export const mockTraceStats: TraceStats[] = minutes.map((minute, i) => ({
+export const mockTraceStats: TraceStats[] = minutes.map((minute) => ({
   minute,
   count: 80 + Math.floor(Math.random() * 40),
   error_count: Math.floor(Math.random() * 3),

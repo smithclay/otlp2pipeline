@@ -1,81 +1,13 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { CatalogStats, TableStats } from '../hooks/useCatalogStats';
+import { formatCompact, formatRelativeTime, formatBytes } from '../lib/format';
 
 export interface CatalogOverviewProps {
   stats: CatalogStats | null;
   isLoading: boolean;
   error: string | null;
   onRefresh: () => void;
-}
-
-/**
- * Format large numbers with K/M suffixes.
- */
-function formatNumber(num: number): string {
-  if (num >= 1_000_000) {
-    return `${(num / 1_000_000).toFixed(1)}M`;
-  }
-  if (num >= 1_000) {
-    return `${(num / 1_000).toFixed(1)}K`;
-  }
-  return num.toString();
-}
-
-/**
- * Format timestamp as relative time.
- */
-function formatRelativeTime(timestampMs: number | null): string {
-  if (timestampMs === null) {
-    return '—';
-  }
-
-  const now = Date.now();
-  const diffMs = now - timestampMs;
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSeconds < 60) {
-    return 'just now';
-  }
-  if (diffMinutes < 60) {
-    return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
-  }
-  if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
-  }
-  if (diffDays < 7) {
-    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
-  }
-
-  // Format as date string for older timestamps
-  const date = new Date(timestampMs);
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-  });
-}
-
-/**
- * Format bytes as human-readable string.
- * Returns "0 B" for zero, negative, or invalid (NaN/Infinity) values.
- */
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const unitIndex = Math.min(i, units.length - 1);
-
-  const value = bytes / Math.pow(k, unitIndex);
-  // Show decimals only for values >= 1 KB
-  const formatted = unitIndex === 0 ? value.toString() : value.toFixed(1);
-
-  return `${formatted} ${units[unitIndex]}`;
 }
 
 /**
@@ -149,7 +81,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
         className="mono text-2xl font-semibold"
         style={{ color: 'var(--color-text-primary)' }}
       >
-        {typeof value === 'number' ? formatNumber(value) : value}
+        {typeof value === 'number' ? formatCompact(value) : value}
       </span>
     </motion.div>
   );
@@ -292,7 +224,7 @@ function TableRow({ table, isExpanded, onToggle }: TableRowProps) {
           className="py-3 px-4 text-right mono text-sm"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          {table.snapshotCount > 0 ? formatNumber(table.snapshotCount) : '—'}
+          {table.snapshotCount > 0 ? formatCompact(table.snapshotCount) : '\u2014'}
         </td>
         <td
           className="py-3 px-4 text-right text-sm"
@@ -350,9 +282,9 @@ function TableRow({ table, isExpanded, onToggle }: TableRowProps) {
                     className="mono text-sm"
                     style={{ color: 'var(--color-text-primary)' }}
                   >
-                    {formatNumber(table.fileCount)} files{' '}
+                    {formatCompact(table.fileCount)} files{' '}
                     <span style={{ color: 'var(--color-text-muted)' }}>·</span>{' '}
-                    {formatNumber(table.recordCount)} records{' '}
+                    {formatCompact(table.recordCount)} records{' '}
                     <span style={{ color: 'var(--color-text-muted)' }}>·</span>{' '}
                     {formatBytes(table.totalSizeBytes)}
                   </span>
