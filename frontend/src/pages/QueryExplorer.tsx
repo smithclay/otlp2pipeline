@@ -19,6 +19,7 @@ import { TailInput, type TailSignal } from '../components/TailInput';
 import { QueryInput } from '../components/QueryInput';
 import { useServices } from '../hooks/useServices';
 import { OverviewBar, type OverviewData } from '../components/OverviewBar';
+import { ViewToggle, type ViewType } from '../components/ViewToggle';
 
 import '@finos/perspective-viewer';
 import '@finos/perspective-viewer-datagrid';
@@ -214,6 +215,7 @@ export function QueryExplorer() {
 
   // Waterfall state
   const [selectedSpan, setSelectedSpan] = useState<LayoutSpan | null>(null);
+  const [viewMode, setViewMode] = useState<ViewType>('table');
 
   // Tail form state
   const [tailService, setTailService] = useState('');
@@ -321,6 +323,26 @@ export function QueryExplorer() {
       limit: 500,
     });
   }, [tailService, tailSignal, tailStatus.state, stopTail]);
+
+  // Compute whether waterfall is available
+  const canShowWaterfall = queryResult && isSingleTrace(queryResult.rows);
+
+  // Handle view toggle between table and waterfall
+  const handleViewChange = useCallback(async (view: ViewType) => {
+    setViewMode(view);
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    try {
+      if (view === 'waterfall') {
+        await viewer.restore({ plugin: 'perspective-waterfall' } as any);
+      } else {
+        await viewer.restore({ plugin: 'perspective-viewer-datagrid' } as any);
+      }
+    } catch (err) {
+      console.debug('Could not switch view:', err);
+    }
+  }, []);
 
   // Start tail when config changes or when entering tail mode
   useEffect(() => {
@@ -678,6 +700,13 @@ export function QueryExplorer() {
           }}
         >
           <div className="relative flex-1" style={{ minHeight: '400px' }}>
+            {/* View Toggle - top right */}
+            {canShowWaterfall && (
+              <div className="absolute top-3 right-3 z-10">
+                <ViewToggle view={viewMode} onViewChange={handleViewChange} />
+              </div>
+            )}
+
             <perspective-viewer
               ref={viewerRef}
               style={{ width: '100%', height: '100%' }}
