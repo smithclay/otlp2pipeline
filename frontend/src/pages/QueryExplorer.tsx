@@ -15,6 +15,7 @@ import type { Table } from '@finos/perspective';
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
 import { SpanDetailsPanel } from '../components/SpanDetailsPanel';
 import type { LayoutSpan } from '../lib/perspective-waterfall';
+import { TabBar, type TabId } from '../components/TabBar';
 
 import '@finos/perspective-viewer';
 import '@finos/perspective-viewer-datagrid';
@@ -121,7 +122,7 @@ export function QueryExplorer() {
 
   // Live tail state (will be wired up in subsequent tasks)
   const [tailConfig, setTailConfig] = useState<{ service: string; signal: Signal; limit: number } | null>(null);
-  const [mode, setMode] = useState<'query' | 'tail'>('query');
+  const [activeTab, setActiveTab] = useState<TabId>('query');
   const [parseError, setParseError] = useState<string | null>(null);
 
   // Waterfall state
@@ -167,9 +168,9 @@ export function QueryExplorer() {
     setParseError(null);
 
     // If currently tailing, stop
-    if (mode === 'tail' && tailStatus.state !== 'idle') {
+    if (activeTab === 'tail' && tailStatus.state !== 'idle') {
       stopTail();
-      setMode('query');
+      setActiveTab('query');
       return;
     }
 
@@ -185,7 +186,7 @@ export function QueryExplorer() {
       // SQL query mode
       if (!isConnected || queryLoading) return;
 
-      setMode('query');
+      setActiveTab('query');
       setTailConfig(null);
       setQueryLoading(true);
       setQueryError(null);
@@ -207,7 +208,7 @@ export function QueryExplorer() {
       }
     } else {
       // Tail mode
-      setMode('tail');
+      setActiveTab('tail');
       setTailConfig({ service: result.service, signal: result.signal, limit: result.limit });
       setQueryResult(null);
       setQueryError(null);
@@ -215,7 +216,7 @@ export function QueryExplorer() {
 
       // Start will be triggered by effect when tailConfig changes
     }
-  }, [sql, mode, tailStatus.state, stopTail, isConnected, queryLoading, executeQuery]);
+  }, [sql, activeTab, tailStatus.state, stopTail, isConnected, queryLoading, executeQuery]);
 
   // Handle keyboard shortcut (Cmd/Ctrl+Enter)
   const handleKeyDown = useCallback(
@@ -230,7 +231,7 @@ export function QueryExplorer() {
 
   // Start tail when config changes or when entering tail mode
   useEffect(() => {
-    if (mode !== 'tail' || !tailConfig) {
+    if (activeTab !== 'tail' || !tailConfig) {
       prevTailConfigRef.current = null;
       return;
     }
@@ -248,7 +249,7 @@ export function QueryExplorer() {
       prevTailConfigRef.current = tailConfig;
       startTail();
     }
-  }, [mode, tailConfig, tailStatus.state, startTail, stopTail]);
+  }, [activeTab, tailConfig, tailStatus.state, startTail, stopTail]);
 
   // Update Perspective when query result changes
   useEffect(() => {
@@ -331,7 +332,7 @@ export function QueryExplorer() {
 
   // Update Perspective viewer when tail records change (debounced)
   useEffect(() => {
-    if (mode !== 'tail' || tailRecords.length === 0 || !tailConfig) {
+    if (activeTab !== 'tail' || tailRecords.length === 0 || !tailConfig) {
       return;
     }
 
@@ -395,7 +396,7 @@ export function QueryExplorer() {
       }
       // Note: Don't delete table here - handled by unmount effect below
     };
-  }, [mode, tailRecords, tailConfig]);
+  }, [activeTab, tailRecords, tailConfig]);
 
   // Listen for waterfall span selection events
   useEffect(() => {
@@ -423,7 +424,7 @@ export function QueryExplorer() {
     };
   }, []);
 
-  const isTailing = mode === 'tail' && tailStatus.state !== 'idle' && tailStatus.state !== 'error';
+  const isTailing = activeTab === 'tail' && tailStatus.state !== 'idle' && tailStatus.state !== 'error';
   const canRun = inputLooksTail
     ? (credentials?.workerUrl && !queryLoading) // Tail mode: need worker URL
     : (isConnected && !queryLoading && !duckdbLoading); // Query mode: need DuckDB
@@ -458,7 +459,7 @@ export function QueryExplorer() {
         </div>
         <div className="flex items-center gap-4">
           {/* Tail status indicator */}
-          {mode === 'tail' && tailStatus.state !== 'idle' && (
+          {activeTab === 'tail' && tailStatus.state !== 'idle' && (
             <div className="flex items-center gap-2 text-sm">
               {tailStatus.state === 'connected' && (
                 <>
@@ -483,7 +484,7 @@ export function QueryExplorer() {
             </div>
           )}
           {/* Query time indicator */}
-          {mode === 'query' && queryTimeMs !== null && (
+          {activeTab === 'query' && queryTimeMs !== null && (
             <span
               className="text-sm font-medium mono"
               style={{ color: 'var(--color-text-tertiary)' }}
@@ -494,6 +495,18 @@ export function QueryExplorer() {
           )}
         </div>
       </div>
+
+      {/* Tab Bar */}
+      <TabBar
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          // Stop tail if switching away from tail mode
+          if (activeTab === 'tail' && tab === 'query' && tailStatus.state !== 'idle') {
+            stopTail();
+          }
+          setActiveTab(tab);
+        }}
+      />
 
       {/* SQL Input */}
       <div
@@ -643,8 +656,8 @@ export function QueryExplorer() {
           className="flex-1 min-h-[400px] rounded-lg overflow-hidden"
           style={{
             display:
-              (mode === 'query' && queryResult && queryResult.rows.length > 0) ||
-              (mode === 'tail' && tailRecords.length > 0)
+              (activeTab === 'query' && queryResult && queryResult.rows.length > 0) ||
+              (activeTab === 'tail' && tailRecords.length > 0)
                 ? 'flex'
                 : 'none',
             border: '1px solid var(--color-border)',
@@ -665,7 +678,7 @@ export function QueryExplorer() {
       )}
 
       {/* No Results Message - only for query mode */}
-      {mode === 'query' && isConnected && queryResult && queryResult.rows.length === 0 && (
+      {activeTab === 'query' && isConnected && queryResult && queryResult.rows.length === 0 && (
         <div
           className="rounded-lg p-8 text-center"
           style={{
@@ -680,7 +693,7 @@ export function QueryExplorer() {
       )}
 
       {/* Waiting for data - tail mode */}
-      {mode === 'tail' && tailStatus.state === 'connected' && tailRecords.length === 0 && (
+      {activeTab === 'tail' && tailStatus.state === 'connected' && tailRecords.length === 0 && (
         <div
           className="rounded-lg p-8 text-center"
           style={{
