@@ -55,7 +55,7 @@ export const WithAction: Story = () => (
   <ToastTrigger
     type="info"
     message="New data available for your query"
-    action={{ label: 'View results', to: '/records' }}
+    action={{ label: 'View results', to: '/query' }}
   />
 )
 

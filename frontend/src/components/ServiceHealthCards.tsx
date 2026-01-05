@@ -258,12 +258,12 @@ const ServiceCard = forwardRef<HTMLDivElement, ServiceCardProps>(function Servic
 
   const handleQueryClick = (type: 'logs' | 'traces', filter?: string) => {
     const query = buildQuery(type, filter);
-    navigate('/records', { state: { initialQuery: query } });
+    navigate('/query', { state: { initialQuery: query } });
   };
 
   const handleLiveTail = (signal: 'logs' | 'traces') => {
     const tailCommand = `TAIL ${item.service.name} ${signal}`;
-    navigate('/records', { state: { initialQuery: tailCommand } });
+    navigate('/query', { state: { initialQuery: tailCommand } });
   };
 
   // Show errors link if service has issues
