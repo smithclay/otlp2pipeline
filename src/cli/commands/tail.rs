@@ -17,7 +17,7 @@ pub async fn execute_tail(args: TailArgs) -> Result<()> {
         bail!("Signal must be 'logs' or 'traces', got: {}", args.signal);
     }
 
-    let base_url = resolve_worker_url(args.url.as_deref())?;
+    let base_url = resolve_worker_url(args.url.as_deref()).await?;
 
     // Convert https:// to wss:// or http:// to ws://
     let ws_url = if base_url.starts_with("https://") {

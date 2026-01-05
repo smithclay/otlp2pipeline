@@ -2,8 +2,10 @@ use anyhow::{bail, Result};
 use std::fs;
 use std::path::Path;
 
-/// Resolve worker URL from explicit flag or wrangler.toml
-pub fn resolve_worker_url(explicit_url: Option<&str>) -> Result<String> {
+use crate::cli::auth::{fetch_workers_subdomain, resolve_credentials};
+
+/// Resolve worker URL from explicit flag or wrangler.toml (with API lookup for subdomain)
+pub async fn resolve_worker_url(explicit_url: Option<&str>) -> Result<String> {
     if let Some(url) = explicit_url {
         return Ok(url.trim_end_matches('/').to_string());
     }
@@ -22,7 +24,20 @@ pub fn resolve_worker_url(explicit_url: Option<&str>) -> Result<String> {
     let content = fs::read_to_string(wrangler_path)?;
     let config: toml::Value = toml::from_str(&content)?;
 
-    resolve_url_from_config(&config)
+    // Check for subdomain - env var first, then API lookup
+    let subdomain = if let Ok(sub) = std::env::var("CF_WORKERS_DEV_SUBDOMAIN") {
+        Some(sub)
+    } else if let Ok(creds) = resolve_credentials() {
+        // Try to fetch from Cloudflare API
+        match fetch_workers_subdomain(&creds).await {
+            Ok(sub) => Some(sub),
+            Err(_) => None, // Fall back to simple URL if API fails
+        }
+    } else {
+        None
+    };
+
+    resolve_url_from_config(&config, subdomain.as_deref())
 }
 
 fn extract_url_from_pattern(pattern: &str) -> Result<String> {
@@ -38,7 +53,7 @@ fn extract_url_from_pattern(pattern: &str) -> Result<String> {
 }
 
 /// Resolve URL from parsed wrangler.toml config (for testing)
-pub fn resolve_url_from_config(config: &toml::Value) -> Result<String> {
+pub fn resolve_url_from_config(config: &toml::Value, subdomain: Option<&str>) -> Result<String> {
     // Try routes array first (most common)
     if let Some(routes) = config.get("routes").and_then(|r| r.as_array()) {
         if let Some(first_route) = routes.first() {
@@ -59,7 +74,13 @@ pub fn resolve_url_from_config(config: &toml::Value) -> Result<String> {
 
     // Try workers.dev subdomain from name
     if let Some(name) = config.get("name").and_then(|n| n.as_str()) {
-        return Ok(format!("https://{}.workers.dev", name));
+        if let Some(sub) = subdomain {
+            // Full URL with account subdomain: name.subdomain.workers.dev
+            return Ok(format!("https://{}.{}.workers.dev", name, sub));
+        } else {
+            // Fallback without subdomain (may not work for all accounts)
+            return Ok(format!("https://{}.workers.dev", name));
+        }
     }
 
     bail!(
@@ -72,15 +93,19 @@ pub fn resolve_url_from_config(config: &toml::Value) -> Result<String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_explicit_url_returned_as_is() {
-        let result = resolve_worker_url(Some("https://my-worker.workers.dev")).unwrap();
+    #[tokio::test]
+    async fn test_explicit_url_returned_as_is() {
+        let result = resolve_worker_url(Some("https://my-worker.workers.dev"))
+            .await
+            .unwrap();
         assert_eq!(result, "https://my-worker.workers.dev");
     }
 
-    #[test]
-    fn test_explicit_url_trailing_slash_trimmed() {
-        let result = resolve_worker_url(Some("https://my-worker.workers.dev/")).unwrap();
+    #[tokio::test]
+    async fn test_explicit_url_trailing_slash_trimmed() {
+        let result = resolve_worker_url(Some("https://my-worker.workers.dev/"))
+            .await
+            .unwrap();
         assert_eq!(result, "https://my-worker.workers.dev");
     }
 
@@ -117,7 +142,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let result = resolve_url_from_config(&config).unwrap();
+        let result = resolve_url_from_config(&config, None).unwrap();
         assert_eq!(result, "https://api.example.com");
     }
 
@@ -129,7 +154,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let result = resolve_url_from_config(&config).unwrap();
+        let result = resolve_url_from_config(&config, None).unwrap();
         assert_eq!(result, "https://example.com");
     }
 
@@ -141,20 +166,32 @@ mod tests {
             "#,
         )
         .unwrap();
-        let result = resolve_url_from_config(&config).unwrap();
+        let result = resolve_url_from_config(&config, None).unwrap();
         assert_eq!(result, "https://legacy.example.com");
     }
 
     #[test]
-    fn test_resolve_from_name_field() {
+    fn test_resolve_from_name_field_without_subdomain() {
         let config: toml::Value = toml::from_str(
             r#"
             name = "my-worker"
             "#,
         )
         .unwrap();
-        let result = resolve_url_from_config(&config).unwrap();
+        let result = resolve_url_from_config(&config, None).unwrap();
         assert_eq!(result, "https://my-worker.workers.dev");
+    }
+
+    #[test]
+    fn test_resolve_from_name_field_with_subdomain() {
+        let config: toml::Value = toml::from_str(
+            r#"
+            name = "my-worker"
+            "#,
+        )
+        .unwrap();
+        let result = resolve_url_from_config(&config, Some("my-account")).unwrap();
+        assert_eq!(result, "https://my-worker.my-account.workers.dev");
     }
 
     #[test]
@@ -167,7 +204,8 @@ mod tests {
             "#,
         )
         .unwrap();
-        let result = resolve_url_from_config(&config).unwrap();
+        let result = resolve_url_from_config(&config, Some("my-account")).unwrap();
+        // Routes take priority, subdomain is ignored
         assert_eq!(result, "https://custom.example.com");
     }
 
@@ -179,7 +217,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let result = resolve_url_from_config(&config);
+        let result = resolve_url_from_config(&config, None);
         assert!(result.is_err());
     }
 }

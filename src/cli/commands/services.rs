@@ -9,7 +9,7 @@ use crate::cli::ServicesArgs;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn execute_services(args: ServicesArgs) -> Result<()> {
-    let base_url = resolve_worker_url(args.url.as_deref())?;
+    let base_url = resolve_worker_url(args.url.as_deref()).await?;
     let url = format!("{}/v1/services", base_url);
 
     let client = reqwest::Client::builder()
