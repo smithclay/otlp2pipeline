@@ -13,6 +13,7 @@ import type { TailRecord } from '../hooks/useLiveTail';
 import type { Table } from '@finos/perspective';
 import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
 import { SpanDetailsPanel } from '../components/SpanDetailsPanel';
+import { LogDetailPanel, type LogRecord } from '../components/LogDetailPanel';
 import type { LayoutSpan } from '../lib/perspective-waterfall';
 import { TabBar, type TabId } from '../components/TabBar';
 import { TailInput, type TailSignal } from '../components/TailInput';
@@ -216,6 +217,9 @@ export function QueryExplorer() {
   // Waterfall state
   const [selectedSpan, setSelectedSpan] = useState<LayoutSpan | null>(null);
   const [viewMode, setViewMode] = useState<ViewType>('table');
+
+  // Log detail state
+  const [selectedLog, setSelectedLog] = useState<LogRecord | null>(null);
 
   // Tail form state
   const [tailService, setTailService] = useState('');
@@ -529,6 +533,36 @@ export function QueryExplorer() {
     };
   }, []);
 
+  // Listen for row clicks on the perspective viewer (for log details)
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    const handleRowClick = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const row = customEvent.detail?.row;
+      if (!row) return;
+
+      // Check if this looks like a log record
+      if ('severity' in row && 'message' in row) {
+        setSelectedLog({
+          timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString(),
+          severity: String(row.severity || 'INFO'),
+          message: String(row.message || ''),
+          service: String(row.service_name || row.service || 'unknown'),
+          trace_id: row.trace_id ? String(row.trace_id) : undefined,
+          span_id: row.span_id ? String(row.span_id) : undefined,
+          host: row.host ? String(row.host) : undefined,
+          attributes: row.log_attributes ? (typeof row.log_attributes === 'string' ? JSON.parse(row.log_attributes) : row.log_attributes) : undefined,
+          resource_attributes: row.resource_attributes ? (typeof row.resource_attributes === 'string' ? JSON.parse(row.resource_attributes) : row.resource_attributes) : undefined,
+        });
+      }
+    };
+
+    viewer.addEventListener('perspective-click', handleRowClick);
+    return () => viewer.removeEventListener('perspective-click', handleRowClick);
+  }, []);
+
   // Cleanup table on unmount
   useEffect(() => {
     return () => {
@@ -714,6 +748,17 @@ export function QueryExplorer() {
             <SpanDetailsPanel
               span={selectedSpan}
               onClose={() => setSelectedSpan(null)}
+            />
+            <LogDetailPanel
+              log={selectedLog}
+              onClose={() => setSelectedLog(null)}
+              onTraceClick={(traceId) => {
+                // Navigate to query with trace filter
+                setSql(`SELECT * FROM r2_catalog.default.traces WHERE trace_id = '${traceId}'`);
+                setActiveTab('query');
+                setSelectedLog(null);
+                handleRun();
+              }}
             />
           </div>
         </div>
