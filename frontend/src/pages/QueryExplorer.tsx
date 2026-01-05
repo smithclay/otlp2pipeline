@@ -7,7 +7,7 @@ import {
   createPreset,
   detectSignalFromSchema,
 } from '../lib/perspectivePresets';
-import { parseCommand, type Signal } from '../lib/parseCommand';
+import type { Signal } from '../lib/parseCommand';
 import { useLiveTail } from '../hooks/useLiveTail';
 import type { TailRecord } from '../hooks/useLiveTail';
 import type { Table } from '@finos/perspective';
@@ -209,10 +209,9 @@ export function QueryExplorer() {
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null);
 
-  // Live tail state (will be wired up in subsequent tasks)
+  // Live tail state
   const [tailConfig, setTailConfig] = useState<{ service: string; signal: Signal; limit: number } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('query');
-  const [parseError, setParseError] = useState<string | null>(null);
 
   // Waterfall state
   const [selectedSpan, setSelectedSpan] = useState<LayoutSpan | null>(null);
@@ -257,60 +256,29 @@ export function QueryExplorer() {
   // Track previous tail config to detect changes
   const prevTailConfigRef = useRef<typeof tailConfig>(null);
 
-  // Unified run handler for both query and tail modes
+  // Handle SQL query execution
   const handleRun = useCallback(async () => {
-    setParseError(null);
+    if (!isConnected || queryLoading) return;
 
-    // If currently tailing, stop
-    if (activeTab === 'tail' && tailStatus.state !== 'idle') {
-      stopTail();
-      setActiveTab('query');
-      return;
-    }
+    setQueryLoading(true);
+    setQueryError(null);
+    setQueryTimeMs(null);
 
-    // Parse the input
-    const result = parseCommand(sql);
+    const startTime = performance.now();
 
-    if (result.type === 'error') {
-      setParseError(result.message);
-      return;
-    }
-
-    if (result.type === 'query') {
-      // SQL query mode
-      if (!isConnected || queryLoading) return;
-
-      setActiveTab('query');
-      setTailConfig(null);
-      setQueryLoading(true);
-      setQueryError(null);
-      setQueryTimeMs(null);
-
-      const startTime = performance.now();
-
-      try {
-        const queryResult = await executeQuery(result.sql);
-        const endTime = performance.now();
-        setQueryTimeMs(Math.round(endTime - startTime));
-        setQueryResult(queryResult);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Query execution failed';
-        setQueryError(message);
-        setQueryResult(null);
-      } finally {
-        setQueryLoading(false);
-      }
-    } else {
-      // Tail mode
-      setActiveTab('tail');
-      setTailConfig({ service: result.service, signal: result.signal, limit: result.limit });
+    try {
+      const queryResult = await executeQuery(sql);
+      const endTime = performance.now();
+      setQueryTimeMs(Math.round(endTime - startTime));
+      setQueryResult(queryResult);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Query execution failed';
+      setQueryError(message);
       setQueryResult(null);
-      setQueryError(null);
-      setQueryTimeMs(null);
-
-      // Start will be triggered by effect when tailConfig changes
+    } finally {
+      setQueryLoading(false);
     }
-  }, [sql, activeTab, tailStatus.state, stopTail, isConnected, queryLoading, executeQuery]);
+  }, [sql, isConnected, queryLoading, executeQuery]);
 
   // Handle tail start/stop from TailInput component
   const handleTailStartStop = useCallback(() => {
@@ -631,21 +599,6 @@ export function QueryExplorer() {
         );
         return data ? <OverviewBar data={data} /> : null;
       })()}
-
-      {/* Parse Error Display */}
-      {parseError && (
-        <div
-          className="rounded-lg p-4"
-          style={{
-            backgroundColor: 'var(--color-error-bg)',
-            border: '1px solid var(--color-error)',
-          }}
-        >
-          <p className="font-mono text-sm" style={{ color: 'var(--color-error)' }}>
-            {parseError}
-          </p>
-        </div>
-      )}
 
       {/* Tail Error Display */}
       {tailStatus.state === 'error' && (
