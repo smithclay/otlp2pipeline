@@ -18,6 +18,7 @@ import { TabBar, type TabId } from '../components/TabBar';
 import { TailInput, type TailSignal } from '../components/TailInput';
 import { QueryInput } from '../components/QueryInput';
 import { useServices } from '../hooks/useServices';
+import { OverviewBar, type OverviewData } from '../components/OverviewBar';
 
 import '@finos/perspective-viewer';
 import '@finos/perspective-viewer-datagrid';
@@ -97,6 +98,88 @@ function isSingleTrace(rows: Record<string, unknown>[]): boolean {
   // Check if all rows have same trace_id
   const traceIds = new Set(rows.map(r => r.trace_id));
   return traceIds.size === 1;
+}
+
+/**
+ * Compute overview data based on the current tab and data.
+ */
+function computeOverviewData(
+  activeTab: TabId,
+  queryResult: QueryResult | null,
+  tailRecords: TailRecord[],
+  tailStatus: { state: string },
+  queryTimeMs: number | null,
+  droppedCount: number
+): OverviewData | null {
+  if (activeTab === 'tail' && tailStatus.state !== 'idle') {
+    // Estimate rate from record count (simplified)
+    const rate = tailRecords.length > 0 ? Math.round(tailRecords.length / 10) : 0;
+    return {
+      type: 'tail',
+      recordCount: tailRecords.length,
+      rate,
+      droppedCount,
+    };
+  }
+
+  if (activeTab === 'query' && queryResult && queryResult.rows.length > 0) {
+    const rows = queryResult.rows;
+    const columns = Object.keys(rows[0]);
+
+    // Detect if this is logs data
+    if (columns.includes('severity') && columns.includes('message')) {
+      const errorCount = rows.filter(r => {
+        const sev = String(r.severity).toUpperCase();
+        return sev === 'ERROR' || sev === 'FATAL' || sev === 'CRITICAL';
+      }).length;
+      return {
+        type: 'logs',
+        recordCount: rows.length,
+        errorCount,
+      };
+    }
+
+    // Detect if this is traces data
+    if (columns.includes('trace_id') && columns.includes('span_id')) {
+      // Check if single trace
+      const traceIds = new Set(rows.map(r => r.trace_id));
+      if (traceIds.size === 1) {
+        const errorCount = rows.filter(r => r.status_code === 2).length;
+        const durations = rows.map(r => Number(r.duration) || 0);
+        const totalMs = Math.max(...durations) / 1000; // Assuming microseconds
+        return {
+          type: 'single-trace',
+          traceId: String(rows[0].trace_id),
+          spanCount: rows.length,
+          totalMs,
+          errorCount,
+        };
+      }
+
+      // Multiple traces
+      const errorCount = rows.filter(r => r.status_code === 2).length;
+      const durations = rows.map(r => Number(r.duration) || 0).sort((a, b) => a - b);
+      const p50 = durations[Math.floor(durations.length * 0.5)] / 1000;
+      const p99 = durations[Math.floor(durations.length * 0.99)] / 1000;
+      return {
+        type: 'traces',
+        traceCount: rows.length,
+        errorCount,
+        p50Ms: p50,
+        p99Ms: p99,
+      };
+    }
+
+    // Generic SQL result
+    return {
+      type: 'sql',
+      rowCount: rows.length,
+      columnCount: columns.length,
+      queryTimeMs: queryTimeMs ?? 0,
+    };
+  }
+
+  return null;
 }
 
 interface LocationState {
@@ -479,6 +562,19 @@ export function QueryExplorer() {
           droppedCount={droppedCount}
         />
       )}
+
+      {/* Overview Bar */}
+      {(() => {
+        const data = computeOverviewData(
+          activeTab,
+          queryResult,
+          tailRecords,
+          tailStatus,
+          queryTimeMs,
+          droppedCount
+        );
+        return data ? <OverviewBar data={data} /> : null;
+      })()}
 
       {/* Parse Error Display */}
       {parseError && (
