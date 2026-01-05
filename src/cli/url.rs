@@ -29,10 +29,7 @@ pub async fn resolve_worker_url(explicit_url: Option<&str>) -> Result<String> {
         Some(sub)
     } else if let Ok(creds) = resolve_credentials() {
         // Try to fetch from Cloudflare API
-        match fetch_workers_subdomain(&creds).await {
-            Ok(sub) => Some(sub),
-            Err(_) => None, // Fall back to simple URL if API fails
-        }
+        fetch_workers_subdomain(&creds).await.ok()
     } else {
         None
     };
