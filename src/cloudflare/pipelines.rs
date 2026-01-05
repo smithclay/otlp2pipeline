@@ -76,6 +76,15 @@ struct SinkConfig<'a> {
     namespace: &'static str,
     table_name: &'a str,
     token: &'a str,
+    rolling_policy: RollingPolicy,
+}
+
+#[derive(Serialize)]
+struct RollingPolicy {
+    /// Maximum file size in bytes before rollover
+    file_size_bytes: u64,
+    /// File write frequency in seconds (default: 300)
+    interval_seconds: u32,
 }
 
 #[derive(Deserialize)]
@@ -165,6 +174,10 @@ impl CloudflareClient {
                     namespace: "default",
                     table_name,
                     token,
+                    rolling_policy: RollingPolicy {
+                        file_size_bytes: 256 * 1024 * 1024, // 256 MB
+                        interval_seconds: 300,
+                    },
                 },
             },
         )

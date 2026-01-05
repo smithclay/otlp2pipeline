@@ -209,20 +209,16 @@ async fn handle_services_list(env: Env) -> Result<Response> {
 }
 
 /// Return R2 catalog configuration for frontend DuckDB connection.
-/// The token is NOT returned - it's injected by the /v1/iceberg proxy.
+/// The token is provided by the client - the proxy just forwards it.
 fn handle_config(env: Env) -> Result<Response> {
     let account_id = env.var("R2_CATALOG_ACCOUNT_ID").map(|v| v.to_string()).ok();
     let bucket_name = env.var("R2_CATALOG_BUCKET").map(|v| v.to_string()).ok();
-    let token_configured = env.secret("R2_CATALOG_TOKEN").is_ok();
     let mut missing = Vec::new();
     if account_id.is_none() {
         missing.push("R2_CATALOG_ACCOUNT_ID");
     }
     if bucket_name.is_none() {
         missing.push("R2_CATALOG_BUCKET");
-    }
-    if !token_configured {
-        missing.push("R2_CATALOG_TOKEN");
     }
     if !missing.is_empty() {
         tracing::warn!(
@@ -249,14 +245,22 @@ fn handle_config(env: Env) -> Result<Response> {
 }
 
 /// Proxy requests to R2 Data Catalog to work around browser CORS restrictions.
-/// The worker adds auth headers and forwards to catalog.cloudflarestorage.com.
+/// Forwards the client's Authorization header to catalog.cloudflarestorage.com.
 ///
 /// Path format: /v1/iceberg/{rest_of_path}
 /// Environment variables required:
 ///   - R2_CATALOG_ACCOUNT_ID: Cloudflare account ID
 ///   - R2_CATALOG_BUCKET: R2 bucket name
-///   - R2_CATALOG_TOKEN: R2 API token (secret)
+/// Client must provide Authorization header with R2 API token.
 async fn handle_iceberg_proxy(path: &str, mut req: Request, env: Env) -> Result<Response> {
+    // Require Authorization header from client
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .ok()
+        .flatten()
+        .ok_or_else(|| Error::from("Authorization header required"))?;
+
     // Get configuration from environment
     let account_id = env
         .var("R2_CATALOG_ACCOUNT_ID")
@@ -266,10 +270,6 @@ async fn handle_iceberg_proxy(path: &str, mut req: Request, env: Env) -> Result<
         .var("R2_CATALOG_BUCKET")
         .map(|v| v.to_string())
         .map_err(|_| Error::from("R2_CATALOG_BUCKET not configured"))?;
-    let token = env
-        .secret("R2_CATALOG_TOKEN")
-        .map(|v| v.to_string())
-        .map_err(|_| Error::from("R2_CATALOG_TOKEN secret not configured"))?;
 
     // Extract the path after /v1/iceberg/
     let catalog_path = path.trim_start_matches("/v1/iceberg");
@@ -293,9 +293,9 @@ async fn handle_iceberg_proxy(path: &str, mut req: Request, env: Env) -> Result<
         target_url
     };
 
-    // Build headers for the proxied request
+    // Build headers for the proxied request - forward client's auth
     let headers = Headers::new();
-    headers.set("Authorization", &format!("Bearer {}", token))?;
+    headers.set("Authorization", &auth_header)?;
 
     // Copy relevant headers from original request
     if let Ok(Some(content_type)) = req.headers().get("Content-Type") {

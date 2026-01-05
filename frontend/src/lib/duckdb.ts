@@ -142,7 +142,7 @@ export async function connectToR2(
   if (!workerConfig.icebergProxyEnabled || !workerConfig.accountId || !workerConfig.bucketName) {
     await conn.close();
     throw new Error(
-      'R2 Data Catalog is not configured on the worker. Set R2_CATALOG_ACCOUNT_ID, R2_CATALOG_BUCKET, and R2_CATALOG_TOKEN.'
+      'R2 Data Catalog is not configured on the worker. Set R2_CATALOG_ACCOUNT_ID and R2_CATALOG_BUCKET.'
     );
   }
 

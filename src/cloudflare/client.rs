@@ -157,6 +157,12 @@ impl CloudflareClient {
                 .first()
                 .map(|e| e.message.as_str())
                 .unwrap_or("Unknown error");
+
+            // Handle "already exists" errors as idempotent success
+            if msg.contains("already exists") {
+                return Ok(None);
+            }
+
             bail!("API error: {}", msg);
         }
 

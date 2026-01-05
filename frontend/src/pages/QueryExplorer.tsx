@@ -566,7 +566,7 @@ export function QueryExplorer() {
       {/* Header */}
       <div>
         <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          Explore your telemetry data with SQL or stream live with TAIL
+          Explore your telemetry data with SQL or stream live with tail
         </p>
       </div>
 
