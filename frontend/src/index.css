@@ -104,3 +104,15 @@ perspective-viewer {
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
 }
+
+/* Live indicator pulse animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}

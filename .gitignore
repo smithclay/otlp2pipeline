@@ -8,3 +8,4 @@ wrangler.toml
 .uv-cache
 
 frontend/.ladle
+build/
