@@ -509,23 +509,40 @@ export function QueryExplorer() {
     const viewer = viewerRef.current;
     if (!viewer) return;
 
+    // Helper to safely parse JSON that may be double-encoded or empty
+    const safeParseJson = (value: unknown): Record<string, unknown> | undefined => {
+      if (!value || value === '') return undefined;
+      if (typeof value === 'object') return value as Record<string, unknown>;
+      if (typeof value !== 'string') return undefined;
+      try {
+        let parsed = JSON.parse(value);
+        // Handle double-encoded JSON (e.g., '"{\"key\":\"value\"}"')
+        if (typeof parsed === 'string') {
+          parsed = JSON.parse(parsed);
+        }
+        return typeof parsed === 'object' ? parsed : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+
     const handleRowClick = (e: Event) => {
       const customEvent = e as CustomEvent;
       const row = customEvent.detail?.row;
       if (!row) return;
 
-      // Check if this looks like a log record
-      if ('severity' in row && 'message' in row) {
+      // Check if this looks like a log record (use actual column names from schema)
+      if ('severity_text' in row && 'body' in row) {
         setSelectedLog({
           timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString(),
-          severity: String(row.severity || 'INFO'),
-          message: String(row.message || ''),
-          service: String(row.service_name || row.service || 'unknown'),
+          severity: String(row.severity_text || 'INFO'),
+          message: String(row.body || ''),
+          service: String(row.service_name || 'unknown'),
           trace_id: row.trace_id ? String(row.trace_id) : undefined,
           span_id: row.span_id ? String(row.span_id) : undefined,
           host: row.host ? String(row.host) : undefined,
-          attributes: row.log_attributes ? (typeof row.log_attributes === 'string' ? JSON.parse(row.log_attributes) : row.log_attributes) : undefined,
-          resource_attributes: row.resource_attributes ? (typeof row.resource_attributes === 'string' ? JSON.parse(row.resource_attributes) : row.resource_attributes) : undefined,
+          attributes: safeParseJson(row.log_attributes),
+          resource_attributes: safeParseJson(row.resource_attributes),
         });
       }
     };
