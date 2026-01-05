@@ -15,16 +15,6 @@ pub enum AggregatorSignal {
     Traces,
 }
 
-#[cfg(target_arch = "wasm32")]
-impl AggregatorSignal {
-    fn from_key(key: &str) -> Self {
-        match key.rsplit(':').next() {
-            Some("traces") => AggregatorSignal::Traces,
-            _ => AggregatorSignal::Logs, // Default to logs
-        }
-    }
-}
-
 /// Stats row for query responses.
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,7 +36,6 @@ pub struct StatsRow {
 pub struct AggregatorDO {
     state: State,
     env: Env,
-    signal: AggregatorSignal,
     /// Schema initialization error, if any. Checked on fetch to return proper errors.
     schema_error: Option<String>,
 }
@@ -54,14 +43,9 @@ pub struct AggregatorDO {
 #[cfg(target_arch = "wasm32")]
 impl DurableObject for AggregatorDO {
     fn new(state: State, env: Env) -> Self {
-        // Note: state.id().name() returns empty in workers-rs, so we can't rely on it
-        // for signal detection. Signal is passed via query param in requests instead.
-        // TODO: Re-evaluate when workers-rs is updated.
-        let signal = AggregatorSignal::Logs; // Default, actual signal comes from request
         let mut do_instance = Self {
             state,
             env,
-            signal,
             schema_error: None,
         };
 
@@ -96,13 +80,9 @@ impl DurableObject for AggregatorDO {
 
 #[cfg(target_arch = "wasm32")]
 impl AggregatorDO {
-    const LOGS_DDL: &'static str = "CREATE TABLE IF NOT EXISTS stats (
-        minute INTEGER PRIMARY KEY,
-        count INTEGER DEFAULT 0,
-        error_count INTEGER DEFAULT 0
-    )";
-
-    const TRACES_DDL: &'static str = "CREATE TABLE IF NOT EXISTS stats (
+    /// Schema for stats table. Uses superset schema that works for both logs and traces.
+    /// Logs don't use latency columns (they stay NULL).
+    const SCHEMA_DDL: &'static str = "CREATE TABLE IF NOT EXISTS stats (
         minute INTEGER PRIMARY KEY,
         count INTEGER DEFAULT 0,
         error_count INTEGER DEFAULT 0,
@@ -112,10 +92,7 @@ impl AggregatorDO {
     )";
 
     fn ensure_schema(&self) -> Result<()> {
-        // Always use traces schema (superset) since state.id().name() is broken
-        // and we can't reliably determine signal at construction time.
-        // The traces schema includes latency columns that logs doesn't use (they stay NULL).
-        self.state.storage().sql().exec(Self::TRACES_DDL, None)?;
+        self.state.storage().sql().exec(Self::SCHEMA_DDL, None)?;
         Ok(())
     }
 
@@ -230,12 +207,6 @@ impl AggregatorDO {
     async fn handle_stats_query(&self, req: Request) -> Result<Response> {
         let url = req.url()?;
         let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
-
-        // Parse signal from query param (sender passes it since state.id().name() is broken)
-        let signal = match params.get("signal").map(|s| s.as_ref()) {
-            Some("traces") => AggregatorSignal::Traces,
-            _ => AggregatorSignal::Logs,
-        };
 
         let from = params.get("from").and_then(|v| Self::parse_time_param(v));
         let to = params.get("to").and_then(|v| Self::parse_time_param(v));
