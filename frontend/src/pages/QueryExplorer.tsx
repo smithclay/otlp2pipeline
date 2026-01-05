@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useCredentials } from '../hooks/useCredentials';
 import { useDuckDB, type QueryResult } from '../hooks/useDuckDB';
 import { getPerspectiveWorker } from '../lib/perspective';
@@ -8,7 +7,7 @@ import {
   createPreset,
   detectSignalFromSchema,
 } from '../lib/perspectivePresets';
-import { parseCommand, isTailCommand, type Signal } from '../lib/parseCommand';
+import { parseCommand, type Signal } from '../lib/parseCommand';
 import { useLiveTail } from '../hooks/useLiveTail';
 import type { TailRecord } from '../hooks/useLiveTail';
 import type { Table } from '@finos/perspective';
@@ -16,6 +15,9 @@ import type { HTMLPerspectiveViewerElement } from '@finos/perspective-viewer';
 import { SpanDetailsPanel } from '../components/SpanDetailsPanel';
 import type { LayoutSpan } from '../lib/perspective-waterfall';
 import { TabBar, type TabId } from '../components/TabBar';
+import { TailInput, type TailSignal } from '../components/TailInput';
+import { QueryInput } from '../components/QueryInput';
+import { useServices } from '../hooks/useServices';
 
 import '@finos/perspective-viewer';
 import '@finos/perspective-viewer-datagrid';
@@ -108,6 +110,8 @@ export function QueryExplorer() {
     credentials?.workerUrl ?? null,
     credentials?.r2Token ?? null
   );
+  const { services } = useServices(credentials?.workerUrl ?? null);
+  const serviceNames = services.map(s => s.name);
 
   // Get initial query from navigation state
   const locationState = location.state as LocationState | null;
@@ -128,8 +132,9 @@ export function QueryExplorer() {
   // Waterfall state
   const [selectedSpan, setSelectedSpan] = useState<LayoutSpan | null>(null);
 
-  // Detect if current input looks like a TAIL command (for UI hints)
-  const inputLooksTail = isTailCommand(sql);
+  // Tail form state
+  const [tailService, setTailService] = useState('');
+  const [tailSignal, setTailSignal] = useState<TailSignal>('logs');
 
   // Live tail hook - only active when we have a tail config
   const {
@@ -218,16 +223,21 @@ export function QueryExplorer() {
     }
   }, [sql, activeTab, tailStatus.state, stopTail, isConnected, queryLoading, executeQuery]);
 
-  // Handle keyboard shortcut (Cmd/Ctrl+Enter)
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-        event.preventDefault();
-        handleRun();
-      }
-    },
-    [handleRun]
-  );
+  // Handle tail start/stop from TailInput component
+  const handleTailStartStop = useCallback(() => {
+    if (tailStatus.state !== 'idle') {
+      stopTail();
+      return;
+    }
+
+    if (!tailService) return;
+
+    setTailConfig({
+      service: tailService,
+      signal: tailSignal,
+      limit: 500,
+    });
+  }, [tailService, tailSignal, tailStatus.state, stopTail]);
 
   // Start tail when config changes or when entering tail mode
   useEffect(() => {
@@ -424,76 +434,13 @@ export function QueryExplorer() {
     };
   }, []);
 
-  const isTailing = activeTab === 'tail' && tailStatus.state !== 'idle' && tailStatus.state !== 'error';
-  const canRun = inputLooksTail
-    ? (credentials?.workerUrl && !queryLoading) // Tail mode: need worker URL
-    : (isConnected && !queryLoading && !duckdbLoading); // Query mode: need DuckDB
-
-  // Determine button text and style
-  const getButtonConfig = () => {
-    if (isTailing) {
-      return { text: 'Stop', className: 'bg-red-500 hover:bg-red-600' };
-    }
-    if (duckdbLoading && !inputLooksTail) {
-      return { text: 'Connecting...', className: '' };
-    }
-    if (queryLoading) {
-      return { text: 'Running...', className: '' };
-    }
-    if (inputLooksTail) {
-      return { text: 'Start Tail', className: '' };
-    }
-    return { text: 'Run Query', className: '' };
-  };
-
-  const buttonConfig = getButtonConfig();
-
   return (
     <div className="flex flex-col h-full space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Explore your telemetry data with SQL or stream live with TAIL
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          {/* Tail status indicator */}
-          {activeTab === 'tail' && tailStatus.state !== 'idle' && (
-            <div className="flex items-center gap-2 text-sm">
-              {tailStatus.state === 'connected' && (
-                <>
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                  </span>
-                  <span style={{ color: 'var(--color-text-secondary)' }}>
-                    Live · {tailRecords.length} records
-                    {droppedCount > 0 && ` · ${droppedCount} dropped`}
-                  </span>
-                </>
-              )}
-              {tailStatus.state === 'connecting' && (
-                <span style={{ color: 'var(--color-text-muted)' }}>Connecting...</span>
-              )}
-              {tailStatus.state === 'reconnecting' && (
-                <span style={{ color: 'var(--color-warning)' }}>
-                  Reconnecting ({tailStatus.attempt}/3)...
-                </span>
-              )}
-            </div>
-          )}
-          {/* Query time indicator */}
-          {activeTab === 'query' && queryTimeMs !== null && (
-            <span
-              className="text-sm font-medium mono"
-              style={{ color: 'var(--color-text-tertiary)' }}
-            >
-              {queryTimeMs}ms
-              {queryResult && ` · ${queryResult.rows.length} rows`}
-            </span>
-          )}
-        </div>
+      <div>
+        <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          Explore your telemetry data with SQL or stream live with TAIL
+        </p>
       </div>
 
       {/* Tab Bar */}
@@ -508,60 +455,30 @@ export function QueryExplorer() {
         }}
       />
 
-      {/* SQL Input */}
-      <div
-        className="rounded-lg p-5"
-        style={{
-          backgroundColor: 'white',
-          border: '1px solid var(--color-border)',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <textarea
+      {/* Input Area - varies by tab */}
+      {activeTab === 'query' ? (
+        <QueryInput
           value={sql}
-          onChange={(e) => setSql(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Enter SQL query..."
-          className="w-full h-32 px-3 py-2 font-mono text-sm rounded-md resize-y"
-          style={{
-            backgroundColor: 'var(--color-paper-warm)',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-text-primary)',
-          }}
-          spellCheck={false}
+          onChange={setSql}
+          onRun={handleRun}
+          state={queryLoading ? 'running' : 'idle'}
+          canRun={isConnected && !queryLoading}
+          queryTimeMs={queryTimeMs}
+          rowCount={queryResult?.rows.length ?? null}
         />
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            {inputLooksTail
-              ? 'Press Cmd+Enter to start tail'
-              : 'Press Cmd+Enter to run query'}
-          </span>
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={!canRun && !isTailing}
-            className={`relative px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${buttonConfig.className}`}
-            style={{
-              backgroundColor: isTailing ? undefined : 'var(--color-accent)',
-              color: 'white',
-              minWidth: '180px',
-            }}
-          >
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={buttonConfig.text}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-                className="block"
-              >
-                {buttonConfig.text}
-              </motion.span>
-            </AnimatePresence>
-          </button>
-        </div>
-      </div>
+      ) : (
+        <TailInput
+          service={tailService}
+          signal={tailSignal}
+          isStreaming={tailStatus.state !== 'idle'}
+          services={serviceNames}
+          onServiceChange={setTailService}
+          onSignalChange={setTailSignal}
+          onStartStop={handleTailStartStop}
+          recordCount={tailRecords.length}
+          droppedCount={droppedCount}
+        />
+      )}
 
       {/* Parse Error Display */}
       {parseError && (
