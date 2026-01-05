@@ -1,3 +1,4 @@
+mod catalog;
 mod create;
 mod destroy;
 mod naming;
@@ -7,6 +8,7 @@ mod services;
 mod status;
 mod tail;
 
+pub use catalog::execute_catalog_list;
 pub use create::execute_create;
 pub use destroy::execute_destroy;
 pub use plan::execute_plan;

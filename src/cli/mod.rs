@@ -29,6 +29,31 @@ pub enum Commands {
     Services(ServicesArgs),
     /// Stream live telemetry
     Tail(TailArgs),
+    /// Manage Iceberg catalog
+    Catalog(CatalogArgs),
+}
+
+#[derive(clap::Args)]
+pub struct CatalogArgs {
+    #[command(subcommand)]
+    pub command: CatalogCommands,
+}
+
+#[derive(Subcommand)]
+pub enum CatalogCommands {
+    /// List table metadata including partition specs
+    List(CatalogListArgs),
+}
+
+#[derive(clap::Args)]
+pub struct CatalogListArgs {
+    /// R2 API token (create at dash.cloudflare.com > R2 > Manage R2 API Tokens)
+    #[arg(long = "r2-token", env = "R2_API_TOKEN")]
+    pub r2_token: String,
+
+    /// Path to wrangler.toml config file
+    #[arg(long, default_value = "wrangler.toml")]
+    pub config: String,
 }
 
 #[derive(clap::Args)]

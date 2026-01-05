@@ -1,5 +1,5 @@
 use clap::Parser;
-use frostbit::cli::{commands, Cli, Commands};
+use frostbit::cli::{commands, CatalogCommands, Cli, Commands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -13,6 +13,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Query(args) => commands::execute_query(args).await?,
         Commands::Services(args) => commands::execute_services(args).await?,
         Commands::Tail(args) => commands::execute_tail(args).await?,
+        Commands::Catalog(args) => match args.command {
+            CatalogCommands::List(list_args) => commands::execute_catalog_list(list_args).await?,
+        },
     }
 
     Ok(())
