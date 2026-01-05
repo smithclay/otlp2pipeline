@@ -43,6 +43,8 @@ pub struct CatalogArgs {
 pub enum CatalogCommands {
     /// List table metadata including partition specs
     List(CatalogListArgs),
+    /// Add service_name identity partition to all tables
+    Partition(CatalogPartitionArgs),
 }
 
 #[derive(clap::Args)]
@@ -54,6 +56,21 @@ pub struct CatalogListArgs {
     /// Path to wrangler.toml config file
     #[arg(long, default_value = "wrangler.toml")]
     pub config: String,
+}
+
+#[derive(clap::Args)]
+pub struct CatalogPartitionArgs {
+    /// R2 API token (create at dash.cloudflare.com > R2 > Manage R2 API Tokens)
+    #[arg(long = "r2-token", env = "R2_API_TOKEN")]
+    pub r2_token: String,
+
+    /// Path to wrangler.toml config file
+    #[arg(long, default_value = "wrangler.toml")]
+    pub config: String,
+
+    /// Show what would change without applying
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(clap::Args)]

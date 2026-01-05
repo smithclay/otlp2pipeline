@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use crate::cli::CatalogListArgs;
-use crate::cloudflare::IcebergClient;
+use crate::cli::{CatalogListArgs, CatalogPartitionArgs};
+use crate::cloudflare::{AddPartitionResult, IcebergClient};
 
 /// Tables to query from the Iceberg catalog
 const TABLES: &[&str] = &["logs", "traces", "gauge", "sum"];
@@ -135,6 +135,96 @@ async fn print_table_info(client: &IcebergClient, table: &str) -> Result<()> {
         None => {
             println!("  (not found - table may not exist yet)");
         }
+    }
+
+    Ok(())
+}
+
+pub async fn execute_catalog_partition(args: CatalogPartitionArgs) -> Result<()> {
+    // Read config from wrangler.toml
+    let config = read_catalog_config(&args.config)?;
+
+    if args.dry_run {
+        eprintln!("==> Dry run: would add service_name partition to all tables");
+    } else {
+        eprintln!("==> Adding service_name partition to all tables");
+    }
+    eprintln!("    Account: {}", config.account_id);
+    eprintln!("    Bucket: {}", config.bucket);
+
+    let mut client = IcebergClient::new(args.r2_token, config.account_id, config.bucket)?;
+
+    // Fetch catalog config to get the warehouse prefix
+    eprint!("    Fetching catalog config... ");
+    client.fetch_config().await?;
+    eprintln!("ok");
+    eprintln!();
+
+    let mut success_count = 0;
+    let mut skip_count = 0;
+    let mut error_count = 0;
+
+    for table in TABLES {
+        eprint!("  {} ... ", table);
+
+        if args.dry_run {
+            // In dry-run mode, just check the current state
+            match client.get_table_metadata(table).await? {
+                Some(metadata) => {
+                    if metadata.metadata.is_partitioned_by_service_name() {
+                        eprintln!("already partitioned by service_name (skip)");
+                        skip_count += 1;
+                    } else if metadata.metadata.get_service_name_field_id().is_none() {
+                        eprintln!("missing service_name field (error)");
+                        error_count += 1;
+                    } else {
+                        eprintln!("would add identity(service_name) partition");
+                        success_count += 1;
+                    }
+                }
+                None => {
+                    eprintln!("table not found (skip)");
+                    skip_count += 1;
+                }
+            }
+        } else {
+            // Actually apply the partition spec
+            match client.add_partition_spec(table, 1).await {
+                Ok(AddPartitionResult::Added) => {
+                    eprintln!("added identity(service_name) partition");
+                    success_count += 1;
+                }
+                Ok(AddPartitionResult::AlreadyPartitioned) => {
+                    eprintln!("already partitioned by service_name");
+                    skip_count += 1;
+                }
+                Ok(AddPartitionResult::TableNotFound) => {
+                    eprintln!("table not found");
+                    skip_count += 1;
+                }
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    error_count += 1;
+                }
+            }
+        }
+    }
+
+    eprintln!();
+    if args.dry_run {
+        eprintln!(
+            "Dry run complete: {} would change, {} skipped, {} errors",
+            success_count, skip_count, error_count
+        );
+    } else {
+        eprintln!(
+            "Partition evolution complete: {} added, {} skipped, {} errors",
+            success_count, skip_count, error_count
+        );
+    }
+
+    if error_count > 0 {
+        bail!("Some tables failed to update");
     }
 
     Ok(())

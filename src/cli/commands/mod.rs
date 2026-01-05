@@ -8,7 +8,7 @@ mod services;
 mod status;
 mod tail;
 
-pub use catalog::execute_catalog_list;
+pub use catalog::{execute_catalog_list, execute_catalog_partition};
 pub use create::execute_create;
 pub use destroy::execute_destroy;
 pub use plan::execute_plan;

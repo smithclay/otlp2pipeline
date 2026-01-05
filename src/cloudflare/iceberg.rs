@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const CATALOG_BASE: &str = "https://catalog.cloudflarestorage.com";
@@ -50,6 +50,8 @@ pub struct TableMetadataInner {
     pub partition_specs: Vec<PartitionSpec>,
     #[serde(rename = "default-spec-id")]
     pub default_spec_id: Option<i32>,
+    #[serde(rename = "last-partition-id")]
+    pub last_partition_id: Option<i32>,
     #[serde(default)]
     pub snapshots: Vec<Snapshot>,
 }
@@ -93,6 +95,65 @@ pub struct PartitionField {
 pub struct Snapshot {
     #[serde(rename = "snapshot-id")]
     pub snapshot_id: i64,
+}
+
+/// Result of adding a partition spec
+#[derive(Debug)]
+pub enum AddPartitionResult {
+    /// Partition spec was successfully added
+    Added,
+    /// Table already partitioned by service_name
+    AlreadyPartitioned,
+    /// Table does not exist
+    TableNotFound,
+}
+
+/// Commit request for Iceberg table updates
+#[derive(Debug, Serialize)]
+struct CommitRequest {
+    requirements: Vec<CommitRequirement>,
+    updates: Vec<CommitUpdate>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum CommitRequirement {
+    #[serde(rename = "assert-table-uuid")]
+    AssertTableUuid { uuid: String },
+    #[serde(rename = "assert-default-spec-id")]
+    AssertDefaultSpecId {
+        #[serde(rename = "default-spec-id")]
+        default_spec_id: i32,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+enum CommitUpdate {
+    #[serde(rename = "add-spec")]
+    AddSpec { spec: NewPartitionSpec },
+    #[serde(rename = "set-default-spec")]
+    SetDefaultSpec {
+        #[serde(rename = "spec-id")]
+        spec_id: i32,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct NewPartitionSpec {
+    #[serde(rename = "spec-id")]
+    spec_id: i32,
+    fields: Vec<NewPartitionField>,
+}
+
+#[derive(Debug, Serialize)]
+struct NewPartitionField {
+    name: String,
+    transform: String,
+    #[serde(rename = "source-id")]
+    source_id: i32,
+    #[serde(rename = "field-id")]
+    field_id: i32,
 }
 
 impl IcebergClient {
@@ -209,9 +270,156 @@ impl IcebergClient {
 
         Ok(Some(metadata))
     }
+
+    /// Add a service_name identity partition to a table.
+    /// Returns the result indicating success, already partitioned, or table not found.
+    /// Requires fetch_config() to be called first.
+    pub async fn add_partition_spec(
+        &self,
+        table: &str,
+        mut retries: u32,
+    ) -> Result<AddPartitionResult> {
+        loop {
+            // Fetch current table metadata (re-fetch on each retry to get updated state)
+            let Some(metadata) = self.get_table_metadata(table).await? else {
+                return Ok(AddPartitionResult::TableNotFound);
+            };
+
+            let inner = &metadata.metadata;
+
+            // Check if already partitioned by service_name
+            if inner.is_partitioned_by_service_name() {
+                return Ok(AddPartitionResult::AlreadyPartitioned);
+            }
+
+            // Get required fields
+            let table_uuid = inner
+                .table_uuid
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Table '{}' has no UUID", table))?;
+
+            let default_spec_id = inner.default_spec_id.unwrap_or(0);
+            let last_partition_id = inner.last_partition_id.unwrap_or(999);
+
+            let service_name_field_id = inner
+                .get_service_name_field_id()
+                .ok_or_else(|| anyhow::anyhow!("Table '{}' has no service_name field", table))?;
+
+            // Build commit request
+            let new_spec_id = default_spec_id + 1;
+            let new_partition_field_id = last_partition_id + 1;
+
+            let commit_request = CommitRequest {
+                requirements: vec![
+                    CommitRequirement::AssertTableUuid {
+                        uuid: table_uuid.clone(),
+                    },
+                    CommitRequirement::AssertDefaultSpecId { default_spec_id },
+                ],
+                updates: vec![
+                    CommitUpdate::AddSpec {
+                        spec: NewPartitionSpec {
+                            spec_id: new_spec_id,
+                            fields: vec![NewPartitionField {
+                                name: "service_name".to_string(),
+                                transform: "identity".to_string(),
+                                source_id: service_name_field_id,
+                                field_id: new_partition_field_id,
+                            }],
+                        },
+                    },
+                    CommitUpdate::SetDefaultSpec {
+                        spec_id: new_spec_id,
+                    },
+                ],
+            };
+
+            // POST commit
+            match self.try_commit_table(table, &commit_request).await {
+                Ok(()) => return Ok(AddPartitionResult::Added),
+                Err(CommitError::Conflict) if retries > 0 => {
+                    retries -= 1;
+                    eprintln!(
+                        "    Conflict detected for '{}', retrying ({} retries left)...",
+                        table, retries
+                    );
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+                Err(CommitError::Conflict) => {
+                    bail!("Failed to commit partition spec to table '{}': concurrency conflict after retries", table);
+                }
+                Err(CommitError::Other(e)) => return Err(e),
+            }
+        }
+    }
+
+    /// Attempt to commit changes to a table. Returns Conflict on 409, Other for other errors.
+    async fn try_commit_table(
+        &self,
+        table: &str,
+        request: &CommitRequest,
+    ) -> Result<(), CommitError> {
+        let url = self.table_url(table).map_err(CommitError::Other)?;
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(request)
+            .send()
+            .await
+            .with_context(|| format!("Failed to commit partition spec to table '{}'", table))
+            .map_err(CommitError::Other)?;
+
+        let status = response.status();
+
+        if status.is_success() {
+            return Ok(());
+        }
+
+        if status == reqwest::StatusCode::CONFLICT {
+            return Err(CommitError::Conflict);
+        }
+
+        let body = response.text().await.unwrap_or_default();
+        Err(CommitError::Other(anyhow::anyhow!(
+            "Failed to commit partition spec to table '{}': HTTP {} - {}",
+            table,
+            status,
+            body
+        )))
+    }
+}
+
+/// Internal error type for commit operations
+enum CommitError {
+    Conflict,
+    Other(anyhow::Error),
 }
 
 impl TableMetadataInner {
+    /// Check if the table is already partitioned by service_name
+    pub fn is_partitioned_by_service_name(&self) -> bool {
+        let default_id = self.default_spec_id.unwrap_or(0);
+
+        self.partition_specs
+            .iter()
+            .find(|spec| spec.spec_id == default_id)
+            .is_some_and(|spec| {
+                spec.fields
+                    .iter()
+                    .any(|f| f.name == "service_name" && f.transform == "identity")
+            })
+    }
+
+    /// Get the field ID for service_name from the current schema
+    pub fn get_service_name_field_id(&self) -> Option<i32> {
+        self.current_schema()
+            .and_then(|schema| schema.fields.iter().find(|f| f.name == "service_name"))
+            .map(|f| f.id)
+    }
+
     /// Get the current schema
     fn current_schema(&self) -> Option<&Schema> {
         let current_id = self.current_schema_id.unwrap_or(0);

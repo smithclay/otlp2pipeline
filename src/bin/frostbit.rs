@@ -15,6 +15,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Tail(args) => commands::execute_tail(args).await?,
         Commands::Catalog(args) => match args.command {
             CatalogCommands::List(list_args) => commands::execute_catalog_list(list_args).await?,
+            CatalogCommands::Partition(partition_args) => {
+                commands::execute_catalog_partition(partition_args).await?
+            }
         },
     }
 
