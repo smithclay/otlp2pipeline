@@ -33,6 +33,8 @@ pub enum Commands {
     Catalog(CatalogArgs),
     /// Manage R2 bucket data
     Bucket(BucketArgs),
+    /// Generate OpenTelemetry Collector config
+    Connect(ConnectArgs),
 }
 
 #[derive(clap::Args)]
@@ -195,4 +197,36 @@ pub struct TailArgs {
     /// Worker URL (falls back to wrangler.toml)
     #[arg(long)]
     pub url: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct ConnectArgs {
+    #[command(subcommand)]
+    pub command: ConnectCommands,
+}
+
+#[derive(Subcommand)]
+pub enum ConnectCommands {
+    /// Generate OpenTelemetry Collector config (otel-collector-config.yaml)
+    OtelCollector(ConnectOtelCollectorArgs),
+    /// Generate shell exports for Claude Code integration
+    ClaudeCode(ConnectClaudeCodeArgs),
+}
+
+#[derive(clap::Args)]
+pub struct ConnectOtelCollectorArgs {
+    /// Worker URL (falls back to wrangler.toml)
+    #[arg(long)]
+    pub url: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct ConnectClaudeCodeArgs {
+    /// Worker URL (falls back to wrangler.toml)
+    #[arg(long)]
+    pub url: Option<String>,
+
+    /// Output format
+    #[arg(long, default_value = "shell")]
+    pub format: String,
 }
