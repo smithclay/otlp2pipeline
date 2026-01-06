@@ -2,6 +2,41 @@
  * Frostbit API client
  */
 
+/** Default timeout for API requests (5 minutes) */
+const DEFAULT_TIMEOUT_MS = 300000;
+
+/**
+ * Fetch with timeout and abort support.
+ * @param url - URL to fetch
+ * @param options - Fetch options
+ * @param timeoutMs - Timeout in milliseconds (default: 30000)
+ * @returns Response from fetch
+ * @throws Error if request times out or fails
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export interface Service {
   name: string;
   has_logs: boolean;
@@ -142,7 +177,7 @@ export async function fetchAllServicesStats(
 
   const url = `${workerUrl}/v1/services/stats?${params}`;
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch all services stats: ${response.status} ${response.statusText}`);
@@ -179,7 +214,7 @@ export async function fetchAllServicesStats(
 export async function fetchServices(workerUrl: string): Promise<Service[]> {
   const url = `${workerUrl}/v1/services`;
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch services: ${response.status} ${response.statusText}`);
@@ -234,7 +269,7 @@ export async function fetchLogStats(
 
   const url = `${workerUrl}/v1/services/${encodeURIComponent(service)}/logs/stats?${params}`;
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch log stats: ${response.status} ${response.statusText}`);
@@ -289,7 +324,7 @@ export async function fetchTraceStats(
 
   const url = `${workerUrl}/v1/services/${encodeURIComponent(service)}/traces/stats?${params}`;
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch trace stats: ${response.status} ${response.statusText}`);

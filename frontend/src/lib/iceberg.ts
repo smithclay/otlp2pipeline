@@ -7,6 +7,41 @@
  * See: https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml
  */
 
+/** Default timeout for Iceberg API requests (5 minutes) */
+const DEFAULT_TIMEOUT_MS = 300000;
+
+/**
+ * Fetch with timeout and abort support.
+ * @param url - URL to fetch
+ * @param options - Fetch options
+ * @param timeoutMs - Timeout in milliseconds (default: 300000)
+ * @returns Response from fetch
+ * @throws Error if request times out or fails
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Table identifier in the catalog.
  */
@@ -189,7 +224,7 @@ export async function getCatalogConfig(
   const catalogUrl = buildCatalogUrl(workerUrl);
   const url = `${catalogUrl}/v1/config?warehouse=${encodeURIComponent(warehouse)}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       Authorization: `Bearer ${r2Token}`,
       Accept: 'application/json',
@@ -213,7 +248,7 @@ async function catalogFetch<T>(
   url: string,
   r2Token: string
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       Authorization: `Bearer ${r2Token}`,
       Accept: 'application/json',

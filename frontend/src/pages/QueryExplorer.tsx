@@ -48,6 +48,16 @@ const TIMESTAMP_COLUMNS = new Set([
 ]);
 
 /**
+ * Columns that contain IDs which should be converted to strings
+ * to preserve precision for values larger than Number.MAX_SAFE_INTEGER.
+ */
+const ID_COLUMNS = new Set([
+  'trace_id',
+  'span_id',
+  'parent_span_id',
+]);
+
+/**
  * Convert generic records to column-oriented format for Perspective.
  * Handles BigInt conversion to Number for Perspective compatibility.
  * Converts timestamp columns to Date objects for proper datetime formatting.
@@ -65,9 +75,20 @@ function toColumnarData(records: Record<string, unknown>[]): Record<string, Pers
   for (const record of records) {
     for (const col of columns) {
       let value = record[col];
-      // Convert BigInt to Number for Perspective compatibility
+      // Handle BigInt values
       if (typeof value === 'bigint') {
-        value = Number(value);
+        // ID columns should be converted to strings to preserve precision
+        if (ID_COLUMNS.has(col)) {
+          value = value.toString();
+        } else {
+          // Warn if precision will be lost for non-ID columns
+          if (value > Number.MAX_SAFE_INTEGER || value < Number.MIN_SAFE_INTEGER) {
+            console.warn(
+              `Precision loss: column "${col}" has BigInt value ${value} outside safe integer range`
+            );
+          }
+          value = Number(value);
+        }
       }
       // Convert null/undefined to empty string for Perspective compatibility
       if (value === undefined || value === null) {
@@ -255,6 +276,8 @@ export function QueryExplorer() {
   // Debounce refs for tail updates
   const tailUpdateTimeoutRef = useRef<number | null>(null);
   const pendingTailRecordsRef = useRef<TailRecord[]>([]);
+  // Track tables pending deletion to prevent leaks during unmount
+  const pendingDeleteRef = useRef<Table | null>(null);
 
   // Track previous tail config to detect changes
   const prevTailConfigRef = useRef<typeof tailConfig>(null);
@@ -464,13 +487,19 @@ export function QueryExplorer() {
 
         // Create new table first, then load into viewer, then delete old table
         // (Must load before delete - viewer holds a View on the old table)
+        // Track oldTable in ref to handle cleanup if component unmounts mid-transition
         const oldTable = tableRef.current;
+        pendingDeleteRef.current = oldTable;
+
         const newTable = await worker.table(columnar);
         tableRef.current = newTable;
         await viewer.load(newTable);
+
+        // Delete old table and clear pending ref
         if (oldTable) {
           await oldTable.delete();
         }
+        pendingDeleteRef.current = null;
 
         // Apply tail preset (no user config merge - tail mode is ephemeral)
         await viewer.restore(preset as unknown as Parameters<typeof viewer.restore>[0]);
@@ -551,12 +580,18 @@ export function QueryExplorer() {
     return () => viewer.removeEventListener('perspective-click', handleRowClick);
   }, []);
 
-  // Cleanup table on unmount
+  // Cleanup tables on unmount
   useEffect(() => {
     return () => {
+      // Delete current table
       if (tableRef.current) {
         tableRef.current.delete().catch(console.error);
         tableRef.current = null;
+      }
+      // Delete any table pending deletion (handles race during unmount)
+      if (pendingDeleteRef.current) {
+        pendingDeleteRef.current.delete().catch(console.error);
+        pendingDeleteRef.current = null;
       }
     };
   }, []);

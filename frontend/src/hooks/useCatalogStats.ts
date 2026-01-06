@@ -19,11 +19,70 @@ interface WorkerConfig {
   icebergProxyEnabled: boolean;
 }
 
+/** Default timeout for API requests (5 minutes) */
+const DEFAULT_TIMEOUT_MS = 300000;
+
+/** Maximum concurrent requests to avoid overwhelming browser connection limits */
+const MAX_CONCURRENCY = 5;
+
+/**
+ * Run async tasks with limited concurrency.
+ * Prevents overwhelming browser connection limits or triggering rate limiting.
+ */
+async function runWithConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number = MAX_CONCURRENCY
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let nextIndex = 0;
+
+  async function runNext(): Promise<void> {
+    while (nextIndex < tasks.length) {
+      const currentIndex = nextIndex++;
+      try {
+        const result = await tasks[currentIndex]();
+        results[currentIndex] = { status: 'fulfilled', value: result };
+      } catch (error) {
+        results[currentIndex] = { status: 'rejected', reason: error };
+      }
+    }
+  }
+
+  // Start 'limit' number of workers
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => runNext());
+  await Promise.all(workers);
+
+  return results;
+}
+
+/**
+ * Fetch with timeout and abort support.
+ */
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Fetch worker config from /v1/config endpoint.
  */
 async function fetchWorkerConfig(workerUrl: string): Promise<WorkerConfig> {
-  const response = await fetch(`${workerUrl}/v1/config`);
+  const response = await fetchWithTimeout(`${workerUrl}/v1/config`);
   if (!response.ok) {
     throw new Error(`Failed to fetch worker config: ${response.status}`);
   }
@@ -299,19 +358,23 @@ export function useCatalogStats(
       // Step 3: List all namespaces
       const namespaces = await listNamespaces(workerUrl, warehouse, r2Token);
 
-      // Step 4: List all tables in each namespace (in parallel)
-      const tablesByNamespace = await Promise.all(
-        namespaces.map(async (ns) => {
-          const nsString = ns.join('.');
-          try {
-            const tables = await listTables(workerUrl, warehouse, r2Token, nsString);
-            return { namespace: nsString, tables };
-          } catch (err) {
-            console.warn(`Failed to list tables in namespace ${nsString}:`, err);
-            return { namespace: nsString, tables: [] as TableIdentifier[] };
-          }
-        })
-      );
+      // Step 4: List all tables in each namespace (with concurrency limit)
+      const tableListTasks = namespaces.map((ns) => async () => {
+        const nsString = ns.join('.');
+        try {
+          const tables = await listTables(workerUrl, warehouse, r2Token, nsString);
+          return { namespace: nsString, tables };
+        } catch (err) {
+          console.warn(`Failed to list tables in namespace ${nsString}:`, err);
+          return { namespace: nsString, tables: [] as TableIdentifier[] };
+        }
+      });
+      const tableListResults = await runWithConcurrencyLimit(tableListTasks);
+      const tablesByNamespace = tableListResults
+        .filter((r): r is PromiseFulfilledResult<{ namespace: string; tables: TableIdentifier[] }> =>
+          r.status === 'fulfilled'
+        )
+        .map((r) => r.value);
 
       // Flatten table identifiers with their namespace strings
       const allTables: Array<{ namespace: string; identifier: TableIdentifier }> = [];
@@ -321,19 +384,18 @@ export function useCatalogStats(
         }
       }
 
-      // Step 5: Load metadata for each table (in parallel)
-      const tableStatsResults = await Promise.allSettled(
-        allTables.map(async ({ namespace, identifier }) => {
-          const tableResponse = await loadTable(
-            workerUrl,
-            warehouse,
-            r2Token,
-            namespace,
-            identifier.name
-          );
-          return extractTableStats(namespace, identifier.name, tableResponse);
-        })
-      );
+      // Step 5: Load metadata for each table (with concurrency limit)
+      const tableMetadataTasks = allTables.map(({ namespace, identifier }) => async () => {
+        const tableResponse = await loadTable(
+          workerUrl,
+          warehouse,
+          r2Token,
+          namespace,
+          identifier.name
+        );
+        return extractTableStats(namespace, identifier.name, tableResponse);
+      });
+      const tableStatsResults = await runWithConcurrencyLimit(tableMetadataTasks);
 
       // Collect successful results and log failures
       const tableStats: TableStats[] = [];

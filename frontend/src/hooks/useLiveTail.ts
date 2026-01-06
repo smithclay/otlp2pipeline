@@ -46,6 +46,9 @@ export function useLiveTail(
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
+  // Use ref for limit so onmessage handler always gets latest value
+  const limitRef = useRef(limit);
+  limitRef.current = limit;
 
   const cleanup = useCallback(() => {
     if (reconnectTimeoutRef.current !== null) {
@@ -69,9 +72,10 @@ export function useLiveTail(
 
     // Build WebSocket URL
     const wsUrl = workerUrl
-      .replace(/^http/, 'ws')
+      .replace(/^https:/, 'wss:')
+      .replace(/^http:/, 'ws:')
       .replace(/\/$/, '');
-    const fullUrl = `${wsUrl}/v1/tail/${encodeURIComponent(service)}/${signal}`;
+    const fullUrl = `${wsUrl}/v1/tail/${encodeURIComponent(service)}/${encodeURIComponent(signal)}`;
 
     setStatus(
       reconnectAttemptRef.current > 0
@@ -94,9 +98,10 @@ export function useLiveTail(
         if (msg.type === 'record' && msg.data) {
           setRecords((prev) => {
             const next = [...prev, msg.data as TailRecord];
-            // Sliding window: remove oldest if over limit
-            if (next.length > limit) {
-              return next.slice(next.length - limit);
+            // Sliding window: remove oldest if over limit (use ref for latest value)
+            const currentLimit = limitRef.current;
+            if (next.length > currentLimit) {
+              return next.slice(next.length - currentLimit);
             }
             return next;
           });
