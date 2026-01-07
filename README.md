@@ -54,10 +54,10 @@ The CLI creates the R2 bucket, streams, sinks, and pipelines for all signal type
 
 ```bash
 # Preview what would be created
-frostbit plan prod
+frostbit plan prod01
 
 # Create environment
-frostbit create prod --token <R2_API_TOKEN> --output wrangler.toml
+frostbit create prod01 --r2-token <R2_API_TOKEN> --output wrangler.toml
 ```
 
 This creates:

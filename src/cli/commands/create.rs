@@ -142,7 +142,13 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("    Creating: {}", name);
 
         match client
-            .create_sink(&name, &bucket, signal.table, &args.r2_token)
+            .create_sink(
+                &name,
+                &bucket,
+                signal.table,
+                &args.r2_token,
+                args.rolling_interval,
+            )
             .await?
         {
             Some(_) => eprintln!("      Created"),
@@ -166,7 +172,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     // Step 9: Generate wrangler.toml
     eprintln!("\n==> Generating wrangler.toml...");
-    let wrangler_toml = generate_wrangler_toml(&args, &endpoints);
+    let wrangler_toml = generate_wrangler_toml(&args, &endpoints, client.account_id(), &bucket);
 
     match &args.output {
         Some(path) => {
@@ -206,7 +212,12 @@ fn load_schema(path: &str) -> Result<Vec<SchemaField>> {
     Ok(fields)
 }
 
-fn generate_wrangler_toml(args: &CreateArgs, endpoints: &[(&str, String)]) -> String {
+fn generate_wrangler_toml(
+    args: &CreateArgs,
+    endpoints: &[(&str, String)],
+    account_id: &str,
+    bucket: &str,
+) -> String {
     let mut toml = format!(
         r#"name = "frostbit-{}"
 main = "build/worker/shim.mjs"
@@ -224,6 +235,10 @@ command = "cargo install -q worker-build && worker-build --release"
         let var_name = format!("PIPELINE_{}", signal.to_uppercase());
         toml.push_str(&format!("{} = \"{}\"\n", var_name, endpoint));
     }
+
+    // R2 Catalog configuration for Iceberg queries
+    toml.push_str(&format!("R2_CATALOG_ACCOUNT_ID = \"{}\"\n", account_id));
+    toml.push_str(&format!("R2_CATALOG_BUCKET = \"{}\"\n", bucket));
 
     toml.push_str(&format!(
         r#"AGGREGATOR_ENABLED = "{}"

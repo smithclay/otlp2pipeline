@@ -81,8 +81,6 @@ struct SinkConfig<'a> {
 
 #[derive(Serialize)]
 struct RollingPolicy {
-    /// Maximum file size in bytes before rollover
-    file_size_bytes: u64,
     /// File write frequency in seconds (default: 300)
     interval_seconds: u32,
 }
@@ -159,6 +157,7 @@ impl CloudflareClient {
         bucket: &str,
         table_name: &str,
         token: &str,
+        interval_seconds: u32,
     ) -> Result<Option<Sink>> {
         self.post_idempotent(
             "/pipelines/v1/sinks",
@@ -174,10 +173,7 @@ impl CloudflareClient {
                     namespace: "default",
                     table_name,
                     token,
-                    rolling_policy: RollingPolicy {
-                        file_size_bytes: 256 * 1024 * 1024, // 256 MB
-                        interval_seconds: 300,
-                    },
+                    rolling_policy: RollingPolicy { interval_seconds },
                 },
             },
         )

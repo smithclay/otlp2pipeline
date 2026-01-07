@@ -149,6 +149,10 @@ pub struct CreateArgs {
     /// Aggregator retention in minutes
     #[arg(long, default_value = "60")]
     pub retention: u32,
+
+    /// Rolling policy interval in seconds (how often files are written to R2)
+    #[arg(long, default_value = "300")]
+    pub rolling_interval: u32,
 }
 
 #[derive(clap::Args)]
