@@ -8,7 +8,7 @@ pub mod sender;
 mod durable_object;
 
 #[cfg(target_arch = "wasm32")]
-pub use durable_object::{RegistryDO, ServiceRecord};
+pub use durable_object::{MetricRecord, RegistryDO, ServiceRecord};
 #[cfg(target_arch = "wasm32")]
 pub use sender::WasmRegistrySender;
 
@@ -29,4 +29,11 @@ pub struct ServiceRecord {
     pub has_logs: i64,
     pub has_traces: i64,
     pub has_metrics: i64,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MetricRecord {
+    pub name: String,
+    pub metric_type: String,
 }
