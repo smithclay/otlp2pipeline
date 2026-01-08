@@ -141,25 +141,26 @@ fn extract_service_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<String> {
     service_names.into_iter().collect()
 }
 
-/// Extract unique (metric_name, metric_type) pairs from grouped records
+/// Extract unique (metric_name, metric_type) pairs from grouped records.
+/// Uses _table field as the metric type since _metric_type is cleared by VRL.
 #[cfg(target_arch = "wasm32")]
 fn extract_metric_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<(String, String)> {
     let mut metric_names = HashSet::new();
 
-    for values in grouped.values() {
+    // Only process metric tables (gauge, sum, histogram, exp_histogram, summary)
+    let metric_tables = ["gauge", "sum", "histogram", "exp_histogram", "summary"];
+
+    for (table, values) in grouped {
+        if !metric_tables.contains(&table.as_str()) {
+            continue;
+        }
+
         for value in values {
             if let Some(obj) = value.as_object() {
-                let name = obj
-                    .get("metric_name")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let metric_type = obj
-                    .get("_metric_type")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                if let (Some(name), Some(metric_type)) = (name, metric_type) {
-                    metric_names.insert((name, metric_type));
+                if let Some(name) = obj.get("metric_name").and_then(|v| v.as_str()) {
+                    if !name.is_empty() {
+                        metric_names.insert((name.to_string(), table.clone()));
+                    }
                 }
             }
         }
