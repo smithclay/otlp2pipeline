@@ -6,40 +6,23 @@ import { fetchWorkerConfig, type WorkerConfig } from './fetchWithTimeout.js';
 
 let db: duckdb.AsyncDuckDB | null = null;
 let initPromise: Promise<duckdb.AsyncDuckDB> | null = null;
-let initLock = false;
 
 /**
  * Initialize DuckDB WASM singleton.
  * Returns the same instance on subsequent calls.
- * Uses a synchronous lock to prevent race conditions during concurrent initialization.
+ * Uses a promise-based singleton pattern to handle concurrent initialization.
  */
 export async function initDuckDB(): Promise<duckdb.AsyncDuckDB> {
   // Return existing instance if available
   if (db) return db;
 
   // Return existing promise if initialization is in progress
+  // This handles concurrent calls - all callers wait on the same promise
   if (initPromise) return initPromise;
 
-  // Synchronous lock to prevent TOCTOU race between checking initPromise and setting it
-  // Two concurrent calls could both pass the above checks before either sets initPromise
-  if (initLock) {
-    // Another call is between the check and setting initPromise, wait and retry
-    await new Promise(resolve => setTimeout(resolve, 10));
-    return initDuckDB();
-  }
-
-  initLock = true;
-
-  // Double-check after acquiring lock
-  if (initPromise) {
-    initLock = false;
-    return initPromise;
-  }
-
+  // Create the initialization promise synchronously to prevent race conditions
+  // Any concurrent calls after this point will see initPromise and wait on it
   initPromise = (async () => {
-    // Release the lock now that initPromise is set
-    initLock = false;
-
     try {
       // Get the best available bundle for this browser
       const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();

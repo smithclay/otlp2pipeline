@@ -6,6 +6,11 @@
  *
  * The r2Token is needed client-side because DuckDB's Iceberg extension makes direct
  * requests to R2 for parquet data files (catalog requests go through the proxy).
+ *
+ * SECURITY NOTE: Credentials are stored in localStorage, which persists across
+ * browser sessions. This is accessible to any JavaScript running on the same origin.
+ * This is an intentional tradeoff to enable client-side DuckDB queries against R2
+ * without requiring re-authentication on each visit.
  */
 
 const STORAGE_KEY = 'frostbit:credentials';

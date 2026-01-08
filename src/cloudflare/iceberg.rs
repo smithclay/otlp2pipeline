@@ -22,6 +22,17 @@ pub struct IcebergClient {
 impl IcebergClient {
     /// Create a new Iceberg REST catalog client
     pub fn new(token: String, account_id: String, bucket: String) -> Result<Self> {
+        // Validate R2 token format
+        if token.is_empty() {
+            bail!("R2 API token is required. Create one at: dash.cloudflare.com > R2 > Manage R2 API Tokens");
+        }
+        if token.len() < 20 {
+            bail!("R2 API token appears too short. Verify you copied the complete token.");
+        }
+        if token.len() > 200 {
+            bail!("R2 API token appears too long. Verify you copied only the token value.");
+        }
+
         let client = Client::builder()
             .user_agent("frostbit-cli")
             .timeout(REQUEST_TIMEOUT)

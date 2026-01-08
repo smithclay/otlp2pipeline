@@ -213,6 +213,12 @@ export function ConnectionForm({ onSave, initialValues, submitLabel = 'Connect' 
           }}
           required
         />
+        <p
+          className="mt-1.5 text-xs"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          Stored locally in your browser. Use Settings to clear.
+        </p>
       </div>
 
       {/* Error Message */}

@@ -22,6 +22,7 @@ import { useServices } from '../hooks/useServices';
 import { OverviewBar, type OverviewData } from '../components/OverviewBar';
 import { ViewToggle, type ViewType } from '../components/ViewToggle';
 import { ErrorAlert } from '../components/ErrorAlert';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 import '@finos/perspective-viewer';
 import '@finos/perspective-viewer-datagrid';
@@ -282,6 +283,8 @@ export function QueryExplorer() {
   const pendingTailRecordsRef = useRef<TailRecord[]>([]);
   // Track tables pending deletion to prevent leaks during unmount
   const pendingDeleteRef = useRef<Table | null>(null);
+  // Track in-flight table creation to prevent leaks if unmount happens mid-transition
+  const inFlightTableRef = useRef<Table | null>(null);
 
   // Track previous tail config to detect changes
   const prevTailConfigRef = useRef<typeof tailConfig>(null);
@@ -496,8 +499,14 @@ export function QueryExplorer() {
         pendingDeleteRef.current = oldTable;
 
         const newTable = await worker.table(columnar);
+        // Track in-flight table immediately to prevent leak if unmount happens now
+        inFlightTableRef.current = newTable;
+
         tableRef.current = newTable;
         await viewer.load(newTable);
+
+        // Table is now tracked by tableRef, clear in-flight ref
+        inFlightTableRef.current = null;
 
         // Delete old table and clear pending ref
         if (oldTable) {
@@ -596,6 +605,11 @@ export function QueryExplorer() {
       if (pendingDeleteRef.current) {
         pendingDeleteRef.current.delete().catch(console.error);
         pendingDeleteRef.current = null;
+      }
+      // Delete any in-flight table (handles race if unmount during table creation)
+      if (inFlightTableRef.current) {
+        inFlightTableRef.current.delete().catch(console.error);
+        inFlightTableRef.current = null;
       }
     };
   }, []);
@@ -713,10 +727,12 @@ export function QueryExplorer() {
               </div>
             )}
 
-            <perspective-viewer
-              ref={viewerRef}
-              style={{ width: '100%', height: '100%' }}
-            />
+            <ErrorBoundary>
+              <perspective-viewer
+                ref={viewerRef}
+                style={{ width: '100%', height: '100%' }}
+              />
+            </ErrorBoundary>
             <SpanDetailsPanel
               span={selectedSpan}
               onClose={() => setSelectedSpan(null)}
@@ -726,7 +742,9 @@ export function QueryExplorer() {
               onClose={() => setSelectedLog(null)}
               onTraceClick={(traceId) => {
                 // Navigate to query with trace filter
-                setSql(`SELECT * FROM r2_catalog.default.traces WHERE trace_id = '${traceId}'`);
+                // Escape single quotes to prevent SQL injection
+                const escapedTraceId = traceId.replace(/'/g, "''");
+                setSql(`SELECT * FROM r2_catalog.default.traces WHERE trace_id = '${escapedTraceId}'`);
                 setActiveTab('query');
                 setSelectedLog(null);
                 handleRun();
