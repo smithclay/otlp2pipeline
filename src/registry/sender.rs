@@ -45,21 +45,6 @@ impl WasmRegistrySender {
 #[async_trait::async_trait(?Send)]
 impl RegistrySender for WasmRegistrySender {
     async fn register_services(&self, services: Vec<String>, signal: Signal) -> Result<(), String> {
-        // Filter to only new services not in local cache
-        let new_services: Vec<String> = services
-            .into_iter()
-            .filter(|name| !cache::is_known(name))
-            .collect();
-
-        if new_services.is_empty() {
-            return Ok(());
-        }
-
-        // Send to DO for persistence first
-        let stub = self
-            .get_stub()
-            .map_err(|e| format!("Failed to get RegistryDO stub: {}", e))?;
-
         // Map signal to registry categories (logs, traces, metrics)
         // All metric signal types (Gauge, Sum, Histogram, etc.) map to "metrics"
         let signal_name = match signal {
@@ -71,6 +56,21 @@ impl RegistrySender for WasmRegistrySender {
             | Signal::ExpHistogram
             | Signal::Summary => "metrics",
         };
+
+        // Filter to only new (service, signal) combinations not in local cache
+        let new_services: Vec<String> = services
+            .into_iter()
+            .filter(|name| !cache::is_known(name, signal_name))
+            .collect();
+
+        if new_services.is_empty() {
+            return Ok(());
+        }
+
+        // Send to DO for persistence first
+        let stub = self
+            .get_stub()
+            .map_err(|e| format!("Failed to get RegistryDO stub: {}", e))?;
 
         let registrations: Vec<ServiceRegistration> = new_services
             .iter()
@@ -115,7 +115,7 @@ impl RegistrySender for WasmRegistrySender {
 
         // Only add to local cache after successful DO write
         for service in &new_services {
-            cache::add_locally(service.clone());
+            cache::add_locally(service.clone(), signal_name.to_string());
         }
 
         Ok(())
