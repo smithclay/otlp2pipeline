@@ -5,10 +5,13 @@ use crate::signal::Signal;
 #[cfg(target_arch = "wasm32")]
 use super::cache;
 #[cfg(target_arch = "wasm32")]
-use super::durable_object::{RegisterRequest, ServiceRecord, ServiceRegistration};
+use super::durable_object::{
+    MetricRecord, MetricRegistration, RegisterMetricsRequest, RegisterRequest, ServiceRecord,
+    ServiceRegistration,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
-use super::ServiceRecord;
+use super::{MetricRecord, ServiceRecord};
 
 /// Trait for registering services with the RegistryDO.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -19,6 +22,12 @@ pub trait RegistrySender {
 
     /// Get all services (for API endpoint).
     async fn get_all_services(&self) -> Result<Vec<ServiceRecord>, String>;
+
+    /// Register metrics (fire-and-forget - used via ctx.wait_until).
+    async fn register_metrics(&self, metrics: Vec<(String, String)>) -> Result<(), String>;
+
+    /// Get all metrics (for API endpoint).
+    async fn get_all_metrics(&self) -> Result<Vec<MetricRecord>, String>;
 }
 
 /// WASM implementation that uses local cache and sends to RegistryDO.
@@ -161,6 +170,112 @@ impl RegistrySender for WasmRegistrySender {
 
         Ok(services)
     }
+
+    async fn register_metrics(&self, metrics: Vec<(String, String)>) -> Result<(), String> {
+        // Filter to only new (name, type) combinations not in local cache
+        let new_metrics: Vec<(String, String)> = metrics
+            .into_iter()
+            .filter(|(name, metric_type)| !cache::is_metric_known(name, metric_type))
+            .collect();
+
+        if new_metrics.is_empty() {
+            return Ok(());
+        }
+
+        // Send to DO for persistence
+        let stub = self
+            .get_stub()
+            .map_err(|e| format!("Failed to get RegistryDO stub: {}", e))?;
+
+        let registrations: Vec<MetricRegistration> = new_metrics
+            .iter()
+            .map(|(name, metric_type)| MetricRegistration {
+                name: name.clone(),
+                metric_type: metric_type.clone(),
+            })
+            .collect();
+
+        let request_body = RegisterMetricsRequest {
+            metrics: registrations,
+        };
+
+        let body = serde_json::to_string(&request_body)
+            .map_err(|e| format!("Failed to serialize metrics request: {}", e))?;
+
+        let mut request = worker::Request::new_with_init(
+            "http://do/register-metrics",
+            worker::RequestInit::new()
+                .with_method(worker::Method::Post)
+                .with_body(Some(body.into())),
+        )
+        .map_err(|e| format!("Failed to create request: {}", e))?;
+
+        request
+            .headers_mut()
+            .map_err(|e| format!("Failed to get request headers: {}", e))?
+            .set("Content-Type", "application/json")
+            .map_err(|e| format!("Failed to set Content-Type header: {}", e))?;
+
+        let response = stub
+            .fetch_with_request(request)
+            .await
+            .map_err(|e| format!("Failed to send to RegistryDO: {}", e))?;
+
+        if response.status_code() >= 400 {
+            return Err(format!(
+                "RegistryDO returned status {}",
+                response.status_code()
+            ));
+        }
+
+        // Only add to local cache after successful DO write
+        for (name, metric_type) in &new_metrics {
+            cache::add_metric_locally(name.clone(), metric_type.clone());
+        }
+
+        Ok(())
+    }
+
+    async fn get_all_metrics(&self) -> Result<Vec<MetricRecord>, String> {
+        let stub = self
+            .get_stub()
+            .map_err(|e| format!("Failed to get RegistryDO stub: {}", e))?;
+
+        let request = worker::Request::new_with_init(
+            "http://do/list-metrics",
+            worker::RequestInit::new().with_method(worker::Method::Get),
+        )
+        .map_err(|e| format!("Failed to create request: {}", e))?;
+
+        let mut response = stub
+            .fetch_with_request(request)
+            .await
+            .map_err(|e| format!("Failed to fetch from RegistryDO: {}", e))?;
+
+        if response.status_code() >= 400 {
+            return Err(format!(
+                "RegistryDO returned status {}",
+                response.status_code()
+            ));
+        }
+
+        let text = response
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+        let metrics: Vec<MetricRecord> = serde_json::from_str(&text)
+            .map_err(|e| format!("Failed to parse metric records: {}", e))?;
+
+        // Refresh cache
+        let metric_tuples: Vec<(String, String)> = metrics
+            .iter()
+            .map(|m| (m.name.clone(), m.metric_type.clone()))
+            .collect();
+        cache::refresh_metrics(metric_tuples);
+
+        Ok(metrics)
+    }
 }
 
 /// NoOp implementation for native builds (testing).
@@ -194,6 +309,16 @@ impl RegistrySender for NativeRegistrySender {
     }
 
     async fn get_all_services(&self) -> Result<Vec<ServiceRecord>, String> {
+        // NoOp for native - return empty list
+        Ok(vec![])
+    }
+
+    async fn register_metrics(&self, _metrics: Vec<(String, String)>) -> Result<(), String> {
+        // NoOp for native
+        Ok(())
+    }
+
+    async fn get_all_metrics(&self) -> Result<Vec<MetricRecord>, String> {
         // NoOp for native - return empty list
         Ok(vec![])
     }
