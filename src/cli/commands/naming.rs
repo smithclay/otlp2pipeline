@@ -25,6 +25,10 @@ pub fn pipeline_name(env: &str, signal: &str) -> String {
     format!("frostbit_{}_{}", normalize(env).replace('-', "_"), signal)
 }
 
+pub fn worker_name(env: &str) -> String {
+    format!("frostbit-{}", normalize(env).replace('_', "-"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,5 +64,15 @@ mod tests {
             stream_name("frostbit-test05", "logs"),
             "frostbit_test05_logs"
         );
+    }
+
+    #[test]
+    fn test_worker_name_with_prefix() {
+        assert_eq!(worker_name("frostbit-test05"), "frostbit-test05");
+    }
+
+    #[test]
+    fn test_worker_name_without_prefix() {
+        assert_eq!(worker_name("test05"), "frostbit-test05");
     }
 }

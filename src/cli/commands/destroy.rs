@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::io::{self, Write};
 
-use super::naming::{bucket_name, pipeline_name, sink_name, stream_name};
+use super::naming::{bucket_name, pipeline_name, sink_name, stream_name, worker_name};
 use crate::cli::auth;
 use crate::cli::DestroyArgs;
 use crate::cloudflare::CloudflareClient;
@@ -101,6 +101,16 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
             } else {
                 eprintln!("    Failed: {} (may need manual cleanup)", e);
             }
+        }
+    }
+
+    // Step 5: Delete worker (optional)
+    if args.include_worker {
+        let worker = worker_name(&args.name);
+        eprintln!("\n==> Deleting worker: {}", worker);
+        match client.delete_worker(&worker).await {
+            Ok(_) => eprintln!("    Deleted"),
+            Err(e) => eprintln!("    Failed: {}", e),
         }
     }
 

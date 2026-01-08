@@ -163,6 +163,10 @@ pub struct DestroyArgs {
     /// Skip confirmation prompt
     #[arg(long)]
     pub force: bool,
+
+    /// Also delete the worker script
+    #[arg(long)]
+    pub include_worker: bool,
 }
 
 #[derive(clap::Args)]
