@@ -2,40 +2,7 @@
  * Frostbit API client
  */
 
-/** Default timeout for API requests (5 minutes) */
-const DEFAULT_TIMEOUT_MS = 300000;
-
-/**
- * Fetch with timeout and abort support.
- * @param url - URL to fetch
- * @param options - Fetch options
- * @param timeoutMs - Timeout in milliseconds (default: 30000)
- * @returns Response from fetch
- * @throws Error if request times out or fails
- */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit = {},
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
+import { fetchWithTimeout } from './fetchWithTimeout.js';
 
 export interface Service {
   name: string;
@@ -152,6 +119,42 @@ function toTraceStats(obj: Record<string, unknown>): TraceStats {
 }
 
 /**
+ * Generic array validation and conversion helper.
+ * Validates each item, converts valid ones, and logs/throws on failures.
+ */
+function validateAndConvert<T>(
+  data: unknown[],
+  validator: (item: unknown) => boolean,
+  converter: (item: Record<string, unknown>) => T,
+  typeName: string
+): T[] {
+  const results: T[] = [];
+  const invalidIndices: number[] = [];
+
+  for (let i = 0; i < data.length; i++) {
+    if (validator(data[i])) {
+      results.push(converter(data[i] as Record<string, unknown>));
+    } else {
+      console.warn(`Invalid ${typeName} at index`, i, ':', data[i]);
+      invalidIndices.push(i);
+    }
+  }
+
+  // If ALL items were invalid, this indicates an API compatibility issue
+  if (data.length > 0 && results.length === 0) {
+    console.error(`All ${typeName} failed validation:`, data);
+    throw new Error(`API returned ${typeName.toLowerCase()} in unexpected format. Check API version compatibility.`);
+  }
+
+  // Log prominently if significant portion dropped
+  if (invalidIndices.length > 0) {
+    console.error(`Dropped ${invalidIndices.length} of ${data.length} ${typeName} due to validation failure`);
+  }
+
+  return results;
+}
+
+/**
  * Response from the all-services stats endpoint.
  */
 export interface AllServicesStatsResponse {
@@ -227,30 +230,7 @@ export async function fetchServices(workerUrl: string): Promise<Service[]> {
     throw new Error('Invalid API response: expected array of services');
   }
 
-  const services: Service[] = [];
-  const invalidIndices: number[] = [];
-
-  for (let i = 0; i < data.length; i++) {
-    if (isServiceLike(data[i])) {
-      services.push(toService(data[i] as Record<string, unknown>));
-    } else {
-      console.warn('Invalid service at index', i, ':', data[i]);
-      invalidIndices.push(i);
-    }
-  }
-
-  // If ALL items were invalid, this indicates an API compatibility issue
-  if (data.length > 0 && services.length === 0) {
-    console.error('All services failed validation:', data);
-    throw new Error('API returned data in unexpected format. Check API version compatibility.');
-  }
-
-  // Log prominently if significant portion dropped
-  if (invalidIndices.length > 0) {
-    console.error(`Dropped ${invalidIndices.length} of ${data.length} services due to validation failure`);
-  }
-
-  return services;
+  return validateAndConvert(data, isServiceLike, toService, 'Service');
 }
 
 /**
@@ -282,30 +262,7 @@ export async function fetchLogStats(
     throw new Error('Invalid API response: expected array of LogStats');
   }
 
-  const stats: LogStats[] = [];
-  const invalidIndices: number[] = [];
-
-  for (let i = 0; i < data.length; i++) {
-    if (isLogStatsLike(data[i])) {
-      stats.push(toLogStats(data[i] as Record<string, unknown>));
-    } else {
-      console.warn('Invalid LogStats at index', i, ':', data[i]);
-      invalidIndices.push(i);
-    }
-  }
-
-  // If ALL items were invalid, this indicates an API compatibility issue
-  if (data.length > 0 && stats.length === 0) {
-    console.error('All LogStats failed validation:', data);
-    throw new Error('API returned log stats in unexpected format. Check API version compatibility.');
-  }
-
-  // Log prominently if significant portion dropped
-  if (invalidIndices.length > 0) {
-    console.error(`Dropped ${invalidIndices.length} of ${data.length} LogStats due to validation failure`);
-  }
-
-  return stats;
+  return validateAndConvert(data, isLogStatsLike, toLogStats, 'LogStats');
 }
 
 /**
@@ -337,28 +294,5 @@ export async function fetchTraceStats(
     throw new Error('Invalid API response: expected array of TraceStats');
   }
 
-  const stats: TraceStats[] = [];
-  const invalidIndices: number[] = [];
-
-  for (let i = 0; i < data.length; i++) {
-    if (isTraceStatsLike(data[i])) {
-      stats.push(toTraceStats(data[i] as Record<string, unknown>));
-    } else {
-      console.warn('Invalid TraceStats at index', i, ':', data[i]);
-      invalidIndices.push(i);
-    }
-  }
-
-  // If ALL items were invalid, this indicates an API compatibility issue
-  if (data.length > 0 && stats.length === 0) {
-    console.error('All TraceStats failed validation:', data);
-    throw new Error('API returned trace stats in unexpected format. Check API version compatibility.');
-  }
-
-  // Log prominently if significant portion dropped
-  if (invalidIndices.length > 0) {
-    console.error(`Dropped ${invalidIndices.length} of ${data.length} TraceStats due to validation failure`);
-  }
-
-  return stats;
+  return validateAndConvert(data, isTraceStatsLike, toTraceStats, 'TraceStats');
 }

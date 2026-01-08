@@ -2,6 +2,7 @@
  * DuckDB WASM initialization and Iceberg/R2 connection utilities.
  */
 import * as duckdb from '@duckdb/duckdb-wasm';
+import { fetchWorkerConfig, type WorkerConfig } from './fetchWithTimeout.js';
 
 let db: duckdb.AsyncDuckDB | null = null;
 let initPromise: Promise<duckdb.AsyncDuckDB> | null = null;
@@ -92,26 +93,6 @@ export interface R2Config {
   r2Token: string;
 }
 
-/**
- * Config response from worker's /v1/config endpoint.
- */
-interface WorkerConfig {
-  accountId: string | null;
-  bucketName: string | null;
-  icebergProxyEnabled: boolean;
-}
-
-/**
- * Fetch R2 catalog configuration from the worker.
- * @throws Error if the worker is not configured for R2 catalog access
- */
-async function fetchWorkerConfig(workerUrl: string): Promise<WorkerConfig> {
-  const response = await fetch(`${workerUrl}/v1/config`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch worker config: ${response.status}`);
-  }
-  return response.json();
-}
 
 /**
  * Escape single quotes for SQL string literals.

@@ -21,6 +21,7 @@ import { QueryInput } from '../components/QueryInput';
 import { useServices } from '../hooks/useServices';
 import { OverviewBar, type OverviewData } from '../components/OverviewBar';
 import { ViewToggle, type ViewType } from '../components/ViewToggle';
+import { ErrorAlert } from '../components/ErrorAlert';
 
 import '@finos/perspective-viewer';
 import '@finos/perspective-viewer-datagrid';
@@ -656,48 +657,10 @@ export function QueryExplorer() {
         return data ? <OverviewBar data={data} /> : null;
       })()}
 
-      {/* Tail Error Display */}
-      {tailStatus.state === 'error' && (
-        <div
-          className="rounded-lg p-4"
-          style={{
-            backgroundColor: 'var(--color-error-bg)',
-            border: '1px solid var(--color-error)',
-          }}
-        >
-          <p className="font-mono text-sm" style={{ color: 'var(--color-error)' }}>
-            {tailStatus.message}
-          </p>
-        </div>
-      )}
-
-      {/* Query Error Display */}
-      {queryError && (
-        <div
-          className="rounded-lg p-4"
-          style={{
-            backgroundColor: 'var(--color-error-bg)',
-            border: '1px solid var(--color-error)',
-          }}
-        >
-          <p className="font-mono text-sm" style={{ color: 'var(--color-error)' }}>
-            {queryError}
-          </p>
-        </div>
-      )}
-
-      {/* DuckDB Error */}
-      {duckdbError && (
-        <div
-          className="rounded-lg p-4"
-          style={{
-            backgroundColor: 'var(--color-error-bg)',
-            border: '1px solid var(--color-error)',
-          }}
-        >
-          <p style={{ color: 'var(--color-error)' }}>{duckdbError}</p>
-        </div>
-      )}
+      {/* Error Displays */}
+      {tailStatus.state === 'error' && <ErrorAlert message={tailStatus.message} />}
+      {queryError && <ErrorAlert message={queryError} />}
+      {duckdbError && <ErrorAlert message={duckdbError} />}
 
       {/* Connection Status */}
       {!isConfigured && (

@@ -8,19 +8,8 @@ import {
   LoadTableResponse,
   TableMetadata,
   Schema,
-} from '../lib/iceberg';
-
-/**
- * Config response from worker's /v1/config endpoint.
- */
-interface WorkerConfig {
-  accountId: string | null;
-  bucketName: string | null;
-  icebergProxyEnabled: boolean;
-}
-
-/** Default timeout for API requests (5 minutes) */
-const DEFAULT_TIMEOUT_MS = 300000;
+} from '../lib/iceberg.js';
+import { fetchWorkerConfig } from '../lib/fetchWithTimeout.js';
 
 /** Maximum concurrent requests to avoid overwhelming browser connection limits */
 const MAX_CONCURRENCY = 5;
@@ -53,40 +42,6 @@ async function runWithConcurrencyLimit<T>(
   await Promise.all(workers);
 
   return results;
-}
-
-/**
- * Fetch with timeout and abort support.
- */
-async function fetchWithTimeout(
-  url: string,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    return response;
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
- * Fetch worker config from /v1/config endpoint.
- */
-async function fetchWorkerConfig(workerUrl: string): Promise<WorkerConfig> {
-  const response = await fetchWithTimeout(`${workerUrl}/v1/config`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch worker config: ${response.status}`);
-  }
-  return response.json();
 }
 
 /**
