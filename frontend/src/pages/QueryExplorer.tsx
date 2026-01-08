@@ -317,6 +317,7 @@ export function QueryExplorer() {
   const handleTailStartStop = useCallback(() => {
     if (tailStatus.state !== 'idle') {
       stopTail();
+      setTailConfig(null);  // Clear config to prevent effect from restarting
       return;
     }
 
