@@ -25,7 +25,7 @@ pub async fn execute_connect_claude_code(args: ConnectClaudeCodeArgs) -> Result<
 
 fn generate_collector_config(endpoint: &str) -> String {
     format!(
-        r#"# OpenTelemetry Collector configuration for frostbit
+        r#"# OpenTelemetry Collector configuration for otlp2pipeline
 # Save as otel-collector-config.yaml and run:
 #   otelcol --config otel-collector-config.yaml
 
@@ -77,7 +77,7 @@ fn generate_claude_code_config(endpoint: &str, format: &str) -> String {
 
 fn generate_claude_code_shell(endpoint: &str) -> String {
     format!(
-        r#"# Claude Code OpenTelemetry configuration for frostbit
+        r#"# Claude Code OpenTelemetry configuration for otlp2pipeline
 # Add to your shell profile (~/.bashrc, ~/.zshrc) or run before starting claude:
 
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
@@ -102,7 +102,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT={endpoint}
 
 fn generate_claude_code_json(endpoint: &str) -> String {
     format!(
-        r#"# Claude Code managed-settings.json for frostbit
+        r#"# Claude Code managed-settings.json for otlp2pipeline
 # Save to one of these locations (requires admin privileges):
 #   macOS:     /Library/Application Support/ClaudeCode/managed-settings.json
 #   Linux/WSL: /etc/claude-code/managed-settings.json

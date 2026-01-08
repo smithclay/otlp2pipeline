@@ -5,8 +5,8 @@ pub mod url;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "frostbit")]
-#[command(about = "Manage frostbit infrastructure on Cloudflare")]
+#[command(name = "otlp2pipeline")]
+#[command(about = "Manage otlp2pipeline infrastructure on Cloudflare")]
 #[command(version)]
 pub struct Cli {
     #[command(subcommand)]
@@ -57,10 +57,10 @@ pub enum BucketCommands {
 
 #[derive(clap::Args)]
 pub struct BucketDeleteArgs {
-    /// Environment name (bucket will be frostbit-{name})
+    /// Environment name (bucket will be otlp2pipeline-{name})
     pub name: String,
 
-    /// Override bucket name (use exact name instead of frostbit-{name})
+    /// Override bucket name (use exact name instead of otlp2pipeline-{name})
     #[arg(long)]
     pub bucket: Option<String>,
 

@@ -1,7 +1,7 @@
-/// Normalize environment name by stripping frostbit prefix if present
+/// Normalize environment name by stripping otlp2pipeline prefix if present
 pub fn normalize(name: &str) -> &str {
-    name.strip_prefix("frostbit-")
-        .or_else(|| name.strip_prefix("frostbit_"))
+    name.strip_prefix("otlp2pipeline-")
+        .or_else(|| name.strip_prefix("otlp2pipeline_"))
         .unwrap_or(name)
 }
 
@@ -16,27 +16,35 @@ fn normalize_with_underscores(env: &str) -> String {
 }
 
 pub fn bucket_name(env: &str) -> String {
-    format!("frostbit-{}", normalize_with_hyphens(env))
+    format!("otlp2pipeline-{}", normalize_with_hyphens(env))
 }
 
 pub fn stream_name(env: &str, signal: &str) -> String {
-    format!("frostbit_{}_{}", normalize_with_underscores(env), signal)
+    format!(
+        "otlp2pipeline_{}_{}",
+        normalize_with_underscores(env),
+        signal
+    )
 }
 
 pub fn sink_name(env: &str, signal: &str) -> String {
     format!(
-        "frostbit_{}_{}_sink",
+        "otlp2pipeline_{}_{}_sink",
         normalize_with_underscores(env),
         signal
     )
 }
 
 pub fn pipeline_name(env: &str, signal: &str) -> String {
-    format!("frostbit_{}_{}", normalize_with_underscores(env), signal)
+    format!(
+        "otlp2pipeline_{}_{}",
+        normalize_with_underscores(env),
+        signal
+    )
 }
 
 pub fn worker_name(env: &str) -> String {
-    format!("frostbit-{}", normalize_with_hyphens(env))
+    format!("otlp2pipeline-{}", normalize_with_hyphens(env))
 }
 
 #[cfg(test)]
@@ -45,12 +53,12 @@ mod tests {
 
     #[test]
     fn test_normalize_strips_dash_prefix() {
-        assert_eq!(normalize("frostbit-test05"), "test05");
+        assert_eq!(normalize("otlp2pipeline-test05"), "test05");
     }
 
     #[test]
     fn test_normalize_strips_underscore_prefix() {
-        assert_eq!(normalize("frostbit_test05"), "test05");
+        assert_eq!(normalize("otlp2pipeline_test05"), "test05");
     }
 
     #[test]
@@ -60,29 +68,29 @@ mod tests {
 
     #[test]
     fn test_bucket_name_with_prefix() {
-        assert_eq!(bucket_name("frostbit-test05"), "frostbit-test05");
+        assert_eq!(bucket_name("otlp2pipeline-test05"), "otlp2pipeline-test05");
     }
 
     #[test]
     fn test_bucket_name_without_prefix() {
-        assert_eq!(bucket_name("test05"), "frostbit-test05");
+        assert_eq!(bucket_name("test05"), "otlp2pipeline-test05");
     }
 
     #[test]
     fn test_stream_name_with_prefix() {
         assert_eq!(
-            stream_name("frostbit-test05", "logs"),
-            "frostbit_test05_logs"
+            stream_name("otlp2pipeline-test05", "logs"),
+            "otlp2pipeline_test05_logs"
         );
     }
 
     #[test]
     fn test_worker_name_with_prefix() {
-        assert_eq!(worker_name("frostbit-test05"), "frostbit-test05");
+        assert_eq!(worker_name("otlp2pipeline-test05"), "otlp2pipeline-test05");
     }
 
     #[test]
     fn test_worker_name_without_prefix() {
-        assert_eq!(worker_name("test05"), "frostbit-test05");
+        assert_eq!(worker_name("test05"), "otlp2pipeline-test05");
     }
 }

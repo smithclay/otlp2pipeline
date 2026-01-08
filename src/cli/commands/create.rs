@@ -196,7 +196,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     eprintln!("     npx wrangler deploy");
     eprintln!();
     eprintln!("  3. IMPORTANT: After ingesting data, add partitioning for query performance:");
-    eprintln!("     frostbit catalog partition --r2-token $R2_API_TOKEN");
+    eprintln!("     otlp2pipeline catalog partition --r2-token $R2_API_TOKEN");
     eprintln!();
     eprintln!("     This adds service_name partitioning to Iceberg tables. Without it,");
     eprintln!("     queries will scan all data instead of pruning by service.");
@@ -219,7 +219,7 @@ fn generate_wrangler_toml(
     bucket: &str,
 ) -> String {
     let mut toml = format!(
-        r#"name = "frostbit-{}"
+        r#"name = "otlp2pipeline-{}"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-01-01"
 

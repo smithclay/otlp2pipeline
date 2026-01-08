@@ -34,7 +34,7 @@ impl IcebergClient {
         }
 
         let client = Client::builder()
-            .user_agent("frostbit-cli")
+            .user_agent("otlp2pipeline-cli")
             .timeout(REQUEST_TIMEOUT)
             .build()
             .context("Failed to create HTTP client")?;

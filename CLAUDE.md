@@ -30,7 +30,7 @@ npx wrangler dev
 
 ## CLI Tool
 
-The `frostbit` CLI manages Cloudflare infrastructure (R2, Pipelines). Install with:
+The `otlp2pipeline` CLI manages Cloudflare infrastructure (R2, Pipelines). Install with:
 
 ```bash
 cargo install --path .
@@ -40,35 +40,35 @@ cargo install --path .
 
 ```bash
 # Create environment (bucket, streams, sinks, pipelines)
-frostbit create prod --token $R2_TOKEN --output wrangler.toml
+otlp2pipeline create prod --token $R2_TOKEN --output wrangler.toml
 
 # Check status
-frostbit status prod
+otlp2pipeline status prod
 
 # Dry run (show what would be created)
-frostbit plan staging
+otlp2pipeline plan staging
 
-# Tear down (both forms work: with or without frostbit- prefix)
-frostbit destroy staging --force
-frostbit destroy frostbit-staging --force
+# Tear down (both forms work: with or without otlp2pipeline- prefix)
+otlp2pipeline destroy staging --force
+otlp2pipeline destroy otlp2pipeline-staging --force
 
 # Query data with DuckDB
-frostbit query prod
+otlp2pipeline query prod
 
 # List known services
-frostbit services --url https://my-worker.workers.dev
+otlp2pipeline services --url https://my-worker.workers.dev
 
 # Stream live logs for a service
-frostbit tail my-service logs --url https://my-worker.workers.dev
+otlp2pipeline tail my-service logs --url https://my-worker.workers.dev
 
 # Stream live traces
-frostbit tail api-gateway traces
+otlp2pipeline tail api-gateway traces
 ```
 
 ### Naming
 
-Environment names are normalized - the `frostbit-` prefix is optional:
-- `prod` and `frostbit-prod` both resolve to bucket `frostbit-prod`
+Environment names are normalized - the `otlp2pipeline-` prefix is optional:
+- `prod` and `otlp2pipeline-prod` both resolve to bucket `otlp2pipeline-prod`
 - Naming logic lives in `src/cli/commands/naming.rs`
 
 ### Auth

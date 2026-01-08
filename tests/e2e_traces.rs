@@ -1,11 +1,11 @@
 // tests/e2e_traces.rs
 mod helpers;
 
-use frostbit::Signal;
 use helpers::{
     can_bind_loopback, free_port, reset_events, spawn_mock_pipeline, wait_for_events,
     wait_for_health,
 };
+use otlp2pipeline::Signal;
 use reqwest::Client;
 use std::collections::HashMap;
 
@@ -24,11 +24,11 @@ async fn test_otlp_traces_flow() {
     wait_for_health(&client, &mock_url).await;
     reset_events(&client, &mock_url).await;
 
-    // 2. Start frostbit router with spans endpoint
+    // 2. Start otlp2pipeline router with spans endpoint
     let app_port = free_port().await;
     let mut endpoints = HashMap::new();
     endpoints.insert(Signal::Traces, mock_url.clone());
-    let app = frostbit::native::build_router_multi(endpoints);
+    let app = otlp2pipeline::native::build_router_multi(endpoints);
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", app_port))
         .await
         .unwrap();
@@ -136,11 +136,11 @@ async fn test_otlp_traces_protobuf() {
     wait_for_health(&client, &mock_url).await;
     reset_events(&client, &mock_url).await;
 
-    // 2. Start frostbit router
+    // 2. Start otlp2pipeline router
     let app_port = free_port().await;
     let mut endpoints = HashMap::new();
     endpoints.insert(Signal::Traces, mock_url.clone());
-    let app = frostbit::native::build_router_multi(endpoints);
+    let app = otlp2pipeline::native::build_router_multi(endpoints);
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", app_port))
         .await
         .unwrap();

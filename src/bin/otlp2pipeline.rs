@@ -1,5 +1,7 @@
 use clap::Parser;
-use frostbit::cli::{commands, BucketCommands, CatalogCommands, Cli, Commands, ConnectCommands};
+use otlp2pipeline::cli::{
+    commands, BucketCommands, CatalogCommands, Cli, Commands, ConnectCommands,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

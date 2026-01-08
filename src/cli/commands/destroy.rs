@@ -103,7 +103,7 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
                 eprintln!();
                 eprintln!("    To delete all objects first, run:");
                 eprintln!(
-                    "      frostbit bucket delete {} --bucket {}",
+                    "      otlp2pipeline bucket delete {} --bucket {}",
                     args.name, bucket
                 );
                 eprintln!();
