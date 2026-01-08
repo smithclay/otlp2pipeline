@@ -90,6 +90,7 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Get, "/health") => Response::ok("ok"),
         (Method::Get, "/v1/config") => handle_config(env),
         (Method::Get, "/v1/services") => handle_services_list(env).await,
+        (Method::Get, "/v1/metrics") => handle_metrics_list(env).await,
         // All-services stats: /v1/services/stats?signal=logs|traces
         (Method::Get, "/v1/services/stats") => handle_all_services_stats(req, env).await,
         // Per-service stats: /v1/services/:service/:signal/stats
@@ -205,6 +206,15 @@ async fn handle_services_list(env: Env) -> Result<Response> {
     match sender.get_all_services().await {
         Ok(services) => Response::from_json(&services),
         Err(e) => Response::error(format!("Failed to get services: {}", e), 500),
+    }
+}
+
+async fn handle_metrics_list(env: Env) -> Result<Response> {
+    let sender = WasmRegistrySender::new(env);
+
+    match sender.get_all_metrics().await {
+        Ok(metrics) => Response::from_json(&metrics),
+        Err(e) => Response::error(format!("Failed to get metrics: {}", e), 500),
     }
 }
 
