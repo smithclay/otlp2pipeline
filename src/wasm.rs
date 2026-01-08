@@ -151,6 +151,14 @@ async fn handle_signal_worker<H: handler::SignalHandler>(
                     register_services(&env_clone, &service_names, signal).await;
                 });
             }
+            // Fire-and-forget metric registration for discovered metrics
+            if !resp.metric_names.is_empty() {
+                let env_clone = env.clone();
+                let metric_names = resp.metric_names.clone();
+                ctx.wait_until(async move {
+                    register_metrics(&env_clone, &metric_names).await;
+                });
+            }
             Response::from_json(&resp)
         }
         Err(e) => Response::error(e.to_string(), 400),
@@ -197,6 +205,19 @@ async fn register_services(env: &Env, service_names: &[String], signal: Signal) 
         .await
     {
         tracing::warn!(error = %e, signal = ?signal, "Failed to register services");
+    }
+}
+
+/// Register metrics with RegistryDO (fire-and-forget helper).
+async fn register_metrics(env: &Env, metric_names: &[(String, String)]) {
+    if metric_names.is_empty() {
+        return;
+    }
+
+    let sender = WasmRegistrySender::new(env.clone());
+
+    if let Err(e) = sender.register_metrics(metric_names.to_vec()).await {
+        tracing::warn!(error = %e, "Failed to register metrics");
     }
 }
 
