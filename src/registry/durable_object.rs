@@ -31,6 +31,29 @@ pub struct ServiceRecord {
     pub has_metrics: i64,
 }
 
+/// Metric record for list responses.
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetricRecord {
+    pub name: String,
+    pub metric_type: String,
+}
+
+/// Metric registration request.
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterMetricsRequest {
+    pub metrics: Vec<MetricRegistration>,
+}
+
+/// Single metric registration entry.
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetricRegistration {
+    pub name: String,
+    pub metric_type: String,
+}
+
 /// Helper type for COUNT queries.
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Deserialize)]
@@ -76,6 +99,9 @@ impl RegistryDO {
     /// Protects against cardinality explosion exhausting DO storage (128MB limit).
     const MAX_SERVICES: usize = 10_000;
 
+    /// Maximum number of unique (name, type) metric pairs allowed.
+    const MAX_METRICS: usize = 10_000;
+
     const DDL: &'static str = "CREATE TABLE IF NOT EXISTS services (
         name TEXT PRIMARY KEY,
         first_seen_at INTEGER NOT NULL,
@@ -84,8 +110,16 @@ impl RegistryDO {
         has_metrics INTEGER DEFAULT 0
     )";
 
+    const METRICS_DDL: &'static str = "CREATE TABLE IF NOT EXISTS metrics (
+        name TEXT NOT NULL,
+        metric_type TEXT NOT NULL,
+        first_seen_at INTEGER NOT NULL,
+        PRIMARY KEY (name, metric_type)
+    )";
+
     fn ensure_schema(&self) -> Result<()> {
         self.state.storage().sql().exec(Self::DDL, None)?;
+        self.state.storage().sql().exec(Self::METRICS_DDL, None)?;
         Ok(())
     }
 
