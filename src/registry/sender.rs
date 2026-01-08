@@ -344,4 +344,23 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
     }
+
+    #[tokio::test]
+    async fn test_native_sender_register_metrics_returns_ok() {
+        let sender = NativeRegistrySender::new();
+        let metrics = vec![
+            ("metric1".to_string(), "gauge".to_string()),
+            ("metric2".to_string(), "sum".to_string()),
+        ];
+        let result = sender.register_metrics(metrics).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_native_sender_get_all_metrics_returns_empty() {
+        let sender = NativeRegistrySender::new();
+        let result = sender.get_all_metrics().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
 }
