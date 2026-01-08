@@ -11,9 +11,9 @@ import { formatNumber, formatMs } from '../lib/format';
  * Discriminated union of all overview data types.
  */
 export type OverviewData =
-  | { type: 'logs'; recordCount: number; errorCount: number; histogram?: number[] }
-  | { type: 'traces'; traceCount: number; errorCount: number; p50Ms: number; p99Ms: number }
-  | { type: 'single-trace'; traceId: string; spanCount: number; totalMs: number; errorCount: number }
+  | { type: 'logs'; recordCount: number; errorCount: number; histogram?: number[]; queryTimeMs?: number }
+  | { type: 'traces'; traceCount: number; errorCount: number; p50Ms: number; p99Ms: number; queryTimeMs?: number }
+  | { type: 'single-trace'; traceId: string; spanCount: number; totalMs: number; errorCount: number; queryTimeMs?: number }
   | { type: 'tail'; recordCount: number; rate: number; droppedCount: number }
   | { type: 'sql'; rowCount: number; columnCount: number; queryTimeMs: number };
 
@@ -156,20 +156,28 @@ function LogsOverview({ data }: { data: Extract<OverviewData, { type: 'logs' }> 
       {data.histogram && data.histogram.length > 0 && (
         <BarSparkline data={data.histogram} />
       )}
+      {data.queryTimeMs !== undefined && (
+        <>
+          <Separator />
+          <span style={{ color: 'var(--color-text-muted)' }}>
+            <span className="mono">{formatMs(data.queryTimeMs)}</span>
+          </span>
+        </>
+      )}
     </>
   );
 }
 
 /**
  * Traces list overview content.
- * Example: "89 traces · 12 errors (13%) · p50: 45ms p99: 320ms"
+ * Example: "89 rows · 12 errors (13%) · p50: 45ms p99: 320ms"
  */
 function TracesOverview({ data }: { data: Extract<OverviewData, { type: 'traces' }> }) {
   return (
     <>
       <span style={{ color: 'var(--color-text-secondary)' }}>
         <span className="mono">{formatNumber(data.traceCount)}</span>
-        {' traces'}
+        {' rows'}
       </span>
       <Separator />
       <ErrorStat count={data.errorCount} total={data.traceCount} />
@@ -183,6 +191,14 @@ function TracesOverview({ data }: { data: Extract<OverviewData, { type: 'traces'
         p99:{' '}
         <span className="mono">{formatMs(data.p99Ms)}</span>
       </span>
+      {data.queryTimeMs !== undefined && (
+        <>
+          <Separator />
+          <span style={{ color: 'var(--color-text-muted)' }}>
+            <span className="mono">{formatMs(data.queryTimeMs)}</span>
+          </span>
+        </>
+      )}
     </>
   );
 }
@@ -212,6 +228,14 @@ function SingleTraceOverview({ data }: { data: Extract<OverviewData, { type: 'si
       </span>
       <Separator />
       <ErrorStat count={data.errorCount} label="errors" />
+      {data.queryTimeMs !== undefined && (
+        <>
+          <Separator />
+          <span style={{ color: 'var(--color-text-muted)' }}>
+            <span className="mono">{formatMs(data.queryTimeMs)}</span>
+          </span>
+        </>
+      )}
     </>
   );
 }
@@ -296,11 +320,11 @@ function renderOverviewContent(data: OverviewData) {
 export function OverviewBar({ data }: OverviewBarProps) {
   return (
     <div
-      className="flex items-center px-4 text-sm select-none"
+      className="flex items-center px-4 text-sm select-none rounded-lg"
       style={{
         height: 40,
         backgroundColor: 'var(--color-paper-cool)',
-        borderBottom: '1px solid var(--color-border-light)',
+        border: '1px solid var(--color-border)',
       }}
       role="status"
       aria-live="polite"

@@ -25,14 +25,6 @@ export interface QueryInputProps {
   canRun?: boolean;
   /** Reconnection attempt number (for reconnecting state) */
   reconnectAttempt?: number;
-  /** Query execution time in ms (shown after query completes) */
-  queryTimeMs?: number | null;
-  /** Number of result rows (shown after query completes) */
-  rowCount?: number | null;
-  /** Number of tail records (shown during tail) */
-  tailRecordCount?: number;
-  /** Number of dropped tail records */
-  droppedCount?: number;
   /** Placeholder text */
   placeholder?: string;
 }
@@ -49,10 +41,6 @@ export function QueryInput({
   isTailCommand = false,
   canRun = true,
   reconnectAttempt = 0,
-  queryTimeMs = null,
-  rowCount = null,
-  tailRecordCount = 0,
-  droppedCount = 0,
   placeholder = 'Enter SQL query or TAIL command...',
 }: QueryInputProps) {
   // Handle keyboard shortcut (Cmd/Ctrl+Enter)
@@ -91,47 +79,7 @@ export function QueryInput({
   const isActive = state === 'tailing' || state === 'running';
 
   return (
-    <div className="space-y-4">
-      {/* Status indicator */}
-      <div className="flex items-center justify-end gap-4 min-h-[24px]">
-        {/* Tail status */}
-        {state === 'tailing' && (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-            </span>
-            <span style={{ color: 'var(--color-text-secondary)' }}>
-              Live · {tailRecordCount} records
-              {droppedCount > 0 && ` · ${droppedCount} dropped`}
-            </span>
-          </div>
-        )}
-
-        {state === 'connecting' && (
-          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Connecting...
-          </span>
-        )}
-
-        {state === 'reconnecting' && (
-          <span className="text-sm" style={{ color: 'var(--color-warning)' }}>
-            Reconnecting ({reconnectAttempt}/3)...
-          </span>
-        )}
-
-        {/* Query time indicator */}
-        {state === 'idle' && queryTimeMs !== null && (
-          <span
-            className="text-sm font-medium mono"
-            style={{ color: 'var(--color-text-tertiary)' }}
-          >
-            {queryTimeMs}ms
-            {rowCount !== null && ` · ${rowCount} rows`}
-          </span>
-        )}
-      </div>
-
+    <div>
       {/* SQL Input */}
       <div
         className="rounded-lg p-5"

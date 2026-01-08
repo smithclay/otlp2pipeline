@@ -159,6 +159,7 @@ function computeOverviewData(
         type: 'logs',
         recordCount: rows.length,
         errorCount,
+        queryTimeMs: queryTimeMs ?? undefined,
       };
     }
 
@@ -176,6 +177,7 @@ function computeOverviewData(
           spanCount: rows.length,
           totalMs,
           errorCount,
+          queryTimeMs: queryTimeMs ?? undefined,
         };
       }
 
@@ -190,6 +192,7 @@ function computeOverviewData(
         errorCount,
         p50Ms: p50,
         p99Ms: p99,
+        queryTimeMs: queryTimeMs ?? undefined,
       };
     }
 
@@ -625,8 +628,6 @@ export function QueryExplorer() {
           onRun={handleRun}
           state={queryLoading ? 'running' : 'idle'}
           canRun={isConnected && !queryLoading}
-          queryTimeMs={queryTimeMs}
-          rowCount={queryResult?.rows.length ?? null}
         />
       ) : (
         <TailInput

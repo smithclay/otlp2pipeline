@@ -80,7 +80,6 @@ export const Tailing: Story = () => {
       onRun={() => console.log('Stop tail')}
       state="tailing"
       isTailCommand={true}
-      tailRecordCount={127}
     />
   )
 }
@@ -95,8 +94,6 @@ export const TailingWithDropped: Story = () => {
       onRun={() => console.log('Stop tail')}
       state="tailing"
       isTailCommand={true}
-      tailRecordCount={500}
-      droppedCount={23}
     />
   )
 }
@@ -127,8 +124,6 @@ export const WithResults: Story = () => {
       onRun={() => console.log('Run:', value)}
       state="idle"
       canRun={true}
-      queryTimeMs={342}
-      rowCount={100}
     />
   )
 }
@@ -150,16 +145,12 @@ export const Disabled: Story = () => {
 export const Interactive: Story = () => {
   const [value, setValue] = useState(DEFAULT_SQL)
   const [state, setState] = useState<QueryInputState>('idle')
-  const [queryTimeMs, setQueryTimeMs] = useState<number | null>(null)
-  const [rowCount, setRowCount] = useState<number | null>(null)
-  const [tailRecordCount, setTailRecordCount] = useState(0)
 
   const isTailCommand = value.trim().toUpperCase().startsWith('TAIL')
 
   const handleRun = () => {
     if (state === 'tailing') {
       setState('idle')
-      setTailRecordCount(0)
       return
     }
 
@@ -167,23 +158,11 @@ export const Interactive: Story = () => {
       setState('connecting')
       setTimeout(() => {
         setState('tailing')
-        // Simulate incoming records
-        let count = 0
-        const interval = setInterval(() => {
-          count += Math.floor(Math.random() * 5) + 1
-          setTailRecordCount(count)
-        }, 500)
-        // Store interval for cleanup (in real usage)
-        ;(window as any).__tailInterval = interval
       }, 1000)
     } else {
       setState('running')
-      setQueryTimeMs(null)
-      setRowCount(null)
       setTimeout(() => {
         setState('idle')
-        setQueryTimeMs(Math.floor(Math.random() * 500) + 100)
-        setRowCount(Math.floor(Math.random() * 1000))
       }, 1500)
     }
   }
@@ -200,9 +179,6 @@ export const Interactive: Story = () => {
         state={state}
         isTailCommand={isTailCommand}
         canRun={state === 'idle'}
-        queryTimeMs={queryTimeMs}
-        rowCount={rowCount}
-        tailRecordCount={tailRecordCount}
       />
     </div>
   )
