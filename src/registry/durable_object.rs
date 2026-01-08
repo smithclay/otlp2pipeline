@@ -88,6 +88,8 @@ impl DurableObject for RegistryDO {
         match (req.method(), path.as_str()) {
             (Method::Post, "/register") => self.handle_register(req).await,
             (Method::Get, "/list") => self.handle_list().await,
+            (Method::Post, "/register-metrics") => self.handle_register_metrics(req).await,
+            (Method::Get, "/list-metrics") => self.handle_list_metrics().await,
             _ => Response::error("Not found", 404),
         }
     }
@@ -138,6 +140,17 @@ impl RegistryDO {
         Ok(count)
     }
 
+    /// Get the current count of metrics in the registry.
+    fn get_metric_count(&self) -> Result<usize> {
+        let sql = self.state.storage().sql();
+        let rows: Vec<CountRow> = sql
+            .exec("SELECT COUNT(*) as count FROM metrics", None)?
+            .to_array()
+            .map_err(|e| worker::Error::RustError(format!("Failed to count metrics: {}", e)))?;
+        let count = rows.first().map(|r| r.count).unwrap_or(0) as usize;
+        Ok(count)
+    }
+
     /// Count how many services in the list are new (not yet in the registry).
     fn count_new_services(&self, names: &[String]) -> Result<usize> {
         if names.is_empty() {
@@ -165,6 +178,35 @@ impl RegistryDO {
 
         // New services = total - existing
         Ok(names.len() - existing_count)
+    }
+
+    /// Count how many metrics in the list are new (not yet in the registry).
+    fn count_new_metrics(&self, metrics: &[(String, String)]) -> Result<usize> {
+        if metrics.is_empty() {
+            return Ok(0);
+        }
+
+        let sql = self.state.storage().sql();
+        let mut existing_count = 0;
+
+        // Check each (name, type) pair individually
+        for (name, metric_type) in metrics {
+            let rows: Vec<CountRow> = sql
+                .exec(
+                    "SELECT COUNT(*) as count FROM metrics WHERE name = ? AND metric_type = ?",
+                    vec![
+                        SqlStorageValue::String(name.clone()),
+                        SqlStorageValue::String(metric_type.clone()),
+                    ],
+                )?
+                .to_array()
+                .map_err(|e| {
+                    worker::Error::RustError(format!("Failed to check metric existence: {}", e))
+                })?;
+            existing_count += rows.first().map(|r| r.count).unwrap_or(0) as usize;
+        }
+
+        Ok(metrics.len() - existing_count)
     }
 
     async fn handle_register(&self, mut req: Request) -> Result<Response> {
@@ -209,6 +251,52 @@ impl RegistryDO {
         Response::ok(format!("{}", registered))
     }
 
+    async fn handle_register_metrics(&self, mut req: Request) -> Result<Response> {
+        let body = req.text().await?;
+        let request: RegisterMetricsRequest = serde_json::from_str(&body)
+            .map_err(|e| worker::Error::RustError(format!("Invalid JSON: {}", e)))?;
+
+        if request.metrics.is_empty() {
+            return Response::ok("0");
+        }
+
+        // Check cardinality limit before inserting
+        let metric_pairs: Vec<(String, String)> = request
+            .metrics
+            .iter()
+            .map(|m| (m.name.clone(), m.metric_type.clone()))
+            .collect();
+
+        let current_count = self.get_metric_count()?;
+        let new_count = self.count_new_metrics(&metric_pairs)?;
+
+        if current_count + new_count > Self::MAX_METRICS {
+            worker::console_warn!(
+                "Metrics registry limit exceeded: {} current + {} new would exceed maximum of {}",
+                current_count,
+                new_count,
+                Self::MAX_METRICS
+            );
+            return Response::error(
+                format!(
+                    "Metrics registry limit exceeded: {} current + {} new would exceed maximum of {}",
+                    current_count, new_count, Self::MAX_METRICS
+                ),
+                507,
+            );
+        }
+
+        let now = Self::now_ms();
+        let mut registered = 0;
+
+        for metric in &request.metrics {
+            self.upsert_metric(&metric.name, &metric.metric_type, now)?;
+            registered += 1;
+        }
+
+        Response::ok(format!("{}", registered))
+    }
+
     fn upsert_service(&self, name: &str, signal: &str, first_seen_at: i64) -> Result<()> {
         let (has_logs, has_traces, has_metrics) = match signal {
             "logs" => (1, 0, 0),
@@ -236,6 +324,21 @@ impl RegistryDO {
         Ok(())
     }
 
+    fn upsert_metric(&self, name: &str, metric_type: &str, first_seen_at: i64) -> Result<()> {
+        let sql = self.state.storage().sql();
+        sql.exec(
+            "INSERT INTO metrics (name, metric_type, first_seen_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(name, metric_type) DO NOTHING",
+            vec![
+                SqlStorageValue::String(name.to_string()),
+                SqlStorageValue::String(metric_type.to_string()),
+                SqlStorageValue::Integer(first_seen_at),
+            ],
+        )?;
+        Ok(())
+    }
+
     async fn handle_list(&self) -> Result<Response> {
         let sql = self.state.storage().sql();
         let result = sql.exec("SELECT * FROM services ORDER BY name", None)?;
@@ -245,6 +348,20 @@ impl RegistryDO {
         })?;
 
         Response::from_json(&services)
+    }
+
+    async fn handle_list_metrics(&self) -> Result<Response> {
+        let sql = self.state.storage().sql();
+        let result = sql.exec(
+            "SELECT name, metric_type FROM metrics ORDER BY name, metric_type",
+            None,
+        )?;
+
+        let metrics: Vec<MetricRecord> = result.to_array().map_err(|e| {
+            worker::Error::RustError(format!("Failed to deserialize metric records: {}", e))
+        })?;
+
+        Response::from_json(&metrics)
     }
 }
 
