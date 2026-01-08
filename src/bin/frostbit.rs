@@ -1,5 +1,5 @@
 use clap::Parser;
-use frostbit::cli::{commands, Cli, Commands};
+use frostbit::cli::{commands, BucketCommands, CatalogCommands, Cli, Commands, ConnectCommands};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -13,6 +13,25 @@ async fn main() -> anyhow::Result<()> {
         Commands::Query(args) => commands::execute_query(args).await?,
         Commands::Services(args) => commands::execute_services(args).await?,
         Commands::Tail(args) => commands::execute_tail(args).await?,
+        Commands::Catalog(args) => match args.command {
+            CatalogCommands::List(list_args) => commands::execute_catalog_list(list_args).await?,
+            CatalogCommands::Partition(partition_args) => {
+                commands::execute_catalog_partition(partition_args).await?
+            }
+        },
+        Commands::Bucket(args) => match args.command {
+            BucketCommands::Delete(delete_args) => {
+                commands::execute_bucket_delete(delete_args).await?
+            }
+        },
+        Commands::Connect(args) => match args.command {
+            ConnectCommands::OtelCollector(otel_args) => {
+                commands::execute_connect_otel_collector(otel_args).await?
+            }
+            ConnectCommands::ClaudeCode(claude_args) => {
+                commands::execute_connect_claude_code(claude_args).await?
+            }
+        },
     }
 
     Ok(())

@@ -77,15 +77,32 @@ impl CloudflareClient {
     /// GET request to Cloudflare API
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);
-        let response: ApiResponse<T> = self
+        let resp = self
             .client
             .get(&url)
             .bearer_auth(&self.token)
             .send()
             .await
-            .with_context(|| format!("GET {}", path))?
-            .json()
-            .await?;
+            .with_context(|| format!("GET {}", path))?;
+
+        let status = resp.status();
+        let body_text = resp
+            .text()
+            .await
+            .with_context(|| format!("Failed to read response body from GET {}", path))?;
+
+        let response: ApiResponse<T> = serde_json::from_str(&body_text).with_context(|| {
+            format!(
+                "Failed to parse API response from GET {}\nStatus: {}\nBody: {}",
+                path,
+                status,
+                if body_text.is_empty() {
+                    "<empty>"
+                } else {
+                    &body_text
+                }
+            )
+        })?;
 
         if !response.success {
             let msg = response
@@ -104,16 +121,33 @@ impl CloudflareClient {
     /// POST request to Cloudflare API
     pub async fn post<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
         let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);
-        let response: ApiResponse<T> = self
+        let resp = self
             .client
             .post(&url)
             .bearer_auth(&self.token)
             .json(body)
             .send()
             .await
-            .with_context(|| format!("POST {}", path))?
-            .json()
-            .await?;
+            .with_context(|| format!("POST {}", path))?;
+
+        let status = resp.status();
+        let body_text = resp
+            .text()
+            .await
+            .with_context(|| format!("Failed to read response body from POST {}", path))?;
+
+        let response: ApiResponse<T> = serde_json::from_str(&body_text).with_context(|| {
+            format!(
+                "Failed to parse API response from POST {}\nStatus: {}\nBody: {}",
+                path,
+                status,
+                if body_text.is_empty() {
+                    "<empty>"
+                } else {
+                    &body_text
+                }
+            )
+        })?;
 
         if !response.success {
             let msg = response
@@ -149,7 +183,74 @@ impl CloudflareClient {
             return Ok(None); // Resource already exists
         }
 
-        let response: ApiResponse<T> = resp.json().await?;
+        let status = resp.status();
+        let body_text = resp
+            .text()
+            .await
+            .with_context(|| format!("Failed to read response body from POST {}", path))?;
+
+        let response: ApiResponse<T> = serde_json::from_str(&body_text).with_context(|| {
+            format!(
+                "Failed to parse API response from POST {}\nStatus: {}\nBody: {}",
+                path,
+                status,
+                if body_text.is_empty() {
+                    "<empty>"
+                } else {
+                    &body_text
+                }
+            )
+        })?;
+
+        if !response.success {
+            let msg = response
+                .errors
+                .first()
+                .map(|e| e.message.as_str())
+                .unwrap_or("Unknown error");
+
+            // Handle "already exists" errors as idempotent success
+            if msg.contains("already exists") {
+                return Ok(None);
+            }
+
+            bail!("API error: {}", msg);
+        }
+
+        Ok(response.result)
+    }
+
+    /// POST request that expects success but no result
+    pub async fn post_void<B: Serialize>(&self, path: &str, body: &B) -> Result<()> {
+        let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("POST {}", path))?;
+
+        let status = resp.status();
+        let body_text = resp
+            .text()
+            .await
+            .with_context(|| format!("Failed to read response body from POST {}", path))?;
+
+        let response: ApiResponse<serde_json::Value> = serde_json::from_str(&body_text)
+            .with_context(|| {
+                format!(
+                    "Failed to parse API response from POST {}\nStatus: {}\nBody: {}",
+                    path,
+                    status,
+                    if body_text.is_empty() {
+                        "<empty>"
+                    } else {
+                        &body_text
+                    }
+                )
+            })?;
 
         if !response.success {
             let msg = response
@@ -160,22 +261,40 @@ impl CloudflareClient {
             bail!("API error: {}", msg);
         }
 
-        Ok(response.result)
+        Ok(())
     }
 
-    /// POST request that expects success but no result
-    pub async fn post_void<B: Serialize>(&self, path: &str, body: &B) -> Result<()> {
+    /// PUT request to Cloudflare API (expects success but no result)
+    pub async fn put_void<B: Serialize>(&self, path: &str, body: &B) -> Result<()> {
         let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);
-        let response: ApiResponse<serde_json::Value> = self
+        let resp = self
             .client
-            .post(&url)
+            .put(&url)
             .bearer_auth(&self.token)
             .json(body)
             .send()
             .await
-            .with_context(|| format!("POST {}", path))?
-            .json()
-            .await?;
+            .with_context(|| format!("PUT {}", path))?;
+
+        let status = resp.status();
+        let body_text = resp
+            .text()
+            .await
+            .with_context(|| format!("Failed to read response body from PUT {}", path))?;
+
+        let response: ApiResponse<serde_json::Value> = serde_json::from_str(&body_text)
+            .with_context(|| {
+                format!(
+                    "Failed to parse API response from PUT {}\nStatus: {}\nBody: {}",
+                    path,
+                    status,
+                    if body_text.is_empty() {
+                        "<empty>"
+                    } else {
+                        &body_text
+                    }
+                )
+            })?;
 
         if !response.success {
             let msg = response
@@ -192,15 +311,33 @@ impl CloudflareClient {
     /// DELETE request to Cloudflare API
     pub async fn delete(&self, path: &str) -> Result<()> {
         let url = format!("{}/accounts/{}{}", API_BASE, self.account_id, path);
-        let response: ApiResponse<serde_json::Value> = self
+        let resp = self
             .client
             .delete(&url)
             .bearer_auth(&self.token)
             .send()
             .await
-            .with_context(|| format!("DELETE {}", path))?
-            .json()
-            .await?;
+            .with_context(|| format!("DELETE {}", path))?;
+
+        let status = resp.status();
+        let body_text = resp
+            .text()
+            .await
+            .with_context(|| format!("Failed to read response body from DELETE {}", path))?;
+
+        let response: ApiResponse<serde_json::Value> = serde_json::from_str(&body_text)
+            .with_context(|| {
+                format!(
+                    "Failed to parse API response from DELETE {}\nStatus: {}\nBody: {}",
+                    path,
+                    status,
+                    if body_text.is_empty() {
+                        "<empty>"
+                    } else {
+                        &body_text
+                    }
+                )
+            })?;
 
         if !response.success {
             let msg = response

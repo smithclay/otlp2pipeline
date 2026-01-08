@@ -76,6 +76,13 @@ struct SinkConfig<'a> {
     namespace: &'static str,
     table_name: &'a str,
     token: &'a str,
+    rolling_policy: RollingPolicy,
+}
+
+#[derive(Serialize)]
+struct RollingPolicy {
+    /// File write frequency in seconds (default: 300)
+    interval_seconds: u32,
 }
 
 #[derive(Deserialize)]
@@ -150,6 +157,7 @@ impl CloudflareClient {
         bucket: &str,
         table_name: &str,
         token: &str,
+        interval_seconds: u32,
     ) -> Result<Option<Sink>> {
         self.post_idempotent(
             "/pipelines/v1/sinks",
@@ -165,6 +173,7 @@ impl CloudflareClient {
                     namespace: "default",
                     table_name,
                     token,
+                    rolling_policy: RollingPolicy { interval_seconds },
                 },
             },
         )

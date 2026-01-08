@@ -1,0 +1,5 @@
+node_modules/
+dist/
+
+# Override root gitignore - frontend wrangler.toml is safe to commit
+!wrangler.toml

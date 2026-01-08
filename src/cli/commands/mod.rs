@@ -1,3 +1,6 @@
+mod bucket;
+mod catalog;
+mod connect;
 mod create;
 mod destroy;
 mod naming;
@@ -7,6 +10,9 @@ mod services;
 mod status;
 mod tail;
 
+pub use bucket::execute_bucket_delete;
+pub use catalog::{execute_catalog_list, execute_catalog_partition};
+pub use connect::{execute_connect_claude_code, execute_connect_otel_collector};
 pub use create::execute_create;
 pub use destroy::execute_destroy;
 pub use plan::execute_plan;

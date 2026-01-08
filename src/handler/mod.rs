@@ -56,6 +56,8 @@ pub struct HandleResponse {
     pub errors: HashMap<String, String>,
     #[serde(skip)]
     pub service_names: Vec<String>,
+    #[serde(skip)]
+    pub metric_names: Vec<(String, String)>,
 }
 
 impl HandleResponse {
@@ -65,6 +67,7 @@ impl HandleResponse {
             records: HashMap::new(),
             errors: HashMap::new(),
             service_names: Vec::new(),
+            metric_names: Vec::new(),
         }
     }
 
@@ -82,11 +85,17 @@ impl HandleResponse {
             records: result.succeeded,
             errors: result.failed,
             service_names: Vec::new(),
+            metric_names: Vec::new(),
         }
     }
 
     pub fn with_service_names(mut self, service_names: Vec<String>) -> Self {
         self.service_names = service_names;
+        self
+    }
+
+    pub fn with_metric_names(mut self, metric_names: Vec<(String, String)>) -> Self {
+        self.metric_names = metric_names;
         self
     }
 }
@@ -130,6 +139,34 @@ fn extract_service_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<String> {
     }
 
     service_names.into_iter().collect()
+}
+
+/// Extract unique (metric_name, metric_type) pairs from grouped records.
+/// Uses _table field as the metric type since _metric_type is cleared by VRL.
+#[cfg(target_arch = "wasm32")]
+fn extract_metric_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<(String, String)> {
+    let mut metric_names = HashSet::new();
+
+    // Only process metric tables (gauge, sum, histogram, exp_histogram, summary)
+    let metric_tables = ["gauge", "sum", "histogram", "exp_histogram", "summary"];
+
+    for (table, values) in grouped {
+        if !metric_tables.contains(&table.as_str()) {
+            continue;
+        }
+
+        for value in values {
+            if let Some(obj) = value.as_object() {
+                if let Some(name) = obj.get("metric_name").and_then(|v| v.as_str()) {
+                    if !name.is_empty() {
+                        metric_names.insert((name.to_string(), table.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    metric_names.into_iter().collect()
 }
 
 pub(crate) fn decompress_if_gzipped(body: Bytes, is_gzipped: bool) -> Result<Bytes, HandleError> {
@@ -328,8 +365,9 @@ where
     let total_records: usize = grouped.values().map(|v| v.len()).sum();
     let table_names: String = grouped.keys().cloned().collect::<Vec<_>>().join(",");
 
-    // Extract service names before sending (send_all takes ownership)
+    // Extract service names and metric names before sending (send_all takes ownership)
     let service_names = extract_service_names(&grouped);
+    let metric_names = extract_metric_names(&grouped);
 
     // Triple-write: pipeline is primary (required), aggregator and livetail are best-effort (optional)
     let pipeline_result = match (cache, livetail) {
@@ -442,5 +480,7 @@ where
     Span::current().record("records", total_records);
     Span::current().record("tables", &table_names);
 
-    Ok(HandleResponse::from_result(pipeline_result).with_service_names(service_names))
+    Ok(HandleResponse::from_result(pipeline_result)
+        .with_service_names(service_names)
+        .with_metric_names(metric_names))
 }

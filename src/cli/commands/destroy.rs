@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::io::{self, Write};
 
-use super::naming::{bucket_name, pipeline_name, sink_name, stream_name};
+use super::naming::{bucket_name, pipeline_name, sink_name, stream_name, worker_name};
 use crate::cli::auth;
 use crate::cli::DestroyArgs;
 use crate::cloudflare::CloudflareClient;
@@ -10,6 +10,7 @@ const SIGNAL_NAMES: &[&str] = &["logs", "traces", "gauge", "sum"];
 
 pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
     let bucket = bucket_name(&args.name);
+    let mut failures: Vec<String> = Vec::new();
 
     eprintln!("==> Destroying pipeline environment: {}", args.name);
     eprintln!("    Bucket: {}", bucket);
@@ -43,7 +44,10 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
             eprintln!("    Deleting: {} ({})", name, pipeline.id);
             match client.delete_pipeline(&pipeline.id).await {
                 Ok(_) => eprintln!("      Deleted"),
-                Err(e) => eprintln!("      Failed: {}", e),
+                Err(e) => {
+                    eprintln!("      Failed: {}", e);
+                    failures.push(format!("pipeline '{}': {}", name, e));
+                }
             }
         } else {
             eprintln!("    {}: not found", name);
@@ -59,7 +63,10 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
             eprintln!("    Deleting: {} ({})", name, sink.id);
             match client.delete_sink(&sink.id).await {
                 Ok(_) => eprintln!("      Deleted"),
-                Err(e) => eprintln!("      Failed: {}", e),
+                Err(e) => {
+                    eprintln!("      Failed: {}", e);
+                    failures.push(format!("sink '{}': {}", name, e));
+                }
             }
         } else {
             eprintln!("    {}: not found", name);
@@ -75,7 +82,10 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
             eprintln!("    Deleting: {} ({})", name, stream.id);
             match client.delete_stream(&stream.id).await {
                 Ok(_) => eprintln!("      Deleted"),
-                Err(e) => eprintln!("      Failed: {}", e),
+                Err(e) => {
+                    eprintln!("      Failed: {}", e);
+                    failures.push(format!("stream '{}': {}", name, e));
+                }
             }
         } else {
             eprintln!("    {}: not found", name);
@@ -86,7 +96,52 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
     eprintln!("\n==> Deleting R2 bucket: {}", bucket);
     match client.delete_bucket(&bucket).await {
         Ok(_) => eprintln!("    Deleted"),
-        Err(e) => eprintln!("    Failed: {} (may need manual cleanup)", e),
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("not empty") || err_str.contains("BucketNotEmpty") {
+                eprintln!("    Failed: bucket is not empty");
+                eprintln!();
+                eprintln!("    To delete all objects first, run:");
+                eprintln!(
+                    "      frostbit bucket delete {} --bucket {}",
+                    args.name, bucket
+                );
+                eprintln!();
+                eprintln!("    Then re-run destroy to delete the empty bucket.");
+                failures.push(format!("bucket '{}': not empty", bucket));
+            } else {
+                eprintln!("    Failed: {} (may need manual cleanup)", e);
+                failures.push(format!("bucket '{}': {}", bucket, e));
+            }
+        }
+    }
+
+    // Step 5: Delete worker (optional)
+    if args.include_worker {
+        let worker = worker_name(&args.name);
+        eprintln!("\n==> Deleting worker: {}", worker);
+        match client.delete_worker(&worker).await {
+            Ok(_) => eprintln!("    Deleted"),
+            Err(e) => {
+                eprintln!("    Failed: {}", e);
+                failures.push(format!("worker '{}': {}", worker, e));
+            }
+        }
+    }
+
+    // Check if any deletions failed
+    if !failures.is_empty() {
+        eprintln!(
+            "\n==> WARNING: {} resource(s) failed to delete:",
+            failures.len()
+        );
+        for failure in &failures {
+            eprintln!("    - {}", failure);
+        }
+        bail!(
+            "Destroy completed with {} failure(s). Manual cleanup may be required.",
+            failures.len()
+        );
     }
 
     eprintln!("\n==> Done");

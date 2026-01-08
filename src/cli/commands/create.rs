@@ -3,7 +3,7 @@ use anyhow::Result;
 use super::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
 use crate::cli::auth;
 use crate::cli::CreateArgs;
-use crate::cloudflare::{CloudflareClient, SchemaField};
+use crate::cloudflare::{CloudflareClient, CorsAllowed, CorsRule, SchemaField};
 
 /// Signal configuration
 struct SignalConfig {
@@ -72,6 +72,23 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         None => eprintln!("    Already exists"),
     }
 
+    // Step 1b: Set CORS for browser access (enables DuckDB Iceberg queries from browser)
+    eprintln!("\n==> Setting bucket CORS policy...");
+    client
+        .set_bucket_cors(
+            &bucket,
+            vec![CorsRule {
+                allowed: CorsAllowed {
+                    origins: vec!["*".to_string()],
+                    methods: vec!["GET".to_string(), "HEAD".to_string()],
+                    headers: vec!["*".to_string()],
+                },
+                max_age_seconds: 86400,
+            }],
+        )
+        .await?;
+    eprintln!("    Set");
+
     // Step 2: Enable catalog
     eprintln!("\n==> Enabling R2 Data Catalog...");
     client.enable_catalog(&bucket).await?;
@@ -125,7 +142,13 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("    Creating: {}", name);
 
         match client
-            .create_sink(&name, &bucket, signal.table, &args.r2_token)
+            .create_sink(
+                &name,
+                &bucket,
+                signal.table,
+                &args.r2_token,
+                args.rolling_interval,
+            )
             .await?
         {
             Some(_) => eprintln!("      Created"),
@@ -149,7 +172,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     // Step 9: Generate wrangler.toml
     eprintln!("\n==> Generating wrangler.toml...");
-    let wrangler_toml = generate_wrangler_toml(&args, &endpoints);
+    let wrangler_toml = generate_wrangler_toml(&args, &endpoints, client.account_id(), &bucket);
 
     match &args.output {
         Some(path) => {
@@ -171,6 +194,12 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     eprintln!();
     eprintln!("  2. Deploy:");
     eprintln!("     npx wrangler deploy");
+    eprintln!();
+    eprintln!("  3. IMPORTANT: After ingesting data, add partitioning for query performance:");
+    eprintln!("     frostbit catalog partition --r2-token $R2_API_TOKEN");
+    eprintln!();
+    eprintln!("     This adds service_name partitioning to Iceberg tables. Without it,");
+    eprintln!("     queries will scan all data instead of pruning by service.");
 
     Ok(())
 }
@@ -183,7 +212,12 @@ fn load_schema(path: &str) -> Result<Vec<SchemaField>> {
     Ok(fields)
 }
 
-fn generate_wrangler_toml(args: &CreateArgs, endpoints: &[(&str, String)]) -> String {
+fn generate_wrangler_toml(
+    args: &CreateArgs,
+    endpoints: &[(&str, String)],
+    account_id: &str,
+    bucket: &str,
+) -> String {
     let mut toml = format!(
         r#"name = "frostbit-{}"
 main = "build/worker/shim.mjs"
@@ -201,6 +235,10 @@ command = "cargo install -q worker-build && worker-build --release"
         let var_name = format!("PIPELINE_{}", signal.to_uppercase());
         toml.push_str(&format!("{} = \"{}\"\n", var_name, endpoint));
     }
+
+    // R2 Catalog configuration for Iceberg queries
+    toml.push_str(&format!("R2_CATALOG_ACCOUNT_ID = \"{}\"\n", account_id));
+    toml.push_str(&format!("R2_CATALOG_BUCKET = \"{}\"\n", bucket));
 
     toml.push_str(&format!(
         r#"AGGREGATOR_ENABLED = "{}"

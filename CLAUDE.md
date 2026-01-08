@@ -158,7 +158,9 @@ Each DO stores one row per minute with aggregated counts:
 - Logs: `count`, `error_count` (severity >= 17)
 - Traces: `count`, `error_count` (status_code == 2), `latency_sum_us`, `latency_min_us`, `latency_max_us`
 
-Query via `GET /v1/services/:service/:signal/stats?from=X&to=Y`.
+Query endpoints:
+- `GET /v1/services/:service/:signal/stats?from=X&to=Y` - stats for a single service
+- `GET /v1/services/stats?signal=logs|traces&from=X&to=Y` - stats for all services (fan-out)
 
 ### Registry (`src/registry/`)
 

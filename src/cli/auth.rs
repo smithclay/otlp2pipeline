@@ -3,10 +3,104 @@ use serde::Deserialize;
 use std::env;
 use std::path::PathBuf;
 
+const CF_API_BASE: &str = "https://api.cloudflare.com/client/v4";
+
 /// Resolved Cloudflare credentials
 pub struct Credentials {
     pub token: String,
     pub account_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiResponse<T> {
+    success: bool,
+    result: Option<T>,
+    errors: Option<Vec<ApiError>>,
+}
+
+#[derive(Deserialize)]
+struct ApiError {
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct SubdomainResult {
+    subdomain: String,
+}
+
+#[derive(Deserialize)]
+struct AccountResult {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct AccountsResponse {
+    result: Vec<AccountResult>,
+}
+
+/// Fetch the workers.dev subdomain for an account
+pub async fn fetch_workers_subdomain(creds: &Credentials) -> Result<String> {
+    let account_id = match &creds.account_id {
+        Some(id) => id.clone(),
+        None => fetch_account_id(&creds.token).await?,
+    };
+
+    let client = reqwest::Client::new();
+    let url = format!("{}/accounts/{}/workers/subdomain", CF_API_BASE, account_id);
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", creds.token))
+        .send()
+        .await
+        .context("Failed to fetch workers subdomain")?;
+
+    let api_response: ApiResponse<SubdomainResult> = response
+        .json()
+        .await
+        .context("Failed to parse subdomain response")?;
+
+    if !api_response.success {
+        let errors = api_response
+            .errors
+            .map(|e| {
+                e.iter()
+                    .map(|e| e.message.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_else(|| "Unknown error".to_string());
+        bail!("Failed to fetch workers subdomain: {}", errors);
+    }
+
+    api_response
+        .result
+        .map(|r| r.subdomain)
+        .ok_or_else(|| anyhow::anyhow!("No subdomain in response"))
+}
+
+/// Fetch account ID from the API (uses first account if multiple)
+async fn fetch_account_id(token: &str) -> Result<String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/accounts", CF_API_BASE);
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .context("Failed to fetch accounts")?;
+
+    let accounts: AccountsResponse = response
+        .json()
+        .await
+        .context("Failed to parse accounts response")?;
+
+    accounts
+        .result
+        .first()
+        .map(|a| a.id.clone())
+        .ok_or_else(|| anyhow::anyhow!("No accounts found for this token"))
 }
 
 #[derive(Deserialize)]
