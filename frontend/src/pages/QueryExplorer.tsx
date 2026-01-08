@@ -439,6 +439,8 @@ export function QueryExplorer() {
         }
       } catch (err) {
         console.error('Failed to update Perspective:', err);
+        const message = err instanceof Error ? err.message : 'Unknown visualization error';
+        setQueryError(`Query succeeded but visualization failed: ${message}`);
       }
     }
 

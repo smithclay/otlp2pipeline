@@ -318,18 +318,34 @@ export function useCatalogStats(
         const nsString = ns.join('.');
         try {
           const tables = await listTables(workerUrl, warehouse, r2Token, nsString);
-          return { namespace: nsString, tables };
+          return { namespace: nsString, tables, error: null as string | null };
         } catch (err) {
-          console.warn(`Failed to list tables in namespace ${nsString}:`, err);
-          return { namespace: nsString, tables: [] as TableIdentifier[] };
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          console.error(`Failed to list tables in namespace ${nsString}:`, err);
+          return { namespace: nsString, tables: [] as TableIdentifier[], error: message };
         }
       });
       const tableListResults = await runWithConcurrencyLimit(tableListTasks);
       const tablesByNamespace = tableListResults
-        .filter((r): r is PromiseFulfilledResult<{ namespace: string; tables: TableIdentifier[] }> =>
-          r.status === 'fulfilled'
+        .filter(
+          (
+            r
+          ): r is PromiseFulfilledResult<{
+            namespace: string;
+            tables: TableIdentifier[];
+            error: string | null;
+          }> => r.status === 'fulfilled'
         )
         .map((r) => r.value);
+
+      // Track namespace listing failures
+      const namespaceErrors = tablesByNamespace.filter((r) => r.error !== null);
+      if (namespaceErrors.length > 0) {
+        console.error(
+          `Failed to list tables in ${namespaceErrors.length} namespace(s):`,
+          namespaceErrors.map((e) => e.namespace)
+        );
+      }
 
       // Flatten table identifiers with their namespace strings
       const allTables: Array<{ namespace: string; identifier: TableIdentifier }> = [];
@@ -380,9 +396,16 @@ export function useCatalogStats(
 
       setStats({ tables: tableStats, totals });
 
-      // Report partial failures
+      // Report partial failures (namespace listing or table metadata)
+      const errorParts: string[] = [];
+      if (namespaceErrors.length > 0) {
+        errorParts.push(`Failed to list tables in ${namespaceErrors.length} namespace(s)`);
+      }
       if (failedCount > 0) {
-        setError(`Loaded ${tableStats.length} tables. Failed to load metadata for ${failedCount} table(s).`);
+        errorParts.push(`Failed to load metadata for ${failedCount} table(s)`);
+      }
+      if (errorParts.length > 0) {
+        setError(`Loaded ${tableStats.length} tables. ${errorParts.join('. ')}.`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch catalog stats';

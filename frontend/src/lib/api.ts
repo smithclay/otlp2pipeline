@@ -70,12 +70,24 @@ function isLogStatsLike(obj: unknown): boolean {
 
 /**
  * Convert API response to LogStats with string minute.
+ * Warns on semantic violations (negative counts, error_count > count).
  */
 function toLogStats(obj: Record<string, unknown>): LogStats {
+  const count = obj.count as number;
+  const error_count = obj.error_count as number;
+
+  // Warn on semantic violations (don't throw - data might still be useful)
+  if (count < 0 || error_count < 0) {
+    console.warn('Negative count in LogStats:', obj);
+  }
+  if (error_count > count) {
+    console.warn('error_count exceeds count in LogStats:', obj);
+  }
+
   return {
     minute: String(obj.minute),
-    count: obj.count as number,
-    error_count: obj.error_count as number,
+    count,
+    error_count,
   };
 }
 
@@ -104,17 +116,47 @@ function isTraceStatsLike(obj: unknown): boolean {
 
 /**
  * Convert API response to TraceStats with string minute.
+ * Warns on semantic violations (negative counts, error_count > count, invalid latency).
  */
 function toTraceStats(obj: Record<string, unknown>): TraceStats {
+  const count = obj.count as number;
+  const error_count = obj.error_count as number;
+
+  // Warn on semantic violations (don't throw - data might still be useful)
+  if (count < 0 || error_count < 0) {
+    console.warn('Negative count in TraceStats:', obj);
+  }
+  if (error_count > count) {
+    console.warn('error_count exceeds count in TraceStats:', obj);
+  }
+
   const result: TraceStats = {
     minute: String(obj.minute),
-    count: obj.count as number,
-    error_count: obj.error_count as number,
+    count,
+    error_count,
   };
+
   // Include optional latency fields if present
-  if (obj.latency_sum_us !== undefined) result.latency_sum_us = obj.latency_sum_us as number;
-  if (obj.latency_min_us !== undefined) result.latency_min_us = obj.latency_min_us as number;
-  if (obj.latency_max_us !== undefined) result.latency_max_us = obj.latency_max_us as number;
+  if (obj.latency_sum_us !== undefined) {
+    result.latency_sum_us = obj.latency_sum_us as number;
+    if (result.latency_sum_us < 0) {
+      console.warn('Negative latency_sum_us in TraceStats:', obj);
+    }
+  }
+  if (obj.latency_min_us !== undefined) {
+    result.latency_min_us = obj.latency_min_us as number;
+  }
+  if (obj.latency_max_us !== undefined) {
+    result.latency_max_us = obj.latency_max_us as number;
+  }
+
+  // Validate min <= max when both present
+  if (result.latency_min_us !== undefined && result.latency_max_us !== undefined) {
+    if (result.latency_min_us > result.latency_max_us) {
+      console.warn('latency_min_us exceeds latency_max_us in TraceStats:', obj);
+    }
+  }
+
   return result;
 }
 
@@ -195,10 +237,18 @@ export async function fetchAllServicesStats(
 
   // Validate each service stats entry
   const results: AllServicesStatsResponse[] = [];
+  let skippedEntries = 0;
+
   for (const entry of data) {
-    if (typeof entry !== 'object' || entry === null) continue;
+    if (typeof entry !== 'object' || entry === null) {
+      skippedEntries++;
+      continue;
+    }
     const e = entry as Record<string, unknown>;
-    if (typeof e.service !== 'string' || !Array.isArray(e.stats)) continue;
+    if (typeof e.service !== 'string' || !Array.isArray(e.stats)) {
+      skippedEntries++;
+      continue;
+    }
 
     // Validate stats array based on signal type
     const validator = signal === 'logs' ? isLogStatsLike : isTraceStatsLike;
@@ -209,6 +259,12 @@ export async function fetchAllServicesStats(
       service: e.service,
       stats: validStats,
     });
+  }
+
+  if (skippedEntries > 0) {
+    console.error(
+      `Dropped ${skippedEntries} of ${data.length} service stats entries due to invalid format`
+    );
   }
 
   return results;

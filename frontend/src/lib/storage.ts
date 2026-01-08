@@ -20,6 +20,18 @@ export interface Credentials {
   r2Token: string;
 }
 
+/**
+ * Check if a string is a valid HTTP/HTTPS URL.
+ */
+function isValidUrl(str: string): boolean {
+  try {
+    const url = new URL(str);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export function getStoredCredentials(): Credentials | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -27,10 +39,10 @@ export function getStoredCredentials(): Credentials | null {
 
     const parsed = JSON.parse(stored);
 
-    // Validate shape
+    // Validate shape and URL format
     if (
       typeof parsed.workerUrl === 'string' &&
-      parsed.workerUrl.length > 0 &&
+      isValidUrl(parsed.workerUrl) &&
       typeof parsed.r2Token === 'string' &&
       parsed.r2Token.length > 0
     ) {

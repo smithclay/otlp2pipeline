@@ -119,8 +119,10 @@ export async function connectToR2(
     workerConfig = await fetchWorkerConfig(config.workerUrl);
   } catch (error) {
     await conn.close();
+    const message = error instanceof Error ? error.message : 'Unknown error';
     throw new Error(
-      `Failed to fetch config from worker. Ensure the worker is running and accessible.`
+      `Failed to fetch config from worker: ${message}. ` +
+        `Ensure the worker is running and accessible at ${config.workerUrl}`
     );
   }
 
@@ -143,7 +145,12 @@ export async function connectToR2(
     icebergAvailable = true;
   } catch (error) {
     console.error('[DuckDB] Failed to load extensions:', error);
-    warnings.push('Required extensions not available - R2 queries may fail');
+    await conn.close();
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(
+      `Failed to load required DuckDB extensions (httpfs, iceberg). ` +
+        `This may be a browser compatibility issue or network error. Details: ${message}`
+    );
   }
 
   // Create Iceberg secret with R2 token

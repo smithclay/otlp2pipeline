@@ -27,6 +27,7 @@ interface UseLiveTailResult {
   status: TailStatus;
   records: TailRecord[];
   droppedCount: number;
+  parseErrorCount: number;
 }
 
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -41,6 +42,7 @@ export function useLiveTail(
   const [status, setStatus] = useState<TailStatus>({ state: 'idle' });
   const [records, setRecords] = useState<TailRecord[]>([]);
   const [droppedCount, setDroppedCount] = useState(0);
+  const [parseErrorCount, setParseErrorCount] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -111,7 +113,13 @@ export function useLiveTail(
         }
         // 'connected' message is handled by onopen
       } catch (err) {
-        console.warn('Failed to parse WebSocket message:', err);
+        console.error(
+          'Failed to parse WebSocket message:',
+          err,
+          'Raw:',
+          typeof event.data === 'string' ? event.data.slice(0, 100) : event.data
+        );
+        setParseErrorCount((prev) => prev + 1);
       }
     };
 
@@ -147,6 +155,7 @@ export function useLiveTail(
   const start = useCallback(() => {
     setRecords([]);
     setDroppedCount(0);
+    setParseErrorCount(0);
     reconnectAttemptRef.current = 0;
     connect();
   }, [connect]);
@@ -171,5 +180,6 @@ export function useLiveTail(
     status,
     records,
     droppedCount,
+    parseErrorCount,
   };
 }
