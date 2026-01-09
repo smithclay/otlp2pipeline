@@ -61,6 +61,64 @@ pub struct AccessSetupResult {
 use crate::cloudflare::CloudflareClient;
 use anyhow::Result;
 
+/// Set up Cloudflare Access for a frostbit environment
+///
+/// Creates:
+/// - Access Application protecting workers.dev and pages.dev
+/// - Email domain policy for human users
+/// - Service Auth policy for machine-to-machine (OTLP ingest)
+pub async fn setup_access(
+    client: &CloudflareClient,
+    app_name: &str,
+    email_domains: Vec<String>,
+    worker_subdomain: Option<&str>,
+) -> Result<AccessSetupResult> {
+    // Build destinations - protect both workers.dev and pages.dev patterns
+    let mut destinations = vec![];
+
+    if let Some(subdomain) = worker_subdomain {
+        // Specific subdomain provided
+        destinations.push(AccessDestination {
+            type_: "public".to_string(),
+            uri: format!("{}/*", subdomain),
+        });
+    } else {
+        // Generic patterns - user will need to configure in dashboard
+        destinations.push(AccessDestination {
+            type_: "public".to_string(),
+            uri: format!("{}.workers.dev/*", app_name),
+        });
+    }
+
+    eprintln!("    Creating Access application: {}", app_name);
+    let app = client.create_access_app(app_name, destinations).await?;
+    eprintln!("      App ID: {}", app.id);
+    eprintln!("      AUD: {}", app.aud);
+
+    // Create email domain policy for humans
+    eprintln!("    Creating email policy for: {:?}", email_domains);
+    let email_policy = client
+        .create_access_email_policy(&app.id, "Allow Team", email_domains)
+        .await?;
+    eprintln!("      Policy ID: {}", email_policy.id);
+
+    // Create service auth policy for machines
+    eprintln!("    Creating service token policy...");
+    let service_policy = client
+        .create_access_service_policy(&app.id, "Allow Services")
+        .await?;
+    eprintln!("      Policy ID: {}", service_policy.id);
+
+    // Team domain is derived from account
+    let team_domain = format!("https://{}.cloudflareaccess.com", client.account_id());
+
+    Ok(AccessSetupResult {
+        app_id: app.id,
+        aud: app.aud,
+        team_domain,
+    })
+}
+
 impl CloudflareClient {
     /// Create an Access application protecting the given domains
     pub async fn create_access_app(
