@@ -193,6 +193,14 @@ pub struct CreateArgs {
     /// Build worker locally instead of downloading from GitHub releases
     #[arg(long)]
     pub use_local: bool,
+
+    /// Enable Cloudflare Access protection
+    #[arg(long)]
+    pub access: bool,
+
+    /// Allowed email domains for Access (comma-separated, e.g., "@company.com,@contractor.io")
+    #[arg(long, requires = "access")]
+    pub emails: Option<String>,
 }
 
 #[derive(clap::Args)]
