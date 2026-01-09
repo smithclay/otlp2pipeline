@@ -43,6 +43,10 @@ pub fn pipeline_name(env: &str, signal: &str) -> String {
     )
 }
 
+pub fn access_app_name(env: &str) -> String {
+    format!("otlp2pipeline-{}", normalize_with_hyphens(env))
+}
+
 pub fn worker_name(env: &str) -> String {
     format!("otlp2pipeline-{}", normalize_with_hyphens(env))
 }
@@ -92,5 +96,11 @@ mod tests {
     #[test]
     fn test_worker_name_without_prefix() {
         assert_eq!(worker_name("test05"), "otlp2pipeline-test05");
+    }
+
+    #[test]
+    fn test_access_app_name() {
+        assert_eq!(access_app_name("prod"), "otlp2pipeline-prod");
+        assert_eq!(access_app_name("otlp2pipeline-prod"), "otlp2pipeline-prod");
     }
 }
