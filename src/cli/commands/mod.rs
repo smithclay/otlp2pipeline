@@ -1,22 +1,17 @@
-mod bucket;
-mod catalog;
+pub mod cloudflare;
 mod connect;
-mod create;
-mod destroy;
+mod init;
 mod naming;
-mod plan;
-mod query;
 mod services;
-mod status;
 mod tail;
 
-pub use bucket::execute_bucket_delete;
-pub use catalog::{execute_catalog_list, execute_catalog_partition};
 pub use connect::{execute_connect_claude_code, execute_connect_otel_collector};
-pub use create::execute_create;
-pub use destroy::execute_destroy;
-pub use plan::execute_plan;
-pub use query::execute_query;
+pub use init::{execute_init, InitArgs};
 pub use services::execute_services;
-pub use status::execute_status;
 pub use tail::execute_tail;
+
+// Re-export cloudflare commands for convenience
+pub use cloudflare::{
+    execute_bucket_delete, execute_catalog_list, execute_catalog_partition, execute_create,
+    execute_destroy, execute_plan, execute_query, execute_status,
+};

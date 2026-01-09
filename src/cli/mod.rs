@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod commands;
+pub mod config;
 pub mod url;
 
 use clap::{Parser, Subcommand};
@@ -15,6 +16,46 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Initialize project config (.otlp2pipeline.toml)
+    Init(InitArgs),
+    /// Cloudflare infrastructure commands
+    #[command(alias = "cf")]
+    Cloudflare(CloudflareArgs),
+    /// List known services
+    Services(ServicesArgs),
+    /// Stream live telemetry
+    Tail(TailArgs),
+    /// Generate OpenTelemetry Collector config
+    Connect(ConnectArgs),
+}
+
+#[derive(clap::Args)]
+pub struct InitArgs {
+    /// Cloud provider (cloudflare, cf)
+    #[arg(long, short)]
+    pub provider: String,
+
+    /// Environment name
+    #[arg(long, short)]
+    pub env: String,
+
+    /// Worker URL (optional, can be set later)
+    #[arg(long)]
+    pub worker_url: Option<String>,
+
+    /// Overwrite existing config
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(clap::Args)]
+pub struct CloudflareArgs {
+    #[command(subcommand)]
+    pub command: CloudflareCommands,
+}
+
+#[derive(Subcommand)]
+pub enum CloudflareCommands {
     /// Create a new pipeline environment
     Create(CreateArgs),
     /// Destroy a pipeline environment
@@ -25,16 +66,10 @@ pub enum Commands {
     Plan(PlanArgs),
     /// Start a DuckDB query session
     Query(QueryArgs),
-    /// List known services
-    Services(ServicesArgs),
-    /// Stream live telemetry
-    Tail(TailArgs),
     /// Manage Iceberg catalog
     Catalog(CatalogArgs),
     /// Manage R2 bucket data
     Bucket(BucketArgs),
-    /// Generate OpenTelemetry Collector config
-    Connect(ConnectArgs),
 }
 
 #[derive(clap::Args)]
@@ -113,8 +148,9 @@ pub struct CatalogPartitionArgs {
 
 #[derive(clap::Args)]
 pub struct CreateArgs {
-    /// Environment name
-    pub name: String,
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
 
     /// R2 API token (create at dash.cloudflare.com > R2 > Manage R2 API Tokens)
     ///
@@ -157,8 +193,9 @@ pub struct CreateArgs {
 
 #[derive(clap::Args)]
 pub struct DestroyArgs {
-    /// Environment name
-    pub name: String,
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
 
     /// Skip confirmation prompt
     #[arg(long)]
@@ -171,20 +208,23 @@ pub struct DestroyArgs {
 
 #[derive(clap::Args)]
 pub struct StatusArgs {
-    /// Environment name
-    pub name: String,
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
 }
 
 #[derive(clap::Args)]
 pub struct PlanArgs {
-    /// Environment name
-    pub name: String,
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
 }
 
 #[derive(clap::Args)]
 pub struct QueryArgs {
-    /// Environment name
-    pub name: String,
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
 }
 
 #[derive(clap::Args)]

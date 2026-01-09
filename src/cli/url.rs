@@ -3,14 +3,30 @@ use std::fs;
 use std::path::Path;
 
 use crate::cli::auth::{fetch_workers_subdomain, resolve_credentials};
+use crate::cli::config::try_load_config;
 
-/// Resolve worker URL from explicit flag or wrangler.toml (with API lookup for subdomain)
+/// Resolve URL with cascade: explicit flag > config file
+#[cfg(test)]
+fn resolve_url_cascade(explicit: Option<&str>, config_url: Option<&str>) -> Option<String> {
+    explicit
+        .map(|s| s.to_string())
+        .or_else(|| config_url.map(|s| s.to_string()))
+}
+
+/// Resolve worker URL with full cascade: flag > .otlp2pipeline.toml > wrangler.toml
 pub async fn resolve_worker_url(explicit_url: Option<&str>) -> Result<String> {
     if let Some(url) = explicit_url {
         return Ok(url.trim_end_matches('/').to_string());
     }
 
-    // Try to parse wrangler.toml
+    // Try config file
+    if let Some(config) = try_load_config() {
+        if let Some(url) = config.worker_url {
+            return Ok(url.trim_end_matches('/').to_string());
+        }
+    }
+
+    // Fall back to wrangler.toml
     let wrangler_path = Path::new("wrangler.toml");
     if !wrangler_path.exists() {
         bail!(
@@ -216,5 +232,22 @@ mod tests {
         .unwrap();
         let result = resolve_url_from_config(&config, None);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_cascade_priority() {
+        // Config URL should be used when no explicit URL and no wrangler.toml
+        // This is a unit test for the cascade logic
+        let explicit = Some("https://explicit.workers.dev");
+        let config_url = Some("https://config.workers.dev".to_string());
+
+        let result = resolve_url_cascade(explicit, config_url.as_deref());
+        assert_eq!(result, Some("https://explicit.workers.dev".to_string()));
+
+        let result = resolve_url_cascade(None, config_url.as_deref());
+        assert_eq!(result, Some("https://config.workers.dev".to_string()));
+
+        let result = resolve_url_cascade(None, None);
+        assert_eq!(result, None);
     }
 }

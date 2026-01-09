@@ -1,6 +1,6 @@
 use clap::Parser;
 use otlp2pipeline::cli::{
-    commands, BucketCommands, CatalogCommands, Cli, Commands, ConnectCommands,
+    commands, BucketCommands, CatalogCommands, Cli, CloudflareCommands, Commands, ConnectCommands,
 };
 
 #[tokio::main]
@@ -8,24 +8,37 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Create(args) => commands::execute_create(args).await?,
-        Commands::Destroy(args) => commands::execute_destroy(args).await?,
-        Commands::Status(args) => commands::execute_status(args).await?,
-        Commands::Plan(args) => commands::execute_plan(args).await?,
-        Commands::Query(args) => commands::execute_query(args).await?,
+        Commands::Init(args) => {
+            let init_args = commands::InitArgs {
+                provider: args.provider,
+                env: args.env,
+                worker_url: args.worker_url,
+                force: args.force,
+            };
+            commands::execute_init(init_args)?
+        }
+        Commands::Cloudflare(cf_args) => match cf_args.command {
+            CloudflareCommands::Create(args) => commands::execute_create(args).await?,
+            CloudflareCommands::Destroy(args) => commands::execute_destroy(args).await?,
+            CloudflareCommands::Status(args) => commands::execute_status(args).await?,
+            CloudflareCommands::Plan(args) => commands::execute_plan(args).await?,
+            CloudflareCommands::Query(args) => commands::execute_query(args).await?,
+            CloudflareCommands::Catalog(args) => match args.command {
+                CatalogCommands::List(list_args) => {
+                    commands::execute_catalog_list(list_args).await?
+                }
+                CatalogCommands::Partition(partition_args) => {
+                    commands::execute_catalog_partition(partition_args).await?
+                }
+            },
+            CloudflareCommands::Bucket(args) => match args.command {
+                BucketCommands::Delete(delete_args) => {
+                    commands::execute_bucket_delete(delete_args).await?
+                }
+            },
+        },
         Commands::Services(args) => commands::execute_services(args).await?,
         Commands::Tail(args) => commands::execute_tail(args).await?,
-        Commands::Catalog(args) => match args.command {
-            CatalogCommands::List(list_args) => commands::execute_catalog_list(list_args).await?,
-            CatalogCommands::Partition(partition_args) => {
-                commands::execute_catalog_partition(partition_args).await?
-            }
-        },
-        Commands::Bucket(args) => match args.command {
-            BucketCommands::Delete(delete_args) => {
-                commands::execute_bucket_delete(delete_args).await?
-            }
-        },
         Commands::Connect(args) => match args.command {
             ConnectCommands::OtelCollector(otel_args) => {
                 commands::execute_connect_otel_collector(otel_args).await?

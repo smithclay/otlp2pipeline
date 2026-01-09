@@ -2,8 +2,8 @@ use anyhow::{bail, Result};
 use std::io::{self, Write};
 use std::process::Command;
 
-use super::naming::bucket_name;
 use crate::cli::auth;
+use crate::cli::commands::naming::bucket_name;
 use crate::cli::BucketDeleteArgs;
 use crate::cloudflare::CloudflareClient;
 

@@ -1,18 +1,33 @@
 use anyhow::{bail, Result};
 use std::io::{self, Write};
 
-use super::naming::{bucket_name, pipeline_name, sink_name, stream_name, worker_name};
 use crate::cli::auth;
+use crate::cli::commands::naming::{
+    bucket_name, pipeline_name, sink_name, stream_name, worker_name,
+};
+use crate::cli::config::Config;
 use crate::cli::DestroyArgs;
 use crate::cloudflare::CloudflareClient;
 
 const SIGNAL_NAMES: &[&str] = &["logs", "traces", "gauge", "sum"];
 
 pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
-    let bucket = bucket_name(&args.name);
+    let env_name = args
+        .env
+        .clone()
+        .or_else(|| Config::load().ok().map(|c| c.environment))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No environment specified. Either:\n  \
+        1. Run `otlp2pipeline init --provider cf --env <name>` first\n  \
+        2. Pass --env <name> explicitly"
+            )
+        })?;
+
+    let bucket = bucket_name(&env_name);
     let mut failures: Vec<String> = Vec::new();
 
-    eprintln!("==> Destroying pipeline environment: {}", args.name);
+    eprintln!("==> Destroying pipeline environment: {}", env_name);
     eprintln!("    Bucket: {}", bucket);
 
     // Confirmation prompt
@@ -39,7 +54,7 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
     eprintln!("\n==> Deleting pipelines...");
     let pipelines = client.list_pipelines().await?;
     for signal in SIGNAL_NAMES {
-        let name = pipeline_name(&args.name, signal);
+        let name = pipeline_name(&env_name, signal);
         if let Some(pipeline) = pipelines.iter().find(|p| p.name == name) {
             eprintln!("    Deleting: {} ({})", name, pipeline.id);
             match client.delete_pipeline(&pipeline.id).await {
@@ -58,7 +73,7 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
     eprintln!("\n==> Deleting sinks...");
     let sinks = client.list_sinks().await?;
     for signal in SIGNAL_NAMES {
-        let name = sink_name(&args.name, signal);
+        let name = sink_name(&env_name, signal);
         if let Some(sink) = sinks.iter().find(|s| s.name == name) {
             eprintln!("    Deleting: {} ({})", name, sink.id);
             match client.delete_sink(&sink.id).await {
@@ -77,7 +92,7 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
     eprintln!("\n==> Deleting streams...");
     let streams = client.list_streams().await?;
     for signal in SIGNAL_NAMES {
-        let name = stream_name(&args.name, signal);
+        let name = stream_name(&env_name, signal);
         if let Some(stream) = streams.iter().find(|s| s.name == name) {
             eprintln!("    Deleting: {} ({})", name, stream.id);
             match client.delete_stream(&stream.id).await {
@@ -104,7 +119,7 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
                 eprintln!("    To delete all objects first, run:");
                 eprintln!(
                     "      otlp2pipeline bucket delete {} --bucket {}",
-                    args.name, bucket
+                    env_name, bucket
                 );
                 eprintln!();
                 eprintln!("    Then re-run destroy to delete the empty bucket.");
@@ -118,7 +133,7 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
 
     // Step 5: Delete worker (optional)
     if args.include_worker {
-        let worker = worker_name(&args.name);
+        let worker = worker_name(&env_name);
         eprintln!("\n==> Deleting worker: {}", worker);
         match client.delete_worker(&worker).await {
             Ok(_) => eprintln!("    Deleted"),

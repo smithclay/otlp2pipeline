@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::process::Command;
 
 use crate::cli::auth;
+use crate::cli::config::Config;
 use crate::cli::QueryArgs;
 use crate::cloudflare::CloudflareClient;
 
@@ -12,9 +13,21 @@ fn bucket_name(env_name: &str) -> String {
 }
 
 pub async fn execute_query(args: QueryArgs) -> Result<()> {
-    let bucket = bucket_name(&args.name);
+    let env_name = args
+        .env
+        .clone()
+        .or_else(|| Config::load().ok().map(|c| c.environment))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No environment specified. Either:\n  \
+        1. Run `otlp2pipeline init --provider cf --env <name>` first\n  \
+        2. Pass --env <name> explicitly"
+            )
+        })?;
 
-    println!("==> Starting DuckDB session for environment: {}", args.name);
+    let bucket = bucket_name(&env_name);
+
+    println!("==> Starting DuckDB session for environment: {}", env_name);
     println!("    Bucket: {}", bucket);
     println!();
 
@@ -116,7 +129,7 @@ SHOW TABLES;
 .print '  DESCRIBE logs;'
 .print ''
 "#,
-        args.name, r2_token, warehouse, catalog_uri
+        env_name, r2_token, warehouse, catalog_uri
     );
 
     // Write to temp file

@@ -39,31 +39,53 @@ cargo install --path .
 ### Commands
 
 ```bash
+# Initialize project config (creates .otlp2pipeline.toml)
+otlp2pipeline init --provider cf --env prod
+otlp2pipeline init --provider cf --env prod --worker-url https://my-worker.workers.dev
+
+# Cloudflare infrastructure commands (use 'cf' or 'cloudflare')
 # Create environment (bucket, streams, sinks, pipelines)
-otlp2pipeline create prod --token $R2_TOKEN --output wrangler.toml
+otlp2pipeline cf create --r2-token $R2_TOKEN --output wrangler.toml
+otlp2pipeline cf create --env staging  # override config
 
 # Check status
-otlp2pipeline status prod
+otlp2pipeline cf status
+otlp2pipeline cf status --env prod
 
 # Dry run (show what would be created)
-otlp2pipeline plan staging
+otlp2pipeline cf plan
 
-# Tear down (both forms work: with or without otlp2pipeline- prefix)
-otlp2pipeline destroy staging --force
-otlp2pipeline destroy otlp2pipeline-staging --force
+# Tear down
+otlp2pipeline cf destroy --force
+otlp2pipeline cf destroy --env staging --force
 
 # Query data with DuckDB
-otlp2pipeline query prod
+otlp2pipeline cf query
 
 # List known services
 otlp2pipeline services --url https://my-worker.workers.dev
+otlp2pipeline services  # uses worker_url from config
 
 # Stream live logs for a service
 otlp2pipeline tail my-service logs --url https://my-worker.workers.dev
+otlp2pipeline tail my-service logs  # uses worker_url from config
 
 # Stream live traces
 otlp2pipeline tail api-gateway traces
 ```
+
+### Config File
+
+The `init` command creates `.otlp2pipeline.toml` in the current directory:
+
+```toml
+provider = "cloudflare"
+environment = "prod"
+worker_url = "https://my-worker.workers.dev"  # optional
+account_id = "abc123"                          # optional
+```
+
+URL resolution cascade: `--url` flag > `.otlp2pipeline.toml` > `wrangler.toml`
 
 ### Naming
 

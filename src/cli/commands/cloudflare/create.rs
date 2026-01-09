@@ -1,7 +1,8 @@
 use anyhow::Result;
 
-use super::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
 use crate::cli::auth;
+use crate::cli::commands::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
+use crate::cli::config::Config;
 use crate::cli::CreateArgs;
 use crate::cloudflare::{CloudflareClient, CorsAllowed, CorsRule, SchemaField};
 
@@ -48,7 +49,19 @@ fn enabled_signals(args: &CreateArgs) -> Vec<&'static SignalConfig> {
 }
 
 pub async fn execute_create(args: CreateArgs) -> Result<()> {
-    eprintln!("==> Creating pipeline environment: {}", args.name);
+    let env_name = args
+        .env
+        .clone()
+        .or_else(|| Config::load().ok().map(|c| c.environment))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No environment specified. Either:\n  \
+        1. Run `otlp2pipeline init --provider cf --env <name>` first\n  \
+        2. Pass --env <name> explicitly"
+            )
+        })?;
+
+    eprintln!("==> Creating pipeline environment: {}", env_name);
 
     // Resolve auth
     eprintln!("==> Resolving credentials...");
@@ -56,7 +69,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     let client = CloudflareClient::new(creds.token, creds.account_id).await?;
     eprintln!("    Account ID: {}", client.account_id());
 
-    let bucket = bucket_name(&args.name);
+    let bucket = bucket_name(&env_name);
     let signals = enabled_signals(&args);
 
     eprintln!("    Bucket: {}", bucket);
@@ -110,7 +123,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     // Step 5: Create streams
     eprintln!("\n==> Creating streams...");
     for signal in &signals {
-        let name = stream_name(&args.name, signal.name);
+        let name = stream_name(&env_name, signal.name);
         eprintln!("    Creating: {}", name);
 
         let schema = load_schema(signal.schema_file)?;
@@ -126,7 +139,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     let mut endpoints: Vec<(&str, String)> = Vec::new();
 
     for signal in &signals {
-        let name = stream_name(&args.name, signal.name);
+        let name = stream_name(&env_name, signal.name);
         if let Some(stream) = streams.iter().find(|s| s.name == name) {
             if let Some(ref endpoint) = stream.endpoint {
                 eprintln!("    {}: {}", signal.name, endpoint);
@@ -138,7 +151,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     // Step 7: Create sinks
     eprintln!("\n==> Creating sinks...");
     for signal in &signals {
-        let name = sink_name(&args.name, signal.name);
+        let name = sink_name(&env_name, signal.name);
         eprintln!("    Creating: {}", name);
 
         match client
@@ -159,9 +172,9 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     // Step 8: Create pipelines
     eprintln!("\n==> Creating pipelines...");
     for signal in &signals {
-        let name = pipeline_name(&args.name, signal.name);
-        let stream = stream_name(&args.name, signal.name);
-        let sink = sink_name(&args.name, signal.name);
+        let name = pipeline_name(&env_name, signal.name);
+        let stream = stream_name(&env_name, signal.name);
+        let sink = sink_name(&env_name, signal.name);
         eprintln!("    Creating: {}", name);
 
         match client.create_pipeline(&name, &stream, &sink).await? {
@@ -172,7 +185,8 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     // Step 9: Generate wrangler.toml
     eprintln!("\n==> Generating wrangler.toml...");
-    let wrangler_toml = generate_wrangler_toml(&args, &endpoints, client.account_id(), &bucket);
+    let wrangler_toml =
+        generate_wrangler_toml(&env_name, &args, &endpoints, client.account_id(), &bucket);
 
     match &args.output {
         Some(path) => {
@@ -213,6 +227,7 @@ fn load_schema(path: &str) -> Result<Vec<SchemaField>> {
 }
 
 fn generate_wrangler_toml(
+    env_name: &str,
     args: &CreateArgs,
     endpoints: &[(&str, String)],
     account_id: &str,
@@ -228,7 +243,7 @@ command = "cargo install -q worker-build && worker-build --release"
 
 [vars]
 "#,
-        normalize(&args.name)
+        normalize(env_name)
     );
 
     for (signal, endpoint) in endpoints {
