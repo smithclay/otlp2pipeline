@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crate::cli::auth;
 use crate::cli::commands::naming::{
-    bucket_name, pipeline_name, sink_name, stream_name, worker_name,
+    access_app_name, bucket_name, pipeline_name, sink_name, stream_name, worker_name,
 };
 use crate::cli::config::Config;
 use crate::cli::DestroyArgs;
@@ -107,7 +107,24 @@ pub async fn execute_destroy(args: DestroyArgs) -> Result<()> {
         }
     }
 
-    // Step 4: Delete bucket
+    // Step 4: Delete Access app if it exists
+    eprintln!("\n==> Checking for Access application...");
+    let apps = client.list_access_apps().await?;
+    let app_name = access_app_name(&env_name);
+    if let Some(app) = apps.iter().find(|a| a.name == app_name) {
+        eprintln!("    Deleting: {}", app_name);
+        match client.delete_access_app(&app.id).await {
+            Ok(_) => eprintln!("      Deleted"),
+            Err(e) => {
+                eprintln!("      Failed: {}", e);
+                failures.push(format!("access app '{}': {}", app_name, e));
+            }
+        }
+    } else {
+        eprintln!("    No Access app found");
+    }
+
+    // Step 5: Delete bucket
     eprintln!("\n==> Deleting R2 bucket: {}", bucket);
     match client.delete_bucket(&bucket).await {
         Ok(_) => eprintln!("    Deleted"),
