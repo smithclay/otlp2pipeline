@@ -194,13 +194,9 @@ pub struct CreateArgs {
     #[arg(long)]
     pub use_local: bool,
 
-    /// Enable Cloudflare Access protection
+    /// Enable Cloudflare Access protection (service token auth)
     #[arg(long)]
     pub access: bool,
-
-    /// Allowed email domains for Access (comma-separated, e.g., "@company.com,@contractor.io")
-    #[arg(long, requires = "access")]
-    pub emails: Option<String>,
 }
 
 #[derive(clap::Args)]

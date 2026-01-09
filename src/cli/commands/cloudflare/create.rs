@@ -205,21 +205,8 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     if args.access {
         eprintln!("\n==> Setting up Cloudflare Access...");
 
-        let email_domains: Vec<String> = args
-            .emails
-            .as_deref()
-            .unwrap_or("@example.com")
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        if email_domains.is_empty() || email_domains.iter().all(|d| d == "@example.com") {
-            eprintln!("    WARNING: Using default @example.com - specify --emails for production");
-        }
-
         let app_name = access_app_name(&env_name);
-        match setup_access(&client, &app_name, email_domains, None).await {
+        match setup_access(&client, &app_name, None).await {
             Ok(result) => {
                 eprintln!("\n    Access configured successfully!");
                 eprintln!("\n    Add these to your Worker for JWT validation:");
@@ -246,7 +233,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("  2. Create Service Token for OTLP ingestion:");
         eprintln!("     Zero Trust Dashboard > Access > Service Auth > Service Tokens");
         eprintln!();
-        eprintln!("  3. Configure your OTLP exporters with headers:");
+        eprintln!("  3. Configure your OTLP exporters with service token headers:");
         eprintln!("     CF-Access-Client-Id: <client-id>");
         eprintln!("     CF-Access-Client-Secret: <client-secret>");
         eprintln!();
