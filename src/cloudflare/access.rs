@@ -57,3 +57,72 @@ pub struct AccessSetupResult {
     pub aud: String,
     pub team_domain: String,
 }
+
+use crate::cloudflare::CloudflareClient;
+use anyhow::Result;
+
+impl CloudflareClient {
+    /// Create an Access application protecting the given domains
+    pub async fn create_access_app(
+        &self,
+        name: &str,
+        destinations: Vec<AccessDestination>,
+    ) -> Result<AccessApp> {
+        let request = CreateAccessAppRequest {
+            name: name.to_string(),
+            type_: "self_hosted".to_string(),
+            session_duration: "24h".to_string(),
+            destinations,
+        };
+
+        self.post("/access/apps", &request).await
+    }
+
+    /// Create an Access policy for email domain matching
+    pub async fn create_access_email_policy(
+        &self,
+        app_id: &str,
+        name: &str,
+        email_domains: Vec<String>,
+    ) -> Result<AccessPolicy> {
+        let request = CreateAccessPolicyRequest {
+            name: name.to_string(),
+            decision: "allow".to_string(),
+            include: vec![AccessRule {
+                email_domain: Some(email_domains),
+            }],
+            precedence: Some(1),
+        };
+
+        self.post(&format!("/access/apps/{}/policies", app_id), &request)
+            .await
+    }
+
+    /// Create an Access policy for service tokens
+    pub async fn create_access_service_policy(
+        &self,
+        app_id: &str,
+        name: &str,
+    ) -> Result<AccessPolicy> {
+        // Service Auth policies use a special rule type
+        let request = serde_json::json!({
+            "name": name,
+            "decision": "non_identity",
+            "include": [{"any_valid_service_token": {}}],
+            "precedence": 2
+        });
+
+        self.post(&format!("/access/apps/{}/policies", app_id), &request)
+            .await
+    }
+
+    /// Delete an Access application
+    pub async fn delete_access_app(&self, app_id: &str) -> Result<()> {
+        self.delete(&format!("/access/apps/{}", app_id)).await
+    }
+
+    /// List Access applications
+    pub async fn list_access_apps(&self) -> Result<Vec<AccessApp>> {
+        self.get("/access/apps").await
+    }
+}
