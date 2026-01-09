@@ -46,6 +46,9 @@ async fn main() -> anyhow::Result<()> {
             ConnectCommands::ClaudeCode(claude_args) => {
                 commands::execute_connect_claude_code(claude_args).await?
             }
+            ConnectCommands::Codex(codex_args) => {
+                commands::execute_connect_codex(codex_args).await?
+            }
         },
     }
 

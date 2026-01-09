@@ -189,6 +189,10 @@ pub struct CreateArgs {
     /// Rolling policy interval in seconds (how often files are written to R2)
     #[arg(long, default_value = "300")]
     pub rolling_interval: u32,
+
+    /// Build worker locally instead of downloading from GitHub releases
+    #[arg(long)]
+    pub use_local: bool,
 }
 
 #[derive(clap::Args)]
@@ -259,6 +263,8 @@ pub enum ConnectCommands {
     OtelCollector(ConnectOtelCollectorArgs),
     /// Generate shell exports for Claude Code integration
     ClaudeCode(ConnectClaudeCodeArgs),
+    /// Generate TOML config for OpenAI Codex CLI
+    Codex(ConnectCodexArgs),
 }
 
 #[derive(clap::Args)]
@@ -277,4 +283,11 @@ pub struct ConnectClaudeCodeArgs {
     /// Output format
     #[arg(long, default_value = "shell")]
     pub format: String,
+}
+
+#[derive(clap::Args)]
+pub struct ConnectCodexArgs {
+    /// Worker URL (falls back to wrangler.toml)
+    #[arg(long)]
+    pub url: Option<String>,
 }

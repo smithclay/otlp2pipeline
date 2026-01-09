@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::cli::url::resolve_worker_url;
-use crate::cli::{ConnectClaudeCodeArgs, ConnectOtelCollectorArgs};
+use crate::cli::{ConnectClaudeCodeArgs, ConnectCodexArgs, ConnectOtelCollectorArgs};
 
 /// Generate OpenTelemetry Collector configuration
 pub async fn execute_connect_otel_collector(args: ConnectOtelCollectorArgs) -> Result<()> {
@@ -19,6 +19,16 @@ pub async fn execute_connect_claude_code(args: ConnectClaudeCodeArgs) -> Result<
 
     let output = generate_claude_code_config(&url, &args.format);
     println!("{}", output);
+
+    Ok(())
+}
+
+/// Generate OpenAI Codex CLI configuration
+pub async fn execute_connect_codex(args: ConnectCodexArgs) -> Result<()> {
+    let url = resolve_worker_url(args.url.as_deref()).await?;
+
+    let config = generate_codex_config(&url);
+    println!("{}", config);
 
     Ok(())
 }
@@ -121,6 +131,37 @@ fn generate_claude_code_json(endpoint: &str) -> String {
     )
 }
 
+fn generate_codex_config(endpoint: &str) -> String {
+    format!(
+        r#"# OpenAI Codex CLI configuration for otlp2pipeline
+# Add to your codex config file (~/.codex/config.toml)
+# or run: codex config --edit
+
+[otel]
+# Enable OTLP HTTP exporter for logs
+exporter = "otlp-http"
+
+# Optional: also enable trace export
+# trace_exporter = "otlp-http"
+
+# Optional: log user prompts (disabled by default for privacy)
+# log_user_prompt = true
+
+# Optional: environment label for filtering
+# environment = "dev"
+
+[otel.exporter."otlp-http"]
+endpoint = "{endpoint}/v1/logs"
+protocol = "binary"
+
+# Optional: add auth header if PIPELINE_AUTH_TOKEN is set on worker
+# [otel.exporter."otlp-http".headers]
+# "Authorization" = "Bearer ${{PIPELINE_AUTH_TOKEN}}"
+"#,
+        endpoint = endpoint
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +199,17 @@ mod tests {
         // Should include file path instructions
         assert!(config.contains("managed-settings.json"));
         assert!(config.contains("/etc/claude-code/"));
+    }
+
+    #[test]
+    fn test_generate_codex_config() {
+        let config = generate_codex_config("https://my-worker.workers.dev");
+        assert!(config.contains("[otel]"));
+        assert!(config.contains("exporter = \"otlp-http\""));
+        assert!(config.contains("[otel.exporter.\"otlp-http\"]"));
+        assert!(config.contains("endpoint = \"https://my-worker.workers.dev/v1/logs\""));
+        assert!(config.contains("protocol = \"binary\""));
+        // Should include config file path instructions
+        assert!(config.contains("~/.codex/config.toml"));
     }
 }

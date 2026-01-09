@@ -226,6 +226,8 @@ fn load_schema(path: &str) -> Result<Vec<SchemaField>> {
     Ok(fields)
 }
 
+const GITHUB_REPO: &str = "smithclay/otlp2pipeline";
+
 fn generate_wrangler_toml(
     env_name: &str,
     args: &CreateArgs,
@@ -233,17 +235,34 @@ fn generate_wrangler_toml(
     account_id: &str,
     bucket: &str,
 ) -> String {
+    let (main_file, build_command) = if args.use_local {
+        (
+            "build/worker/shim.mjs",
+            "cargo install -q worker-build && worker-build --release".to_string(),
+        )
+    } else {
+        (
+            "build/index.js",
+            format!(
+                "curl -sL https://github.com/{}/releases/latest/download/otlp2pipeline-worker.zip -o worker.zip && unzip -o worker.zip -d build && rm worker.zip",
+                GITHUB_REPO
+            ),
+        )
+    };
+
     let mut toml = format!(
         r#"name = "otlp2pipeline-{}"
-main = "build/worker/shim.mjs"
+main = "{}"
 compatibility_date = "2024-01-01"
 
 [build]
-command = "cargo install -q worker-build && worker-build --release"
+command = "{}"
 
 [vars]
 "#,
-        normalize(env_name)
+        normalize(env_name),
+        main_file,
+        build_command
     );
 
     for (signal, endpoint) in endpoints {
