@@ -203,7 +203,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
     eprintln!("ENVIRONMENT CREATED");
     eprintln!("==========================================\n");
     eprintln!("Next steps:");
-    eprintln!("  1. Set pipeline auth token:");
+    eprintln!("  1. (Optional) Set auth token for ingestion:");
     eprintln!("     npx wrangler secret put PIPELINE_AUTH_TOKEN");
     eprintln!();
     eprintln!("  2. Deploy:");

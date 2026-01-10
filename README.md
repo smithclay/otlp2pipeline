@@ -48,16 +48,23 @@ Save the **Token value** for the next step.
 cargo install otlp2pipeline
 ```
 
-### 3. Create pipeline environment
+### 3. Initialize project
+
+```bash
+# Initialize config file (.otlp2pipeline.toml)
+otlp2pipeline init --provider cf --env prod
+```
+
+### 4. Create pipeline environment
 
 The CLI creates the R2 bucket, streams, sinks, and pipelines for all signal types:
 
 ```bash
 # Preview what would be created
-otlp2pipeline plan prod01
+otlp2pipeline plan
 
 # Create environment
-otlp2pipeline create prod01 --r2-token <R2_API_TOKEN> --output wrangler.toml
+otlp2pipeline create --r2-token <R2_API_TOKEN> --output wrangler.toml
 ```
 
 This creates:
@@ -66,13 +73,6 @@ This creates:
 - Sinks targeting R2 Data Catalog tables
 - Pipelines connecting streams to sinks
 - Catalog maintenance (compaction + snapshot expiration)
-
-### 4. Set auth secret
-
-Create a Cloudflare API token with `Pipelines: Edit` permission:
-```bash
-npx wrangler secret put PIPELINE_AUTH_TOKEN
-```
 
 ### 5. Deploy
 
@@ -84,13 +84,13 @@ npx wrangler deploy
 
 ```bash
 # Check environment status
-otlp2pipeline status prod
+otlp2pipeline status
 
 # Preview what would be created
-otlp2pipeline plan prod
+otlp2pipeline plan
 
 # Query tables with DuckDB
-otlp2pipeline query prod
+otlp2pipeline query
 
 # List known services
 otlp2pipeline services --url https://your-worker.workers.dev
@@ -102,7 +102,7 @@ otlp2pipeline tail my-service logs
 otlp2pipeline tail my-service traces
 
 # Delete environment
-otlp2pipeline destroy prod --force
+otlp2pipeline destroy --force
 ```
 
 ## Usage

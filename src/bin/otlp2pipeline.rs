@@ -1,7 +1,33 @@
+use anyhow::{bail, Context};
 use clap::Parser;
 use otlp2pipeline::cli::{
-    commands, BucketCommands, CatalogCommands, Cli, CloudflareCommands, Commands, ConnectCommands,
+    commands, config, BucketCommands, CatalogCommands, Cli, CloudflareCommands, Commands,
+    ConnectCommands,
 };
+use std::future::Future;
+
+/// Load config or error with helpful message
+fn require_config() -> anyhow::Result<config::Config> {
+    config::Config::load().with_context(|| {
+        format!(
+            "No {} found. Run 'otlp2pipeline init' first, or use 'otlp2pipeline cf <command>' for explicit provider.",
+            config::CONFIG_FILENAME
+        )
+    })
+}
+
+/// Route a command through config-based provider dispatch
+async fn route_via_config<F, Fut>(cloudflare_handler: F) -> anyhow::Result<()>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
+    let cfg = require_config()?;
+    match cfg.provider.as_str() {
+        "cloudflare" => cloudflare_handler().await,
+        other => bail!("Provider '{}' not yet supported", other),
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -17,6 +43,15 @@ async fn main() -> anyhow::Result<()> {
             };
             commands::execute_init(init_args)?
         }
+
+        // Top-level commands: auto-route via config
+        Commands::Create(args) => route_via_config(|| commands::execute_create(args)).await?,
+        Commands::Destroy(args) => route_via_config(|| commands::execute_destroy(args)).await?,
+        Commands::Status(args) => route_via_config(|| commands::execute_status(args)).await?,
+        Commands::Plan(args) => route_via_config(|| commands::execute_plan(args)).await?,
+        Commands::Query(args) => route_via_config(|| commands::execute_query(args)).await?,
+
+        // Explicit provider subcommand
         Commands::Cloudflare(cf_args) => match cf_args.command {
             CloudflareCommands::Create(args) => commands::execute_create(args).await?,
             CloudflareCommands::Destroy(args) => commands::execute_destroy(args).await?,
