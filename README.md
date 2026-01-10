@@ -40,49 +40,39 @@ cargo install otlp2pipeline
 
 ### Deploy to Cloudflare
 
+Requires a locally configured `wrangler` CLI connected to your Cloudflare account.
+
 ```bash
 # 1. Create R2 API token at https://dash.cloudflare.com → R2 → Manage R2 API Tokens
 #    Permissions: Admin Read & Write
 
 # 2. Initialize and create
-otlp2pipeline init --provider cf --env prod
+otlp2pipeline init --provider cf --env cftest01
 otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml
 
 # 3. Deploy
 npx wrangler deploy
+
+# 4. Check status
+otlp2pipeline status
 ```
 
 ### Deploy to AWS
 
+Requires a locally configured `aws` CLI connected to your AWS account.
+
 ```bash
-# 1. Initialize
-otlp2pipeline init --provider aws --env prod
+# 1. Initialize (requires AWS CLI configured)
+otlp2pipeline init --provider aws --env awstest01 --region us-east-1
 
 # 2. Generate CloudFormation template
 otlp2pipeline create --output template.yaml
 
-# 3. Deploy Phase 1 (S3 Tables, IAM)
-aws cloudformation deploy \
-  --template-file template.yaml \
-  --stack-name otlp2pipeline-prod \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides Phase=1
+# 3. Deploy (S3 Tables, IAM permissions, LakeFormation, CloudFormation, Firehose)
+./scripts/aws-deploy.sh template.yaml --env awstest01 --region us-east-1
 
-# 4. Grant LakeFormation permissions to the Firehose role (see CLI output)
-
-# 5. Deploy Phase 2 (Firehose)
-aws cloudformation deploy \
-  --template-file template.yaml \
-  --stack-name otlp2pipeline-prod \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides Phase=2
-```
-
-After `init`, top-level commands automatically route to your configured provider:
-```bash
-otlp2pipeline status   # Works for both Cloudflare and AWS
-otlp2pipeline plan     # Shows what would be created
-otlp2pipeline destroy  # Tears down the environment
+# 4. Check status
+otlp2pipeline status
 ```
 
 ## Setup (Cloudflare)
@@ -93,6 +83,8 @@ Go to **[R2 API Tokens](https://dash.cloudflare.com/?to=/:account/r2/api-tokens)
 - Permissions: `Admin Read & Write`
 - Scope: All buckets (or specify after bucket creation)
 - Note: The R2 API Token is **different** from a regular Cloudflare API token.
+
+Login with the wrangler CLI `npx wrangler login`
 
 Save the **Token value** for the next step.
 
@@ -207,17 +199,6 @@ Stats include count, error_count, and latency metrics (traces only).
 List all registered services:
 ```bash
 curl https://otlp2pipeline.<subdomain>.workers.dev/v1/services
-```
-
-Returns services with signal availability (has_logs, has_traces, has_metrics) and first_seen_at timestamp.
-
-Stream logs or traces in real-time via WebSocket:
-```bash
-# Connect to live tail for a service's logs
-websocat wss://otlp2pipeline.<subdomain>.workers.dev/v1/tail/my-service/logs
-
-# Connect to live tail for a service's traces
-websocat wss://otlp2pipeline.<subdomain>.workers.dev/v1/tail/my-service/traces
 ```
 
 LiveTail uses WebSocket hibernation for zero cost when no clients are connected.
