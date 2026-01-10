@@ -27,6 +27,9 @@ pub mod cli;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cloudflare;
 
+#[cfg(feature = "lambda")]
+pub mod lambda;
+
 // Re-export for tests
 pub use handler::{
     handle_signal, HandleError, HandleResponse, HecLogsHandler, LogsHandler, MetricsHandler,
