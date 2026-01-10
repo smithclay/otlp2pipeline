@@ -36,35 +36,19 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     eprintln!("==========================================\n");
     eprintln!("Next steps:\n");
 
-    eprintln!("1. Deploy Phase 1 (creates S3 Tables, IAM role, logging):");
-    eprintln!("   aws cloudformation deploy \\");
-    eprintln!("     --template-file {} \\", template_file);
-    eprintln!("     --stack-name {} \\", stack_name);
-    eprintln!("     --region {} \\", args.region);
-    eprintln!("     --capabilities CAPABILITY_NAMED_IAM \\");
+    eprintln!("1. Deploy infrastructure:");
     eprintln!(
-        "     --parameter-overrides Phase=1 TableBucketName={} NamespaceName={}\n",
-        args.table_bucket_name, args.namespace
+        "   ./scripts/aws-deploy.sh {} --env {} --region {}\n",
+        template_file, env_name, args.region
     );
 
-    eprintln!("2. Grant LakeFormation permissions to the Firehose role:");
+    eprintln!("2. Check status:");
     eprintln!(
-        "   ./scripts/aws-grant-firehose-permissions.sh {} {} {} {}\n",
-        stack_name, args.region, args.table_bucket_name, args.namespace
+        "   ./scripts/aws-deploy.sh status --env {} --region {}\n",
+        env_name, args.region
     );
 
-    eprintln!("3. Deploy Phase 2 (creates Firehose delivery stream):");
-    eprintln!("   aws cloudformation deploy \\");
-    eprintln!("     --template-file {} \\", template_file);
-    eprintln!("     --stack-name {} \\", stack_name);
-    eprintln!("     --region {} \\", args.region);
-    eprintln!("     --capabilities CAPABILITY_NAMED_IAM \\");
-    eprintln!(
-        "     --parameter-overrides Phase=2 TableBucketName={} NamespaceName={}\n",
-        args.table_bucket_name, args.namespace
-    );
-
-    eprintln!("4. Send test data to Firehose:");
+    eprintln!("3. (Optional) Send test data:");
     eprintln!(
         "   ./scripts/aws-send-test-record.sh {} {}\n",
         stack_name, args.region

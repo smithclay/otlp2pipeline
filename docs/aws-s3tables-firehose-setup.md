@@ -2,9 +2,62 @@
 
 This document explains how to deploy otlp2pipeline with AWS S3 Tables and Firehose.
 
+## Quick Start
+
+```bash
+# 1. Generate CloudFormation template
+otlp2pipeline aws create --output template.yaml
+
+# 2. Deploy everything (idempotent - safe to re-run)
+./scripts/aws-deploy.sh template.yaml --env prod --region us-east-1
+
+# 3. Check status
+./scripts/aws-deploy.sh status --env prod --region us-east-1
+
+# 4. Test
+./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1
+```
+
+The `--env` flag derives consistent names: `--env prod` creates stack `otlp2pipeline-prod` and bucket `otlp2pipeline-prod`.
+
+## What the Deploy Script Does
+
+The `aws-deploy.sh` script handles the complete multi-phase deployment:
+
+1. **S3 Tables Setup** (Phase 0)
+   - Creates/updates `S3TablesRoleForLakeFormation` IAM role
+   - Adds caller as Lake Formation Data Lake Administrator
+   - Registers S3 Tables resource with Lake Formation
+   - Creates `s3tablescatalog` federated catalog in Glue
+   - Grants catalog permissions to caller
+
+2. **CloudFormation Phase 1**
+   - S3 Table Bucket
+   - Namespace
+   - Iceberg Table with OTLP logs schema
+   - Firehose IAM Role
+   - Error bucket and logging
+
+3. **LakeFormation Permissions**
+   - Grants DESCRIBE on database (namespace) to Firehose role
+   - Grants ALL on logs table to Firehose role
+
+4. **CloudFormation Phase 2**
+   - Kinesis Firehose delivery stream targeting the S3 Table
+
+The script is idempotent - it skips steps that are already complete.
+
+## Tear Down
+
+```bash
+./scripts/aws-deploy.sh destroy --env prod --region us-east-1 --force
+```
+
+Note: Global resources (IAM role, Glue catalog, LakeFormation config) are preserved as they may be shared across stacks.
+
 ## Background
 
-S3 Tables is AWS's new Iceberg-native table format for S3. It integrates with Lake Formation for access control, but there are several limitations that require a multi-phase deployment approach.
+S3 Tables is AWS's Iceberg-native table format for S3. It integrates with Lake Formation for access control, but there are several limitations that require a multi-phase deployment approach.
 
 ### CloudFormation Limitations
 
@@ -24,75 +77,6 @@ S3 Tables is AWS's new Iceberg-native table format for S3. It integrates with La
    - Federated catalog access requires complex permission setup
    - Even LakeFormation admins can't grant permissions on s3tablescatalog databases without explicit catalog-level permissions
 
-## Solution: Three-Phase Deployment
-
-### Phase 0: One-time S3 Tables Setup (per account/region)
-
-Run the setup script to enable S3 Tables + Lake Formation integration:
-
-```bash
-./scripts/aws-s3tables-setup.sh us-east-1
-```
-
-This script:
-1. Creates/updates `S3TablesRoleForLakeFormation` IAM role with:
-   - Trust policy allowing `sts:AssumeRole`, `sts:SetSourceIdentity`, `sts:SetContext` for Lake Formation
-   - Inline policy with all required `s3tables:*` permissions
-2. Adds your IAM identity as a Lake Formation Data Lake Administrator
-3. Registers S3 Tables resource with Lake Formation (with federation)
-4. Creates the `s3tablescatalog` federated catalog in Glue
-5. Grants you permissions on the catalog
-
-**Important:** If you encounter "Unable to assume role" errors, re-run this script. It will update
-the existing role with the correct trust policy and permissions.
-
-### Phase 1: Deploy Infrastructure
-
-```bash
-otlp2pipeline aws create --output template.yaml
-
-aws cloudformation deploy \
-  --template-file template.yaml \
-  --stack-name otlp2pipeline-prod \
-  --region us-east-1 \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides Phase=1 TableBucketName=otlp2pipeline NamespaceName=default
-```
-
-Phase 1 creates:
-- S3 Table Bucket
-- Namespace
-- Iceberg Table with OTLP logs schema
-- Firehose IAM Role (with Glue, S3, CloudWatch permissions)
-- Error bucket and logging
-
-### Phase 2: Grant LakeFormation Permissions
-
-After Phase 1 completes, grant LakeFormation permissions to the Firehose role:
-
-```bash
-./scripts/aws-grant-firehose-permissions.sh otlp2pipeline-prod us-east-1 otlp2pipeline default
-```
-
-This script:
-1. Retrieves the Firehose role ARN from CloudFormation stack outputs
-2. Grants DESCRIBE on the database (namespace)
-3. Grants ALL on the logs table
-
-### Phase 3: Deploy Firehose
-
-```bash
-aws cloudformation deploy \
-  --template-file template.yaml \
-  --stack-name otlp2pipeline-prod \
-  --region us-east-1 \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides Phase=2 TableBucketName=otlp2pipeline NamespaceName=default
-```
-
-Phase 2 (Phase parameter = 2) creates:
-- Kinesis Firehose delivery stream targeting the S3 Table
-
 ## Testing
 
 Send a test record to Firehose:
@@ -100,11 +84,6 @@ Send a test record to Firehose:
 ```bash
 ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1
 ```
-
-This script:
-1. Creates a properly formatted OTLP log record
-2. Base64 encodes and sends it to Firehose
-3. Shows how to check delivery metrics
 
 To verify delivery succeeded (wait ~60 seconds for Firehose buffering):
 
@@ -123,11 +102,11 @@ aws cloudwatch get-metric-statistics \
 ### "Insufficient Glue permissions to access database"
 
 This error occurs when:
-1. The S3 Tables integration isn't properly set up (run Phase 0 script)
+1. The S3 Tables integration isn't properly set up
 2. The caller isn't a LakeFormation admin
 3. The caller doesn't have permissions on the s3tablescatalog
 
-Fix: Re-run `./scripts/aws-s3tables-setup.sh` and ensure you're using the same IAM identity that ran the setup.
+Fix: Re-run `./scripts/aws-deploy.sh` - it will update all permissions.
 
 ### "Unable to assume role" / "Unable to retrieve credentials from Lake Formation"
 
@@ -146,11 +125,11 @@ Lake Formation can't assume the `S3TablesRoleForLakeFormation` role. Common caus
 4. **Role not registered with Lake Formation**
    - The resource must be registered with `--with-federation`
 
-**Fix:** Re-run `./scripts/aws-s3tables-setup.sh` - it will update the existing role with correct policies.
+**Fix:** Re-run `./scripts/aws-deploy.sh` - it will update the existing role with correct policies.
 
 ### "Catalog not found"
 
-The `s3tablescatalog` federated catalog doesn't exist. Re-run the Phase 0 setup script.
+The `s3tablescatalog` federated catalog doesn't exist. Re-run the deploy script.
 
 ## AWS Resources
 
