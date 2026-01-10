@@ -49,6 +49,38 @@ fn cors_preflight() -> Result<Response> {
     with_cors(Response::empty()?.with_status(204))
 }
 
+/// Validate bearer token if AUTH_TOKEN env var is set.
+/// Returns Ok(()) if auth is valid or not required, Err(Response) if unauthorized.
+fn check_auth(req: &Request, env: &Env) -> Result<()> {
+    let expected_token = match env.var("AUTH_TOKEN") {
+        Ok(var) => {
+            let token = var.to_string();
+            if token.is_empty() {
+                return Ok(()); // Empty token = auth disabled
+            }
+            token
+        }
+        Err(_) => return Ok(()), // No env var = auth disabled
+    };
+
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .ok()
+        .flatten()
+        .ok_or_else(|| Error::from("Unauthorized: missing Authorization header"))?;
+
+    let provided_token = auth_header
+        .strip_prefix("Bearer ")
+        .ok_or_else(|| Error::from("Unauthorized: invalid Authorization header format"))?;
+
+    if provided_token != expected_token {
+        return Err(Error::from("Unauthorized: invalid token"));
+    }
+
+    Ok(())
+}
+
 /// Initialize tracing and VRL programs for Cloudflare Workers.
 /// Must be called via #[event(start)] to run once on worker initialization.
 #[event(start)]
@@ -80,6 +112,13 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
     // Handle CORS preflight for all API endpoints
     if method == Method::Options {
         return cors_preflight();
+    }
+
+    // Check auth for all endpoints except /health
+    if path != "/health" {
+        if let Err(e) = check_auth(&req, &env) {
+            return with_cors(Response::error(e.to_string(), 401)?);
+        }
     }
 
     let response = match (method, path.as_str()) {
