@@ -3,8 +3,8 @@ use anyhow::Result;
 use super::helpers::{resolve_env_name, stack_name};
 use crate::cli::CreateArgs;
 
-/// Embedded CloudFormation template for OTLP logs
-const LOGS_TEMPLATE: &str = include_str!("../../../../templates/aws/logs.cfn.yaml");
+/// Embedded CloudFormation template for OTLP signals
+const OTLP_TEMPLATE: &str = include_str!("../../../../templates/aws/otlp.cfn.yaml");
 
 pub fn execute_create(args: CreateArgs) -> Result<()> {
     let env_name = resolve_env_name(args.env)?;
@@ -19,11 +19,11 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
 
     match &args.output {
         Some(path) => {
-            std::fs::write(path, LOGS_TEMPLATE)?;
+            std::fs::write(path, OTLP_TEMPLATE)?;
             eprintln!("\n==> Template written to: {}", path);
         }
         None => {
-            println!("{}", LOGS_TEMPLATE);
+            println!("{}", OTLP_TEMPLATE);
             return Ok(());
         }
     }

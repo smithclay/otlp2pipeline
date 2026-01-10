@@ -241,9 +241,10 @@ check_lakeformation_db_permission() {
 
 check_lakeformation_table_permission() {
     local role_arn="$1"
+    local table_name="$2"
     aws lakeformation list-permissions \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
-        --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"logs\"}}" \
+        --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"${table_name}\"}}" \
         --region "${REGION}" \
         --query 'PrincipalResourcePermissions[0]' \
         --output text 2>/dev/null | grep -q ALL
@@ -308,10 +309,16 @@ cmd_status() {
                 echo -e "  ${CROSS} DESCRIBE on database '${NAMESPACE}' (not granted)"
             fi
 
-            if check_lakeformation_table_permission "$role_arn"; then
+            if check_lakeformation_table_permission "$role_arn" "logs"; then
                 echo -e "  ${CHECK} ALL on table 'logs'"
             else
                 echo -e "  ${CROSS} ALL on table 'logs' (not granted)"
+            fi
+
+            if check_lakeformation_table_permission "$role_arn" "traces"; then
+                echo -e "  ${CHECK} ALL on table 'traces'"
+            else
+                echo -e "  ${CROSS} ALL on table 'traces' (not granted)"
             fi
         fi
 
@@ -466,6 +473,15 @@ grant_lakeformation_permissions() {
         --region "${REGION}" \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
         --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"logs\"}}" \
+        --permissions ALL 2>/dev/null || true
+    echo -e "    ${CHECK} Done"
+
+    echo ""
+    echo -e "${ARROW} Granting ALL on table 'traces'"
+    aws lakeformation grant-permissions \
+        --region "${REGION}" \
+        --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
+        --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"traces\"}}" \
         --permissions ALL 2>/dev/null || true
     echo -e "    ${CHECK} Done"
 }

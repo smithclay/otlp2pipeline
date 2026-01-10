@@ -1,0 +1,508 @@
+AWSTemplateFormatVersion: "2010-09-09"
+#
+# otlp2pipeline - AWS S3 Tables + Firehose for OTLP telemetry
+#
+# Creates Firehose streams that deliver OTLP log and trace data to S3 Tables (Iceberg format).
+#
+# Before running the template, make sure "Integration with AWS analytics services" is enabled on the S3 Tables UI.
+#
+# This template must be deployed in two phases:
+#
+# Phase 1: Deploy with Phase=1 to create S3 Tables, IAM role, logging
+# Phase 2: Grant LakeFormation permissions via CLI, then deploy with Phase=2
+#
+Description: >
+  Creates an S3 Table Bucket, Namespace, and Iceberg Tables for OTLP logs and traces,
+  along with Kinesis Firehose streams (DirectPut) to populate them with JSON records.
+
+Parameters:
+  Phase:
+    Description: >
+      Phase 1 creates all resources except Firehose.
+      Phase 2 creates Firehose after LakeFormation permissions are granted.
+    Type: String
+    AllowedValues: ["1", "2"]
+    Default: "1"
+
+  EnableLogs:
+    Description: Create logs table and Firehose stream
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableTraces:
+    Description: Create traces (spans) table and Firehose stream
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  TableBucketName:
+    Description: Name of the S3 Table Bucket
+    Type: String
+    Default: otlp2pipeline
+
+  NamespaceName:
+    Description: Name of the S3 Table Namespace
+    Type: String
+    Default: default
+
+  LogsTableName:
+    Description: Name of the logs table
+    Type: String
+    Default: logs
+
+  TracesTableName:
+    Description: Name of the traces table
+    Type: String
+    Default: traces
+
+  CompactionTargetFileSizeMB:
+    Description: Target file size for Iceberg compaction (MB)
+    Type: Number
+    MinValue: 32
+    MaxValue: 512
+    Default: 64
+
+  SnapshotMaxAgeHours:
+    Description: Maximum age of snapshots before cleanup (hours)
+    Type: Number
+    MinValue: 1
+    MaxValue: 168
+    Default: 24
+
+  SnapshotMinToKeep:
+    Description: Minimum number of snapshots to retain
+    Type: Number
+    MinValue: 1
+    MaxValue: 100
+    Default: 8
+
+  FirehoseErrorPrefix:
+    Description: Prefix in error bucket (must include trailing slash)
+    Type: String
+    Default: firehose_errors/
+
+  FirehoseBatchTime:
+    Description: Firehose buffering interval (seconds)
+    Type: Number
+    MinValue: 60
+    MaxValue: 900
+    Default: 120
+
+  FirehoseBatchSize:
+    Description: Firehose buffering size (MB)
+    Type: Number
+    MinValue: 1
+    MaxValue: 128
+    Default: 32
+
+Conditions:
+  CreateLogs: !Equals [!Ref EnableLogs, "true"]
+  CreateTraces: !Equals [!Ref EnableTraces, "true"]
+  CreateLogsFirehose: !And
+    - !Condition CreateLogs
+    - !Equals [!Ref Phase, "2"]
+  CreateTracesFirehose: !And
+    - !Condition CreateTraces
+    - !Equals [!Ref Phase, "2"]
+
+Resources:
+  ############################################################
+  # S3 Tables resources (shared)
+  ############################################################
+  FirehoseErrorBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-errors-${AWS::AccountId}-${AWS::Region}
+
+  TableBucket:
+    Type: AWS::S3Tables::TableBucket
+    Properties:
+      TableBucketName: !Ref TableBucketName
+      EncryptionConfiguration:
+        SSEAlgorithm: AES256
+      UnreferencedFileRemoval:
+        Status: Enabled
+        UnreferencedDays: 1
+        NoncurrentDays: 1
+
+  Namespace:
+    Type: AWS::S3Tables::Namespace
+    Properties:
+      Namespace: !Ref NamespaceName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+
+  ############################################################
+  # Logging (shared log group, per-signal streams)
+  ############################################################
+  FirehoseLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/kinesisfirehose/${AWS::StackName}
+      RetentionInDays: 1
+
+  LogsDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateLogs
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Logs_Destination_Errors
+
+  TracesDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateTraces
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Traces_Destination_Errors
+
+  ############################################################
+  # Firehose IAM Role (shared)
+  ############################################################
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-DeliveryStreamRole-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: GlueAndLakeFormation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetDatabase
+                  - glue:GetCatalog
+                  - glue:UpdateTable
+                Resource:
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/*
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*/*
+
+              - Effect: Allow
+                Action:
+                  - lakeformation:GetDataAccess
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - s3tables:GetTableData
+                  - s3tables:PutTableData
+                  - s3tables:GetTableMetadataLocation
+                  - s3tables:UpdateTableMetadataLocation
+                  - s3tables:GetTable
+                  - s3tables:GetNamespace
+                  - s3tables:GetTableBucket
+                Resource: "*"
+
+        - PolicyName: LoggingAndErrors
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:Describe*
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*
+
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                Resource:
+                  - !Sub arn:aws:s3:::${FirehoseErrorBucket}
+
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}*
+
+  ############################################################
+  # Logs Table
+  ############################################################
+  LogsTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateLogs
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref LogsTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: observed_timestamp
+              Type: long
+              Required: true
+            - Name: trace_id
+              Type: string
+              Required: false
+            - Name: span_id
+              Type: string
+              Required: false
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: severity_number
+              Type: int
+              Required: true
+            - Name: severity_text
+              Type: string
+              Required: true
+            - Name: body
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: log_attributes
+              Type: string
+              Required: false
+
+  ############################################################
+  # Logs Firehose
+  ############################################################
+  LogsFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Condition: CreateLogsFirehose
+    Properties:
+      DeliveryStreamName: !Sub ${AWS::StackName}-logs
+      DeliveryStreamType: DirectPut
+
+      IcebergDestinationConfiguration:
+        RoleARN: !GetAtt FirehoseRole.Arn
+
+        CatalogConfiguration:
+          CatalogArn: !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/${TableBucketName}
+
+        DestinationTableConfigurationList:
+          - DestinationDatabaseName: !Ref NamespaceName
+            DestinationTableName: !Ref LogsTableName
+            UniqueKeys:
+              - timestamp
+
+        BufferingHints:
+          IntervalInSeconds: !Ref FirehoseBatchTime
+          SizeInMBs: !Ref FirehoseBatchSize
+
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref FirehoseLogGroup
+          LogStreamName: !Ref LogsDestLogStream
+
+        S3Configuration:
+          RoleARN: !GetAtt FirehoseRole.Arn
+          BucketARN: !Sub arn:aws:s3:::${FirehoseErrorBucket}
+          ErrorOutputPrefix: !Sub ${FirehoseErrorPrefix}logs/
+
+  ############################################################
+  # Traces Table
+  ############################################################
+  TracesTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateTraces
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref TracesTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: end_timestamp
+              Type: long
+              Required: true
+            - Name: duration
+              Type: long
+              Required: true
+            - Name: trace_id
+              Type: string
+              Required: false
+            - Name: span_id
+              Type: string
+              Required: false
+            - Name: parent_span_id
+              Type: string
+              Required: false
+            - Name: trace_state
+              Type: string
+              Required: false
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: span_name
+              Type: string
+              Required: true
+            - Name: span_kind
+              Type: int
+              Required: true
+            - Name: status_code
+              Type: int
+              Required: true
+            - Name: status_message
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: span_attributes
+              Type: string
+              Required: false
+            - Name: events_json
+              Type: string
+              Required: false
+            - Name: links_json
+              Type: string
+              Required: false
+            - Name: dropped_attributes_count
+              Type: int
+              Required: false
+            - Name: dropped_events_count
+              Type: int
+              Required: false
+            - Name: dropped_links_count
+              Type: int
+              Required: false
+            - Name: flags
+              Type: int
+              Required: false
+
+  ############################################################
+  # Traces Firehose
+  ############################################################
+  TracesFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Condition: CreateTracesFirehose
+    Properties:
+      DeliveryStreamName: !Sub ${AWS::StackName}-traces
+      DeliveryStreamType: DirectPut
+
+      IcebergDestinationConfiguration:
+        RoleARN: !GetAtt FirehoseRole.Arn
+
+        CatalogConfiguration:
+          CatalogArn: !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/${TableBucketName}
+
+        DestinationTableConfigurationList:
+          - DestinationDatabaseName: !Ref NamespaceName
+            DestinationTableName: !Ref TracesTableName
+            UniqueKeys:
+              - timestamp
+
+        BufferingHints:
+          IntervalInSeconds: !Ref FirehoseBatchTime
+          SizeInMBs: !Ref FirehoseBatchSize
+
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref FirehoseLogGroup
+          LogStreamName: !Ref TracesDestLogStream
+
+        S3Configuration:
+          RoleARN: !GetAtt FirehoseRole.Arn
+          BucketARN: !Sub arn:aws:s3:::${FirehoseErrorBucket}
+          ErrorOutputPrefix: !Sub ${FirehoseErrorPrefix}traces/
+
+Outputs:
+  TableBucketARN:
+    Description: ARN of the S3 Table Bucket
+    Value: !GetAtt TableBucket.TableBucketARN
+
+  FirehoseRoleARN:
+    Description: ARN of the Firehose IAM Role (grant LakeFormation permissions to this role)
+    Value: !GetAtt FirehoseRole.Arn
+
+  FirehoseRoleName:
+    Description: Name of the Firehose IAM Role
+    Value: !Ref FirehoseRole
+
+  LogsFirehoseDeliveryStreamName:
+    Condition: CreateLogsFirehose
+    Description: Name of the Logs Firehose Delivery Stream
+    Value: !Ref LogsFirehose
+
+  LogsFirehoseDeliveryStreamARN:
+    Condition: CreateLogsFirehose
+    Description: ARN of the Logs Firehose Delivery Stream
+    Value: !GetAtt LogsFirehose.Arn
+
+  TracesFirehoseDeliveryStreamName:
+    Condition: CreateTracesFirehose
+    Description: Name of the Traces Firehose Delivery Stream
+    Value: !Ref TracesFirehose
+
+  TracesFirehoseDeliveryStreamARN:
+    Condition: CreateTracesFirehose
+    Description: ARN of the Traces Firehose Delivery Stream
+    Value: !GetAtt TracesFirehose.Arn
