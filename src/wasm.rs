@@ -52,15 +52,15 @@ fn cors_preflight() -> Result<Response> {
 /// Validate bearer token if AUTH_TOKEN env var is set.
 /// Returns Ok(()) if auth is valid or not required, Err(Response) if unauthorized.
 fn check_auth(req: &Request, env: &Env) -> Result<()> {
-    let expected_token = match env.var("AUTH_TOKEN") {
-        Ok(var) => {
-            let token = var.to_string();
-            if token.is_empty() {
-                return Ok(()); // Empty token = auth disabled
-            }
-            token
-        }
-        Err(_) => return Ok(()), // No env var = auth disabled
+    // Auth disabled if AUTH_TOKEN is missing or empty
+    let expected_token = match env
+        .var("AUTH_TOKEN")
+        .ok()
+        .map(|v| v.to_string())
+        .filter(|t| !t.is_empty())
+    {
+        Some(token) => token,
+        None => return Ok(()),
     };
 
     let auth_header = req
