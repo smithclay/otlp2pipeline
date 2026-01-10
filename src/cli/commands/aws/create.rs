@@ -29,16 +29,16 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     }
 
     // Print next steps
+    let template_file = args.output.as_deref().unwrap_or("template.yaml");
+
     eprintln!("\n==========================================");
     eprintln!("TEMPLATE GENERATED");
     eprintln!("==========================================\n");
     eprintln!("Next steps:\n");
+
     eprintln!("1. Deploy Phase 1 (creates S3 Tables, IAM role, logging):");
     eprintln!("   aws cloudformation deploy \\");
-    eprintln!(
-        "     --template-file {} \\",
-        args.output.as_deref().unwrap_or("template.yaml")
-    );
+    eprintln!("     --template-file {} \\", template_file);
     eprintln!("     --stack-name {} \\", stack_name);
     eprintln!("     --region {} \\", args.region);
     eprintln!("     --capabilities CAPABILITY_NAMED_IAM \\");
@@ -48,24 +48,14 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     );
 
     eprintln!("2. Grant LakeFormation permissions to the Firehose role:");
-    eprintln!("   - Go to AWS Console > Lake Formation > Data permissions");
     eprintln!(
-        "   - Grant the role '{}-DeliveryStreamRole-{}' these permissions:",
-        stack_name, args.region
+        "   ./scripts/aws-grant-firehose-permissions.sh {} {} {} {}\n",
+        stack_name, args.region, args.table_bucket_name, args.namespace
     );
-    eprintln!(
-        "     - DESCRIBE on s3tablescatalog and s3tablescatalog/{}",
-        args.table_bucket_name
-    );
-    eprintln!("     - ALL (Super) on the logs table");
-    eprintln!("   - See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/grant-permissions-tables.html\n");
 
     eprintln!("3. Deploy Phase 2 (creates Firehose delivery stream):");
     eprintln!("   aws cloudformation deploy \\");
-    eprintln!(
-        "     --template-file {} \\",
-        args.output.as_deref().unwrap_or("template.yaml")
-    );
+    eprintln!("     --template-file {} \\", template_file);
     eprintln!("     --stack-name {} \\", stack_name);
     eprintln!("     --region {} \\", args.region);
     eprintln!("     --capabilities CAPABILITY_NAMED_IAM \\");
@@ -75,14 +65,9 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     );
 
     eprintln!("4. Send test data to Firehose:");
-    eprintln!("   aws firehose put-record-batch \\");
-    eprintln!("     --delivery-stream-name {} \\", stack_name);
-    eprintln!("     --region {} \\", args.region);
-    eprintln!("     --records file://records.json\n");
-
-    eprintln!("   Example records.json:");
     eprintln!(
-        r#"   {{"timestamp":"2024-01-01T00:00:00Z","observed_timestamp":1704067200000,"service_name":"my-service","severity_number":9,"severity_text":"INFO","body":"Hello world"}}"#
+        "   ./scripts/aws-send-test-record.sh {} {}\n",
+        stack_name, args.region
     );
 
     Ok(())

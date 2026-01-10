@@ -8,17 +8,13 @@ AWSTemplateFormatVersion: "2010-09-09"
 #
 # Before running the template, make sure "Integration with AWS analytics services" is enabled on the S3 Tables UI.
 #
-# This template must be run in two phases:
+# This template must be deployed in two phases:
 #
-# Phase 1: Deploy with Phase=1 to create all resources except Firehose
-# Phase 2: Grant LakeFormation permissions to the Firehose role, then deploy with Phase=2
+# Phase 1: Deploy with Phase=1 to create S3 Tables, IAM role, logging
+# Phase 2: Grant LakeFormation permissions via CLI, then deploy with Phase=2
 #
-# To work-around CloudFormation limitations with LakeFormation:
-# - Apply the template with Phase=1
-# - Go into LakeFormation and attach permissions to the created Firehose Role:
-#   - DESCRIBE on s3tablescatalog and s3tablescatalog/{TableBucketName}
-#   - ALL (Super) on the logs table
-# - Re-apply the template with Phase=2
+# CloudFormation's AWS::LakeFormation::PrincipalPermissions doesn't support
+# the s3tablescatalog format, so permissions must be granted via CLI.
 #
 # See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/grant-permissions-tables.html
 #
@@ -30,7 +26,7 @@ Parameters:
   Phase:
     Description: >
       Phase 1 creates all resources except Firehose.
-      Phase 2 creates Firehose after LakeFormation permissions are granted manually.
+      Phase 2 creates Firehose after LakeFormation permissions are granted.
     Type: String
     AllowedValues: ["1", "2"]
     Default: "1"
@@ -213,6 +209,7 @@ Resources:
                 Action:
                   - glue:GetTable
                   - glue:GetDatabase
+                  - glue:GetCatalog
                   - glue:UpdateTable
                 Resource:
                   - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog
@@ -224,6 +221,18 @@ Resources:
               - Effect: Allow
                 Action:
                   - lakeformation:GetDataAccess
+                Resource: "*"
+
+              # S3 Tables access (required when using AllowFullTableExternalDataAccess)
+              - Effect: Allow
+                Action:
+                  - s3tables:GetTableData
+                  - s3tables:PutTableData
+                  - s3tables:GetTableMetadataLocation
+                  - s3tables:UpdateTableMetadataLocation
+                  - s3tables:GetTable
+                  - s3tables:GetNamespace
+                  - s3tables:GetTableBucket
                 Resource: "*"
 
         - PolicyName: LoggingAndErrors
@@ -254,8 +263,11 @@ Resources:
                 Resource:
                   - !Sub arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}${TableName}/*
 
+  # LakeFormation permissions are not needed when the s3tablescatalog is created
+  # with AllowFullTableExternalDataAccess=true. Access is controlled via IAM policies.
+
   ############################################################
-  # Firehose (created only in Phase 2)
+  # Firehose
   ############################################################
 
   Firehose:
