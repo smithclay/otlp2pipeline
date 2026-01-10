@@ -1,31 +1,28 @@
 use anyhow::{bail, Context};
 use clap::Parser;
 use otlp2pipeline::cli::{
-    commands, config, BucketCommands, CatalogCommands, Cli, CloudflareCommands, Commands,
-    ConnectCommands,
+    commands, config, AwsCommands, BucketCommands, CatalogCommands, Cli, CloudflareCommands,
+    Commands, ConnectCommands,
 };
-use std::future::Future;
 
-/// Load config or error with helpful message
-fn require_config() -> anyhow::Result<config::Config> {
-    config::Config::load().with_context(|| {
+/// Resolved provider from config
+enum Provider {
+    Cloudflare,
+    Aws,
+}
+
+/// Load config and resolve provider
+fn require_provider() -> anyhow::Result<Provider> {
+    let cfg = config::Config::load().with_context(|| {
         format!(
             "No {} found. Run 'otlp2pipeline init' first, or use 'otlp2pipeline cf <command>' for explicit provider.",
             config::CONFIG_FILENAME
         )
-    })
-}
-
-/// Route a command through config-based provider dispatch
-async fn route_via_config<F, Fut>(cloudflare_handler: F) -> anyhow::Result<()>
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = anyhow::Result<()>>,
-{
-    let cfg = require_config()?;
+    })?;
     match cfg.provider.as_str() {
-        "cloudflare" => cloudflare_handler().await,
-        other => bail!("Provider '{}' not yet supported", other),
+        "cloudflare" => Ok(Provider::Cloudflare),
+        "aws" => Ok(Provider::Aws),
+        other => bail!("Provider '{}' not supported", other),
     }
 }
 
@@ -39,19 +36,35 @@ async fn main() -> anyhow::Result<()> {
                 provider: args.provider,
                 env: args.env,
                 worker_url: args.worker_url,
+                region: args.region,
                 force: args.force,
             };
             commands::execute_init(init_args)?
         }
 
         // Top-level commands: auto-route via config
-        Commands::Create(args) => route_via_config(|| commands::execute_create(args)).await?,
-        Commands::Destroy(args) => route_via_config(|| commands::execute_destroy(args)).await?,
-        Commands::Status(args) => route_via_config(|| commands::execute_status(args)).await?,
-        Commands::Plan(args) => route_via_config(|| commands::execute_plan(args)).await?,
-        Commands::Query(args) => route_via_config(|| commands::execute_query(args)).await?,
+        Commands::Create(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_create(args).await?,
+            Provider::Aws => commands::aws::execute_create(args)?,
+        },
+        Commands::Destroy(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_destroy(args).await?,
+            Provider::Aws => commands::aws::execute_destroy(args)?,
+        },
+        Commands::Status(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_status(args).await?,
+            Provider::Aws => commands::aws::execute_status(args)?,
+        },
+        Commands::Plan(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_plan(args).await?,
+            Provider::Aws => commands::aws::execute_plan(args)?,
+        },
+        Commands::Query(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_query(args).await?,
+            Provider::Aws => commands::aws::execute_query(args)?,
+        },
 
-        // Explicit provider subcommand
+        // Explicit Cloudflare provider subcommand
         Commands::Cloudflare(cf_args) => match cf_args.command {
             CloudflareCommands::Create(args) => commands::execute_create(args).await?,
             CloudflareCommands::Destroy(args) => commands::execute_destroy(args).await?,
@@ -72,6 +85,16 @@ async fn main() -> anyhow::Result<()> {
                 }
             },
         },
+
+        // Explicit AWS provider subcommand (sync functions - no await needed)
+        Commands::Aws(aws_args) => match aws_args.command {
+            AwsCommands::Create(args) => commands::aws::execute_create(args)?,
+            AwsCommands::Status(args) => commands::aws::execute_status(args)?,
+            AwsCommands::Plan(args) => commands::aws::execute_plan(args)?,
+            AwsCommands::Destroy(args) => commands::aws::execute_destroy(args)?,
+            AwsCommands::Query(args) => commands::aws::execute_query(args)?,
+        },
+
         Commands::Services(args) => commands::execute_services(args).await?,
         Commands::Tail(args) => commands::execute_tail(args).await?,
         Commands::Connect(args) => match args.command {

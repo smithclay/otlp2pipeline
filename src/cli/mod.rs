@@ -36,6 +36,9 @@ pub enum Commands {
     #[command(alias = "cf")]
     Cloudflare(CloudflareArgs),
 
+    /// AWS infrastructure commands (explicit provider)
+    Aws(AwsArgs),
+
     // Provider-agnostic commands
     /// List known services
     Services(ServicesArgs),
@@ -47,7 +50,7 @@ pub enum Commands {
 
 #[derive(clap::Args)]
 pub struct InitArgs {
-    /// Cloud provider (cloudflare, cf)
+    /// Cloud provider (cloudflare, cf, aws)
     #[arg(long, short)]
     pub provider: String,
 
@@ -55,9 +58,13 @@ pub struct InitArgs {
     #[arg(long, short)]
     pub env: String,
 
-    /// Worker URL (optional, can be set later)
+    /// Worker URL (optional, Cloudflare only)
     #[arg(long)]
     pub worker_url: Option<String>,
+
+    /// AWS region (required for AWS provider)
+    #[arg(long)]
+    pub region: Option<String>,
 
     /// Overwrite existing config
     #[arg(long)]
@@ -86,6 +93,26 @@ pub enum CloudflareCommands {
     Catalog(CatalogArgs),
     /// Manage R2 bucket data
     Bucket(BucketArgs),
+}
+
+#[derive(clap::Args)]
+pub struct AwsArgs {
+    #[command(subcommand)]
+    pub command: AwsCommands,
+}
+
+#[derive(Subcommand)]
+pub enum AwsCommands {
+    /// Generate CloudFormation template for S3 Tables + Firehose
+    Create(CreateArgs),
+    /// Show CloudFormation stack status
+    Status(StatusArgs),
+    /// Delete CloudFormation stack
+    Destroy(DestroyArgs),
+    /// Show what would be generated
+    Plan(PlanArgs),
+    /// Start a DuckDB query session connected to S3 Tables
+    Query(QueryArgs),
 }
 
 #[derive(clap::Args)]
@@ -168,47 +195,62 @@ pub struct CreateArgs {
     #[arg(long)]
     pub env: Option<String>,
 
+    /// Path to write config file (stdout if not specified)
+    #[arg(long, short)]
+    pub output: Option<String>,
+
+    // --- Cloudflare-specific options ---
     /// R2 API token (create at dash.cloudflare.com > R2 > Manage R2 API Tokens)
     ///
     /// Required permissions: Admin Read & Write. This is separate from CF_API_TOKEN.
+    /// Required for Cloudflare provider.
     #[arg(long = "r2-token", env = "R2_API_TOKEN")]
-    pub r2_token: String,
+    pub r2_token: Option<String>,
 
-    /// Path to write wrangler.toml (stdout if not specified)
-    #[arg(long)]
-    pub output: Option<String>,
-
-    /// Enable logs signal
+    /// Enable logs signal (Cloudflare)
     #[arg(long, default_value = "true")]
     pub logs: bool,
 
-    /// Enable traces signal
+    /// Enable traces signal (Cloudflare)
     #[arg(long, default_value = "true")]
     pub traces: bool,
 
-    /// Enable metrics signals (gauge, sum)
+    /// Enable metrics signals (Cloudflare)
     #[arg(long, default_value = "true")]
     pub metrics: bool,
 
-    /// Enable RED metrics Durable Object
+    /// Enable RED metrics Durable Object (Cloudflare)
     #[arg(long, default_value = "true")]
     pub aggregator: bool,
 
-    /// Enable WebSocket streaming Durable Object
+    /// Enable WebSocket streaming Durable Object (Cloudflare)
     #[arg(long, default_value = "true")]
     pub livetail: bool,
 
-    /// Aggregator retention in minutes
+    /// Aggregator retention in minutes (Cloudflare)
     #[arg(long, default_value = "60")]
     pub retention: u32,
 
-    /// Rolling policy interval in seconds (how often files are written to R2)
+    /// Rolling policy interval in seconds (Cloudflare)
     #[arg(long, default_value = "300")]
     pub rolling_interval: u32,
 
-    /// Build worker locally instead of downloading from GitHub releases
+    /// Build worker locally instead of downloading from GitHub releases (Cloudflare)
     #[arg(long)]
     pub use_local: bool,
+
+    // --- AWS-specific options ---
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// S3 Table Bucket name (AWS)
+    #[arg(long, default_value = "otlp2pipeline")]
+    pub table_bucket_name: String,
+
+    /// S3 Table Namespace name (AWS)
+    #[arg(long, default_value = "default")]
+    pub namespace: String,
 }
 
 #[derive(clap::Args)]
@@ -221,9 +263,14 @@ pub struct DestroyArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Also delete the worker script
+    /// Also delete the worker script (Cloudflare)
     #[arg(long)]
     pub include_worker: bool,
+
+    // --- AWS-specific options ---
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -231,6 +278,11 @@ pub struct StatusArgs {
     /// Environment name (overrides .otlp2pipeline.toml)
     #[arg(long)]
     pub env: Option<String>,
+
+    // --- AWS-specific options ---
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 }
 
 #[derive(clap::Args)]

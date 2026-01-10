@@ -1,0 +1,612 @@
+AWSTemplateFormatVersion: "2010-09-09"
+#
+# otlp2pipeline - AWS S3 Tables for OTLP telemetry
+#
+# Creates S3 Tables (Iceberg format) for OTLP log and trace data.
+# Firehose streams are created separately via API to enable AppendOnly mode.
+#
+# Before running the template, make sure "Integration with AWS analytics services" is enabled on the S3 Tables UI.
+#
+Description: >
+  Creates an S3 Table Bucket, Namespace, and Iceberg Tables for OTLP logs and traces,
+  along with IAM role and logging resources for Firehose delivery streams.
+
+Parameters:
+  EnableLogs:
+    Description: Create logs table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableTraces:
+    Description: Create traces (spans) table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableSum:
+    Description: Create sum metrics table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableGauge:
+    Description: Create gauge metrics table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  TableBucketName:
+    Description: Name of the S3 Table Bucket
+    Type: String
+    Default: otlp2pipeline
+
+  NamespaceName:
+    Description: Name of the S3 Table Namespace
+    Type: String
+    Default: default
+
+  LogsTableName:
+    Description: Name of the logs table
+    Type: String
+    Default: logs
+
+  TracesTableName:
+    Description: Name of the traces table
+    Type: String
+    Default: traces
+
+  SumTableName:
+    Description: Name of the sum metrics table
+    Type: String
+    Default: sum
+
+  GaugeTableName:
+    Description: Name of the gauge metrics table
+    Type: String
+    Default: gauge
+
+  CompactionTargetFileSizeMB:
+    Description: Target file size for Iceberg compaction (MB)
+    Type: Number
+    MinValue: 32
+    MaxValue: 512
+    Default: 64
+
+  SnapshotMaxAgeHours:
+    Description: Maximum age of snapshots before cleanup (hours)
+    Type: Number
+    MinValue: 1
+    MaxValue: 168
+    Default: 24
+
+  SnapshotMinToKeep:
+    Description: Minimum number of snapshots to retain
+    Type: Number
+    MinValue: 1
+    MaxValue: 100
+    Default: 8
+
+  FirehoseErrorPrefix:
+    Description: Prefix in error bucket (must include trailing slash)
+    Type: String
+    Default: firehose_errors/
+
+  FirehoseBatchTime:
+    Description: Firehose buffering interval (seconds)
+    Type: Number
+    MinValue: 60
+    MaxValue: 900
+    Default: 120
+
+  FirehoseBatchSize:
+    Description: Firehose buffering size (MB)
+    Type: Number
+    MinValue: 1
+    MaxValue: 128
+    Default: 32
+
+Conditions:
+  CreateLogs: !Equals [!Ref EnableLogs, "true"]
+  CreateTraces: !Equals [!Ref EnableTraces, "true"]
+  CreateSum: !Equals [!Ref EnableSum, "true"]
+  CreateGauge: !Equals [!Ref EnableGauge, "true"]
+
+Resources:
+  ############################################################
+  # S3 Tables resources (shared)
+  ############################################################
+  FirehoseErrorBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-errors-${AWS::AccountId}-${AWS::Region}
+
+  TableBucket:
+    Type: AWS::S3Tables::TableBucket
+    Properties:
+      TableBucketName: !Ref TableBucketName
+      EncryptionConfiguration:
+        SSEAlgorithm: AES256
+      UnreferencedFileRemoval:
+        Status: Enabled
+        UnreferencedDays: 1
+        NoncurrentDays: 1
+
+  Namespace:
+    Type: AWS::S3Tables::Namespace
+    Properties:
+      Namespace: !Ref NamespaceName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+
+  ############################################################
+  # Logging (shared log group, per-signal streams)
+  ############################################################
+  FirehoseLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/kinesisfirehose/${AWS::StackName}
+      RetentionInDays: 1
+
+  LogsDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateLogs
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Logs_Destination_Errors
+
+  TracesDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateTraces
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Traces_Destination_Errors
+
+  SumDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateSum
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Sum_Destination_Errors
+
+  GaugeDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateGauge
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Gauge_Destination_Errors
+
+  ############################################################
+  # Firehose IAM Role (shared)
+  ############################################################
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-DeliveryStreamRole-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: GlueAndLakeFormation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetDatabase
+                  - glue:GetCatalog
+                  - glue:UpdateTable
+                Resource:
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/*
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*/*
+
+              - Effect: Allow
+                Action:
+                  - lakeformation:GetDataAccess
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - s3tables:GetTableData
+                  - s3tables:PutTableData
+                  - s3tables:GetTableMetadataLocation
+                  - s3tables:UpdateTableMetadataLocation
+                  - s3tables:GetTable
+                  - s3tables:GetNamespace
+                  - s3tables:GetTableBucket
+                Resource: "*"
+
+        - PolicyName: LoggingAndErrors
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:Describe*
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*
+
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                Resource:
+                  - !Sub arn:aws:s3:::${FirehoseErrorBucket}
+
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}*
+
+  ############################################################
+  # Logs Table
+  ############################################################
+  LogsTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateLogs
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref LogsTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: observed_timestamp
+              Type: long
+              Required: true
+            - Name: trace_id
+              Type: string
+              Required: false
+            - Name: span_id
+              Type: string
+              Required: false
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: severity_number
+              Type: int
+              Required: true
+            - Name: severity_text
+              Type: string
+              Required: true
+            - Name: body
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: log_attributes
+              Type: string
+              Required: false
+
+  ############################################################
+  # Traces Table
+  ############################################################
+  TracesTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateTraces
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref TracesTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: end_timestamp
+              Type: long
+              Required: true
+            - Name: duration
+              Type: long
+              Required: true
+            - Name: trace_id
+              Type: string
+              Required: false
+            - Name: span_id
+              Type: string
+              Required: false
+            - Name: parent_span_id
+              Type: string
+              Required: false
+            - Name: trace_state
+              Type: string
+              Required: false
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: span_name
+              Type: string
+              Required: true
+            - Name: span_kind
+              Type: int
+              Required: true
+            - Name: status_code
+              Type: int
+              Required: true
+            - Name: status_message
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: span_attributes
+              Type: string
+              Required: false
+            - Name: events_json
+              Type: string
+              Required: false
+            - Name: links_json
+              Type: string
+              Required: false
+            - Name: dropped_attributes_count
+              Type: int
+              Required: false
+            - Name: dropped_events_count
+              Type: int
+              Required: false
+            - Name: dropped_links_count
+              Type: int
+              Required: false
+            - Name: flags
+              Type: int
+              Required: false
+
+  ############################################################
+  # Sum Metrics Table
+  ############################################################
+  SumTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateSum
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref SumTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: start_timestamp
+              Type: long
+              Required: false
+            - Name: metric_name
+              Type: string
+              Required: true
+            - Name: metric_description
+              Type: string
+              Required: false
+            - Name: metric_unit
+              Type: string
+              Required: false
+            - Name: value
+              Type: double
+              Required: true
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: metric_attributes
+              Type: string
+              Required: false
+            - Name: flags
+              Type: int
+              Required: false
+            - Name: exemplars_json
+              Type: string
+              Required: false
+            - Name: aggregation_temporality
+              Type: int
+              Required: true
+            - Name: is_monotonic
+              Type: boolean
+              Required: true
+
+  ############################################################
+  # Gauge Metrics Table
+  ############################################################
+  GaugeTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateGauge
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref GaugeTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: start_timestamp
+              Type: long
+              Required: false
+            - Name: metric_name
+              Type: string
+              Required: true
+            - Name: metric_description
+              Type: string
+              Required: false
+            - Name: metric_unit
+              Type: string
+              Required: false
+            - Name: value
+              Type: double
+              Required: true
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: metric_attributes
+              Type: string
+              Required: false
+            - Name: flags
+              Type: int
+              Required: false
+            - Name: exemplars_json
+              Type: string
+              Required: false
+
+Outputs:
+  TableBucketARN:
+    Description: ARN of the S3 Table Bucket
+    Value: !GetAtt TableBucket.TableBucketARN
+
+  TableBucketName:
+    Description: Name of the S3 Table Bucket
+    Value: !Ref TableBucketName
+
+  NamespaceName:
+    Description: Name of the S3 Table Namespace
+    Value: !Ref NamespaceName
+
+  FirehoseRoleARN:
+    Description: ARN of the Firehose IAM Role (used by deploy script to create Firehose streams)
+    Value: !GetAtt FirehoseRole.Arn
+
+  FirehoseRoleName:
+    Description: Name of the Firehose IAM Role
+    Value: !Ref FirehoseRole
+
+  FirehoseLogGroupName:
+    Description: Name of the CloudWatch Log Group for Firehose errors
+    Value: !Ref FirehoseLogGroup
+
+  FirehoseErrorBucketName:
+    Description: Name of the S3 bucket for Firehose errors
+    Value: !Ref FirehoseErrorBucket
+
+  FirehoseErrorPrefix:
+    Description: Prefix for Firehose error objects
+    Value: !Ref FirehoseErrorPrefix
+
+  FirehoseBatchTime:
+    Description: Firehose buffering interval (seconds)
+    Value: !Ref FirehoseBatchTime
+
+  FirehoseBatchSize:
+    Description: Firehose buffering size (MB)
+    Value: !Ref FirehoseBatchSize

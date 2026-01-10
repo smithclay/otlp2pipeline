@@ -8,10 +8,16 @@ pub const CONFIG_FILENAME: &str = ".otlp2pipeline.toml";
 pub struct Config {
     pub provider: String,
     pub environment: String,
+    // Cloudflare-specific
     #[serde(default)]
     pub worker_url: Option<String>,
     #[serde(default)]
     pub account_id: Option<String>,
+    // AWS-specific
+    #[serde(default)]
+    pub region: Option<String>,
+    #[serde(default)]
+    pub stack_name: Option<String>,
 }
 
 impl Config {
@@ -40,8 +46,9 @@ pub fn try_load_config() -> Option<Config> {
 pub fn validate_provider(provider: &str) -> Result<&'static str> {
     match provider.to_lowercase().as_str() {
         "cloudflare" | "cf" => Ok("cloudflare"),
+        "aws" => Ok("aws"),
         other => anyhow::bail!(
-            "Provider '{}' not yet supported. Available: cloudflare",
+            "Provider '{}' not supported. Available: cloudflare, aws",
             other
         ),
     }
@@ -97,12 +104,14 @@ account_id = "abc123"
     }
 
     #[test]
+    fn test_validate_provider_aws() {
+        assert!(validate_provider("aws").is_ok());
+    }
+
+    #[test]
     fn test_validate_provider_unknown() {
-        let result = validate_provider("aws");
+        let result = validate_provider("gcp");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not yet supported"));
+        assert!(result.unwrap_err().to_string().contains("not supported"));
     }
 }
