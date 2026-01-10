@@ -25,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
                 provider: args.provider,
                 env: args.env,
                 worker_url: args.worker_url,
+                region: args.region,
                 force: args.force,
             };
             commands::execute_init(init_args)?
@@ -36,11 +37,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::Status(args) => route_status(args).await?,
         Commands::Plan(args) => route_plan(args).await?,
         Commands::Query(args) => {
-            // Query is Cloudflare-only for now
             let cfg = require_config()?;
             match cfg.provider.as_str() {
                 "cloudflare" => commands::execute_query(args).await?,
-                "aws" => bail!("Query command not yet supported for AWS provider"),
+                "aws" => commands::aws::execute_query(args)?,
                 other => bail!("Provider '{}' not supported", other),
             }
         }
@@ -73,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
             AwsCommands::Status(args) => commands::aws::execute_status(args)?,
             AwsCommands::Plan(args) => commands::aws::execute_plan(args)?,
             AwsCommands::Destroy(args) => commands::aws::execute_destroy(args)?,
+            AwsCommands::Query(args) => commands::aws::execute_query(args)?,
         },
 
         Commands::Services(args) => commands::execute_services(args).await?,

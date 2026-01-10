@@ -50,7 +50,7 @@ pub enum Commands {
 
 #[derive(clap::Args)]
 pub struct InitArgs {
-    /// Cloud provider (cloudflare, cf)
+    /// Cloud provider (cloudflare, cf, aws)
     #[arg(long, short)]
     pub provider: String,
 
@@ -58,9 +58,13 @@ pub struct InitArgs {
     #[arg(long, short)]
     pub env: String,
 
-    /// Worker URL (optional, can be set later)
+    /// Worker URL (optional, Cloudflare only)
     #[arg(long)]
     pub worker_url: Option<String>,
+
+    /// AWS region (required for AWS provider)
+    #[arg(long)]
+    pub region: Option<String>,
 
     /// Overwrite existing config
     #[arg(long)]
@@ -107,6 +111,8 @@ pub enum AwsCommands {
     Destroy(DestroyArgs),
     /// Show what would be generated
     Plan(PlanArgs),
+    /// Start a DuckDB query session connected to S3 Tables
+    Query(QueryArgs),
 }
 
 #[derive(clap::Args)]
