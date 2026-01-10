@@ -2,23 +2,14 @@ use anyhow::{bail, Result};
 use std::io::{self, Write};
 use std::process::Command;
 
-use super::helpers::{load_config, require_aws_cli, resolve_region, stack_name};
+use super::helpers::{
+    load_config, require_aws_cli, resolve_env_with_config, resolve_region, stack_name,
+};
 use crate::cli::DestroyArgs;
 
 pub fn execute_destroy(args: DestroyArgs) -> Result<()> {
     let config = load_config()?;
-
-    let env_name = args
-        .env
-        .or_else(|| config.as_ref().map(|c| c.environment.clone()))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No environment specified. Either:\n  \
-                1. Run `otlp2pipeline init --provider aws --env <name>` first\n  \
-                2. Pass --env <name> explicitly"
-            )
-        })?;
-
+    let env_name = resolve_env_with_config(args.env, &config)?;
     let region = resolve_region(args.region, &config);
     let stack_name = stack_name(&env_name);
 

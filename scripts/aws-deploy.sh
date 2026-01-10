@@ -41,6 +41,13 @@ CHECK="${GREEN}✓${NC}"
 CROSS="${RED}✗${NC}"
 ARROW="${YELLOW}→${NC}"
 
+# Check prerequisites
+if ! command -v aws &> /dev/null; then
+    echo -e "${CROSS} AWS CLI is not installed."
+    echo "    Install from: https://aws.amazon.com/cli/"
+    exit 1
+fi
+
 # Defaults
 REGION="us-east-1"
 NAMESPACE="default"
@@ -152,7 +159,37 @@ get_account_info() {
         echo -e "${CROSS} Failed to get AWS account info. Check your credentials."
         exit 1
     }
-    CALLER_ARN=$(aws sts get-caller-identity --query Arn --output text)
+    CALLER_ARN=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null) || {
+        echo -e "${CROSS} Failed to get caller ARN. Check your credentials."
+        exit 1
+    }
+    if [ -z "$CALLER_ARN" ]; then
+        echo -e "${CROSS} Caller ARN is empty. Check your AWS credentials."
+        exit 1
+    fi
+}
+
+# Run an idempotent AWS command, accepting specific expected errors
+# Usage: run_idempotent "description" "expected_error_pattern" aws command args...
+# If expected_error_pattern is empty, any error will cause failure
+run_idempotent() {
+    local desc="$1"
+    local expected_error="$2"
+    shift 2
+
+    local output
+    if output=$("$@" 2>&1); then
+        return 0
+    else
+        local exit_code=$?
+        if [ -n "$expected_error" ] && echo "$output" | grep -q "$expected_error"; then
+            # Expected error (e.g., AlreadyExistsException), treat as success
+            return 0
+        else
+            echo -e "    ${CROSS} ${desc}: $output"
+            exit $exit_code
+        fi
+    fi
 }
 
 # Policy documents for S3 Tables role
@@ -415,9 +452,10 @@ setup_s3_tables() {
     # Step 2: LakeFormation admin
     echo ""
     echo -e "${ARROW} Adding caller as LakeFormation admin"
-    aws lakeformation put-data-lake-settings \
+    run_idempotent "Failed to set LakeFormation admin" "" \
+        aws lakeformation put-data-lake-settings \
         --data-lake-settings "{\"DataLakeAdmins\":[{\"DataLakePrincipalIdentifier\":\"${CALLER_ARN}\"}]}" \
-        --region "${REGION}" 2>/dev/null || true
+        --region "${REGION}"
     echo -e "    ${CHECK} Done"
 
     # Step 3: Register resource
@@ -426,25 +464,32 @@ setup_s3_tables() {
     local resource_arn="arn:aws:s3tables:${REGION}:${ACCOUNT_ID}:bucket/*"
     local role_arn="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 
-    aws lakeformation deregister-resource \
+    # Deregister first (may not exist, that's fine)
+    run_idempotent "Deregister resource" "EntityNotFoundException\|not registered" \
+        aws lakeformation deregister-resource \
         --resource-arn "${resource_arn}" \
-        --region "${REGION}" 2>/dev/null || true
+        --region "${REGION}"
 
-    aws lakeformation register-resource \
+    # Register resource (may already exist with same config)
+    run_idempotent "Register resource" "AlreadyExistsException" \
+        aws lakeformation register-resource \
         --resource-arn "${resource_arn}" \
         --role-arn "${role_arn}" \
         --with-federation \
-        --region "${REGION}" 2>/dev/null || true
+        --region "${REGION}"
     echo -e "    ${CHECK} Done"
 
     # Step 4: Glue catalog
     echo ""
     echo -e "${ARROW} Creating/updating s3tablescatalog federated catalog"
-    aws glue delete-catalog \
+    # Delete first (may not exist, that's fine)
+    run_idempotent "Delete catalog" "EntityNotFoundException" \
+        aws glue delete-catalog \
         --catalog-id "s3tablescatalog" \
-        --region "${REGION}" 2>/dev/null || true
+        --region "${REGION}"
 
-    aws glue create-catalog \
+    run_idempotent "Create catalog" "AlreadyExistsException" \
+        aws glue create-catalog \
         --name "s3tablescatalog" \
         --catalog-input "{
             \"FederatedCatalog\": {
@@ -459,18 +504,19 @@ setup_s3_tables() {
                 }
             }
         }" \
-        --region "${REGION}" 2>/dev/null || true
+        --region "${REGION}"
     echo -e "    ${CHECK} Done"
 
     # Step 5: Catalog permissions
     echo ""
     echo -e "${ARROW} Granting catalog permissions to caller"
-    aws lakeformation grant-permissions \
+    run_idempotent "Grant catalog permissions" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
         --principal "{\"DataLakePrincipalIdentifier\":\"${CALLER_ARN}\"}" \
         --resource "{\"Catalog\":{\"Id\":\"${ACCOUNT_ID}:s3tablescatalog\"}}" \
         --permissions "ALL" "DESCRIBE" "CREATE_DATABASE" "ALTER" "DROP" \
         --permissions-with-grant-option "ALL" "DESCRIBE" "CREATE_DATABASE" "ALTER" "DROP" \
-        --region "${REGION}" 2>/dev/null || true
+        --region "${REGION}"
     echo -e "    ${CHECK} Done"
 }
 
@@ -506,6 +552,15 @@ create_firehose_streams() {
     error_prefix=$(get_stack_output "FirehoseErrorPrefix")
     batch_time=$(get_stack_output "FirehoseBatchTime")
     batch_size=$(get_stack_output "FirehoseBatchSize")
+
+    # Validate required outputs
+    [ -z "$bucket_name" ] && { echo -e "    ${CROSS} Missing stack output: TableBucketName"; exit 1; }
+    [ -z "$namespace" ] && { echo -e "    ${CROSS} Missing stack output: NamespaceName"; exit 1; }
+    [ -z "$log_group" ] && { echo -e "    ${CROSS} Missing stack output: FirehoseLogGroupName"; exit 1; }
+    [ -z "$error_bucket" ] && { echo -e "    ${CROSS} Missing stack output: FirehoseErrorBucketName"; exit 1; }
+    [ -z "$error_prefix" ] && { echo -e "    ${CROSS} Missing stack output: FirehoseErrorPrefix"; exit 1; }
+    [ -z "$batch_time" ] && { echo -e "    ${CROSS} Missing stack output: FirehoseBatchTime"; exit 1; }
+    [ -z "$batch_size" ] && { echo -e "    ${CROSS} Missing stack output: FirehoseBatchSize"; exit 1; }
 
     local catalog_arn="arn:aws:glue:${REGION}:${ACCOUNT_ID}:catalog/s3tablescatalog/${bucket_name}"
 
@@ -644,47 +699,52 @@ grant_lakeformation_permissions() {
 
     echo ""
     echo -e "${ARROW} Granting DESCRIBE on database '${NAMESPACE}'"
-    aws lakeformation grant-permissions \
+    run_idempotent "Grant database permissions" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
         --region "${REGION}" \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
         --resource "{\"Database\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"Name\":\"${NAMESPACE}\"}}" \
-        --permissions DESCRIBE 2>/dev/null || true
+        --permissions DESCRIBE
     echo -e "    ${CHECK} Done"
 
     echo ""
     echo -e "${ARROW} Granting ALL on table 'logs'"
-    aws lakeformation grant-permissions \
+    run_idempotent "Grant logs table permissions" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
         --region "${REGION}" \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
         --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"logs\"}}" \
-        --permissions ALL 2>/dev/null || true
+        --permissions ALL
     echo -e "    ${CHECK} Done"
 
     echo ""
     echo -e "${ARROW} Granting ALL on table 'traces'"
-    aws lakeformation grant-permissions \
+    run_idempotent "Grant traces table permissions" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
         --region "${REGION}" \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
         --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"traces\"}}" \
-        --permissions ALL 2>/dev/null || true
+        --permissions ALL
     echo -e "    ${CHECK} Done"
 
     echo ""
     echo -e "${ARROW} Granting ALL on table 'sum'"
-    aws lakeformation grant-permissions \
+    run_idempotent "Grant sum table permissions" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
         --region "${REGION}" \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
         --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"sum\"}}" \
-        --permissions ALL 2>/dev/null || true
+        --permissions ALL
     echo -e "    ${CHECK} Done"
 
     echo ""
     echo -e "${ARROW} Granting ALL on table 'gauge'"
-    aws lakeformation grant-permissions \
+    run_idempotent "Grant gauge table permissions" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
         --region "${REGION}" \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
         --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"gauge\"}}" \
-        --permissions ALL 2>/dev/null || true
+        --permissions ALL
     echo -e "    ${CHECK} Done"
 }
 
@@ -772,7 +832,13 @@ cmd_destroy() {
         echo -e "${ARROW} Deleting CloudFormation stack: ${STACK}"
         aws cloudformation delete-stack --stack-name "${STACK}" --region "${REGION}"
         echo "    Waiting for stack deletion..."
-        aws cloudformation wait stack-delete-complete --stack-name "${STACK}" --region "${REGION}" 2>/dev/null || true
+        if ! aws cloudformation wait stack-delete-complete --stack-name "${STACK}" --region "${REGION}" 2>&1; then
+            local final_status
+            final_status=$(get_stack_status)
+            echo -e "    ${CROSS} Stack deletion failed. Current status: ${final_status}"
+            echo "    Check CloudFormation console for details."
+            exit 1
+        fi
         echo -e "    ${CHECK} Stack deleted"
     else
         echo ""

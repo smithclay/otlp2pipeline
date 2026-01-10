@@ -1,23 +1,14 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::process::Command;
 
-use super::helpers::{load_config, require_aws_cli, resolve_region, stack_name};
+use super::helpers::{
+    load_config, require_aws_cli, resolve_env_with_config, resolve_region, stack_name,
+};
 use crate::cli::StatusArgs;
 
 pub fn execute_status(args: StatusArgs) -> Result<()> {
     let config = load_config()?;
-
-    let env_name = args
-        .env
-        .or_else(|| config.as_ref().map(|c| c.environment.clone()))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No environment specified. Either:\n  \
-                1. Run `otlp2pipeline init --provider aws --env <name>` first\n  \
-                2. Pass --env <name> explicitly"
-            )
-        })?;
-
+    let env_name = resolve_env_with_config(args.env, &config)?;
     let region = resolve_region(args.region, &config);
     let stack_name = stack_name(&env_name);
 
@@ -51,8 +42,7 @@ pub fn execute_status(args: StatusArgs) -> Result<()> {
             eprintln!("    Stack does not exist");
             return Ok(());
         } else {
-            eprintln!("    Error: {}", stderr.trim());
-            return Ok(());
+            bail!("Failed to get stack status: {}", stderr.trim());
         }
     }
 

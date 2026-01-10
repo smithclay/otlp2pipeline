@@ -18,8 +18,12 @@ pub fn execute_query(args: QueryArgs) -> Result<()> {
         .and_then(|c| c.account_id.clone())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "AWS account_id not found in config.\n\
-                Re-run: otlp2pipeline init --provider aws --env {} --region {}",
+                "AWS account_id not found in config.\n\n\
+                To fix, either:\n  \
+                1. Re-run init with AWS CLI configured:\n     \
+                   otlp2pipeline init --provider aws --env {} --region {}\n  \
+                2. Manually add to .otlp2pipeline.toml:\n     \
+                   account_id = \"YOUR_12_DIGIT_ACCOUNT_ID\"",
                 env_name,
                 region
             )
@@ -112,10 +116,21 @@ SHOW TABLES;
         .status()?;
 
     // Cleanup
-    let _ = std::fs::remove_file(&init_file);
+    if let Err(e) = std::fs::remove_file(&init_file) {
+        eprintln!(
+            "Warning: Could not clean up temp file {}: {}",
+            init_file.display(),
+            e
+        );
+    }
 
     if !status.success() {
-        bail!("DuckDB exited with error");
+        bail!(
+            "DuckDB exited with error (exit code: {}). Check the output above for details.",
+            status
+                .code()
+                .map_or("unknown".to_string(), |c| c.to_string())
+        );
     }
 
     Ok(())

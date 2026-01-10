@@ -14,6 +14,10 @@ pub fn load_config() -> Result<Option<Config>> {
     Config::load().map(Some)
 }
 
+const ENV_REQUIRED_ERROR: &str = "No environment specified. Either:\n  \
+    1. Run `otlp2pipeline init --provider aws --env <name>` first\n  \
+    2. Pass --env <name> explicitly";
+
 /// Resolve environment name from args or config
 pub fn resolve_env_name(env_arg: Option<String>) -> Result<String> {
     if let Some(env) = env_arg {
@@ -22,29 +26,30 @@ pub fn resolve_env_name(env_arg: Option<String>) -> Result<String> {
 
     match load_config()? {
         Some(config) => Ok(config.environment),
-        None => bail!(
-            "No environment specified. Either:\n  \
-            1. Run `otlp2pipeline init --provider aws --env <name>` first\n  \
-            2. Pass --env <name> explicitly"
-        ),
+        None => bail!(ENV_REQUIRED_ERROR),
     }
 }
 
+/// Resolve environment name from args with an already-loaded config
+pub fn resolve_env_with_config(env_arg: Option<String>, config: &Option<Config>) -> Result<String> {
+    env_arg
+        .or_else(|| config.as_ref().map(|c| c.environment.clone()))
+        .ok_or_else(|| anyhow::anyhow!(ENV_REQUIRED_ERROR))
+}
+
+const DEFAULT_REGION: &str = "us-east-1";
+
 /// Resolve region from args or config, warning if falling back to default
 pub fn resolve_region(region_arg: Option<String>, config: &Option<Config>) -> String {
-    if let Some(region) = region_arg {
-        return region;
-    }
-
-    if let Some(config) = config {
-        if let Some(region) = &config.region {
-            return region.clone();
-        }
-    }
-
-    // Warn user about fallback
-    eprintln!("    Note: No region specified, using default: us-east-1");
-    "us-east-1".to_string()
+    region_arg
+        .or_else(|| config.as_ref().and_then(|c| c.region.clone()))
+        .unwrap_or_else(|| {
+            eprintln!(
+                "    Note: No region specified, using default: {}",
+                DEFAULT_REGION
+            );
+            DEFAULT_REGION.to_string()
+        })
 }
 
 /// Generate stack name from environment, using naming normalization

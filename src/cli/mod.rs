@@ -240,9 +240,9 @@ pub struct CreateArgs {
     pub use_local: bool,
 
     // --- AWS-specific options ---
-    /// AWS region
-    #[arg(long, default_value = "us-east-1")]
-    pub region: String,
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 
     /// S3 Table Bucket name (AWS)
     #[arg(long, default_value = "otlp2pipeline")]

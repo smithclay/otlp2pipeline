@@ -2,17 +2,28 @@ use anyhow::{bail, Context};
 use clap::Parser;
 use otlp2pipeline::cli::{
     commands, config, AwsCommands, BucketCommands, CatalogCommands, Cli, CloudflareCommands,
-    Commands, ConnectCommands, CreateArgs, DestroyArgs, PlanArgs, StatusArgs,
+    Commands, ConnectCommands,
 };
 
-/// Load config or error with helpful message
-fn require_config() -> anyhow::Result<config::Config> {
-    config::Config::load().with_context(|| {
+/// Resolved provider from config
+enum Provider {
+    Cloudflare,
+    Aws,
+}
+
+/// Load config and resolve provider
+fn require_provider() -> anyhow::Result<Provider> {
+    let cfg = config::Config::load().with_context(|| {
         format!(
             "No {} found. Run 'otlp2pipeline init' first, or use 'otlp2pipeline cf <command>' for explicit provider.",
             config::CONFIG_FILENAME
         )
-    })
+    })?;
+    match cfg.provider.as_str() {
+        "cloudflare" => Ok(Provider::Cloudflare),
+        "aws" => Ok(Provider::Aws),
+        other => bail!("Provider '{}' not supported", other),
+    }
 }
 
 #[tokio::main]
@@ -32,18 +43,26 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // Top-level commands: auto-route via config
-        Commands::Create(args) => route_create(args).await?,
-        Commands::Destroy(args) => route_destroy(args).await?,
-        Commands::Status(args) => route_status(args).await?,
-        Commands::Plan(args) => route_plan(args).await?,
-        Commands::Query(args) => {
-            let cfg = require_config()?;
-            match cfg.provider.as_str() {
-                "cloudflare" => commands::execute_query(args).await?,
-                "aws" => commands::aws::execute_query(args)?,
-                other => bail!("Provider '{}' not supported", other),
-            }
-        }
+        Commands::Create(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_create(args).await?,
+            Provider::Aws => commands::aws::execute_create(args)?,
+        },
+        Commands::Destroy(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_destroy(args).await?,
+            Provider::Aws => commands::aws::execute_destroy(args)?,
+        },
+        Commands::Status(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_status(args).await?,
+            Provider::Aws => commands::aws::execute_status(args)?,
+        },
+        Commands::Plan(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_plan(args).await?,
+            Provider::Aws => commands::aws::execute_plan(args)?,
+        },
+        Commands::Query(args) => match require_provider()? {
+            Provider::Cloudflare => commands::execute_query(args).await?,
+            Provider::Aws => commands::aws::execute_query(args)?,
+        },
 
         // Explicit Cloudflare provider subcommand
         Commands::Cloudflare(cf_args) => match cf_args.command {
@@ -92,44 +111,4 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// Route create command based on provider config
-async fn route_create(args: CreateArgs) -> anyhow::Result<()> {
-    let cfg = require_config()?;
-    match cfg.provider.as_str() {
-        "cloudflare" => commands::execute_create(args).await,
-        "aws" => commands::aws::execute_create(args),
-        other => bail!("Provider '{}' not supported", other),
-    }
-}
-
-/// Route destroy command based on provider config
-async fn route_destroy(args: DestroyArgs) -> anyhow::Result<()> {
-    let cfg = require_config()?;
-    match cfg.provider.as_str() {
-        "cloudflare" => commands::execute_destroy(args).await,
-        "aws" => commands::aws::execute_destroy(args),
-        other => bail!("Provider '{}' not supported", other),
-    }
-}
-
-/// Route status command based on provider config
-async fn route_status(args: StatusArgs) -> anyhow::Result<()> {
-    let cfg = require_config()?;
-    match cfg.provider.as_str() {
-        "cloudflare" => commands::execute_status(args).await,
-        "aws" => commands::aws::execute_status(args),
-        other => bail!("Provider '{}' not supported", other),
-    }
-}
-
-/// Route plan command based on provider config
-async fn route_plan(args: PlanArgs) -> anyhow::Result<()> {
-    let cfg = require_config()?;
-    match cfg.provider.as_str() {
-        "cloudflare" => commands::execute_plan(args).await,
-        "aws" => commands::aws::execute_plan(args),
-        other => bail!("Provider '{}' not supported", other),
-    }
 }
