@@ -10,6 +10,11 @@ crate-type = ["cdylib", "rlib"]
 name = "otlp2pipeline"
 path = "src/bin/otlp2pipeline.rs"
 
+[[bin]]
+name = "lambda"
+path = "src/bin/lambda.rs"
+required-features = ["lambda"]
+
 [features]
 default = []
 lambda = ["dep:lambda_http", "dep:aws-sdk-firehose", "dep:aws-config", "dep:rand"]

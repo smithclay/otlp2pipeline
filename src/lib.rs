@@ -1,9 +1,11 @@
 // src/lib.rs
-use decode::DecodeFormat;
 
-// Re-export for native module
+// Re-export for native module and lambda binary
 #[cfg(not(target_arch = "wasm32"))]
 pub use bytes::Bytes;
+
+// Re-export DecodeFormat for external use
+pub use decode::DecodeFormat;
 
 pub mod aggregator;
 mod convert;
