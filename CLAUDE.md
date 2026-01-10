@@ -43,24 +43,27 @@ cargo install --path .
 otlp2pipeline init --provider cf --env prod
 otlp2pipeline init --provider cf --env prod --worker-url https://my-worker.workers.dev
 
-# Cloudflare infrastructure commands (use 'cf' or 'cloudflare')
+# After init, commands auto-route via config (no 'cf' prefix needed)
 # Create environment (bucket, streams, sinks, pipelines)
-otlp2pipeline cf create --r2-token $R2_TOKEN --output wrangler.toml
-otlp2pipeline cf create --env staging  # override config
+otlp2pipeline create --r2-token $R2_TOKEN --output wrangler.toml
+otlp2pipeline create --env staging  # override config
 
 # Check status
-otlp2pipeline cf status
-otlp2pipeline cf status --env prod
+otlp2pipeline status
+otlp2pipeline status --env prod
 
 # Dry run (show what would be created)
-otlp2pipeline cf plan
+otlp2pipeline plan
 
 # Tear down
-otlp2pipeline cf destroy --force
-otlp2pipeline cf destroy --env staging --force
+otlp2pipeline destroy --force
+otlp2pipeline destroy --env staging --force
 
 # Query data with DuckDB
-otlp2pipeline cf query
+otlp2pipeline query
+
+# Explicit provider (skip config): use 'cf' or 'cloudflare' subcommand
+otlp2pipeline cf create --r2-token $R2_TOKEN --output wrangler.toml
 
 # List known services
 otlp2pipeline services --url https://my-worker.workers.dev

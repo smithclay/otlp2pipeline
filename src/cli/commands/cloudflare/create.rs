@@ -1,12 +1,9 @@
 use anyhow::Result;
 
 use crate::cli::auth;
-use crate::cli::commands::naming::{
-    access_app_name, bucket_name, normalize, pipeline_name, sink_name, stream_name,
-};
+use crate::cli::commands::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
 use crate::cli::config::Config;
 use crate::cli::CreateArgs;
-use crate::cloudflare::access::setup_access;
 use crate::cloudflare::{CloudflareClient, CorsAllowed, CorsRule, SchemaField};
 
 /// Signal configuration
@@ -201,49 +198,16 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         }
     }
 
-    // Step 10: Set up Cloudflare Access (optional)
-    if args.access {
-        eprintln!("\n==> Setting up Cloudflare Access...");
-
-        let app_name = access_app_name(&env_name);
-        match setup_access(&client, &app_name, None).await {
-            Ok(result) => {
-                eprintln!("\n    Access configured successfully!");
-                eprintln!("\n    Add these to your Worker for JWT validation:");
-                eprintln!("      POLICY_AUD = \"{}\"", result.aud);
-                eprintln!("      TEAM_DOMAIN = \"{}\"", result.team_domain);
-            }
-            Err(e) => {
-                eprintln!("\n    WARNING: Access setup failed: {}", e);
-                eprintln!("    You can configure Access manually in the Zero Trust dashboard.");
-            }
-        }
-    }
-
     // Summary
     eprintln!("\n==========================================");
     eprintln!("ENVIRONMENT CREATED");
     eprintln!("==========================================\n");
     eprintln!("Next steps:");
-    eprintln!("  1. Set pipeline auth token:");
+    eprintln!("  1. (Optional) Set auth token for ingestion:");
     eprintln!("     npx wrangler secret put PIPELINE_AUTH_TOKEN");
-
-    if args.access {
-        eprintln!();
-        eprintln!("  2. Create Service Token for OTLP ingestion:");
-        eprintln!("     Zero Trust Dashboard > Access > Service Auth > Service Tokens");
-        eprintln!();
-        eprintln!("  3. Configure your OTLP exporters with service token headers:");
-        eprintln!("     CF-Access-Client-Id: <client-id>");
-        eprintln!("     CF-Access-Client-Secret: <client-secret>");
-        eprintln!();
-        eprintln!("  4. Deploy:");
-        eprintln!("     npx wrangler deploy");
-    } else {
-        eprintln!();
-        eprintln!("  2. Deploy:");
-        eprintln!("     npx wrangler deploy");
-    }
+    eprintln!();
+    eprintln!("  2. Deploy:");
+    eprintln!("     npx wrangler deploy");
     eprintln!();
     eprintln!("  3. IMPORTANT: After ingesting data, add partitioning for query performance:");
     eprintln!("     otlp2pipeline catalog partition --r2-token $R2_API_TOKEN");

@@ -38,7 +38,7 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         eprintln!("  worker_url: {}", url);
     }
     eprintln!();
-    eprintln!("Next: otlp2pipeline cf create");
+    eprintln!("Next: otlp2pipeline create");
 
     Ok(())
 }

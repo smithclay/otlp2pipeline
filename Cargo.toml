@@ -41,6 +41,8 @@ tracing-web = "0.1"
 time = { version = "0.3", features = ["formatting", "wasm-bindgen"] }
 gloo-timers = { version = "0.3", features = ["futures"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
+# JWT validation for Cloudflare Access
+rsa = { version = "0.9", default-features = false, features = ["sha2"] }
 
 # Native-only dependencies (CLI + tests)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

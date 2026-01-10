@@ -1,7 +1,19 @@
+use anyhow::{bail, Context};
 use clap::Parser;
 use otlp2pipeline::cli::{
-    commands, BucketCommands, CatalogCommands, Cli, CloudflareCommands, Commands, ConnectCommands,
+    commands, config, BucketCommands, CatalogCommands, Cli, CloudflareCommands, Commands,
+    ConnectCommands,
 };
+
+/// Load config or error with helpful message
+fn require_config() -> anyhow::Result<config::Config> {
+    config::Config::load().with_context(|| {
+        format!(
+            "No {} found. Run 'otlp2pipeline init' first, or use 'otlp2pipeline cf <command>' for explicit provider.",
+            config::CONFIG_FILENAME
+        )
+    })
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -17,6 +29,45 @@ async fn main() -> anyhow::Result<()> {
             };
             commands::execute_init(init_args)?
         }
+
+        // Top-level commands: auto-route via config
+        Commands::Create(args) => {
+            let cfg = require_config()?;
+            match cfg.provider.as_str() {
+                "cloudflare" => commands::execute_create(args).await?,
+                other => bail!("Provider '{}' not yet supported", other),
+            }
+        }
+        Commands::Destroy(args) => {
+            let cfg = require_config()?;
+            match cfg.provider.as_str() {
+                "cloudflare" => commands::execute_destroy(args).await?,
+                other => bail!("Provider '{}' not yet supported", other),
+            }
+        }
+        Commands::Status(args) => {
+            let cfg = require_config()?;
+            match cfg.provider.as_str() {
+                "cloudflare" => commands::execute_status(args).await?,
+                other => bail!("Provider '{}' not yet supported", other),
+            }
+        }
+        Commands::Plan(args) => {
+            let cfg = require_config()?;
+            match cfg.provider.as_str() {
+                "cloudflare" => commands::execute_plan(args).await?,
+                other => bail!("Provider '{}' not yet supported", other),
+            }
+        }
+        Commands::Query(args) => {
+            let cfg = require_config()?;
+            match cfg.provider.as_str() {
+                "cloudflare" => commands::execute_query(args).await?,
+                other => bail!("Provider '{}' not yet supported", other),
+            }
+        }
+
+        // Explicit provider subcommand
         Commands::Cloudflare(cf_args) => match cf_args.command {
             CloudflareCommands::Create(args) => commands::execute_create(args).await?,
             CloudflareCommands::Destroy(args) => commands::execute_destroy(args).await?,

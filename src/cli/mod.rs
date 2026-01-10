@@ -18,9 +18,25 @@ pub struct Cli {
 pub enum Commands {
     /// Initialize project config (.otlp2pipeline.toml)
     Init(InitArgs),
-    /// Cloudflare infrastructure commands
+
+    // Top-level commands (auto-route via config)
+    /// Create pipeline environment (reads provider from .otlp2pipeline.toml)
+    Create(CreateArgs),
+    /// Destroy pipeline environment (reads provider from .otlp2pipeline.toml)
+    Destroy(DestroyArgs),
+    /// Show environment status (reads provider from .otlp2pipeline.toml)
+    Status(StatusArgs),
+    /// Dry-run: show what would be created (reads provider from .otlp2pipeline.toml)
+    Plan(PlanArgs),
+    /// Start a DuckDB query session (reads provider from .otlp2pipeline.toml)
+    Query(QueryArgs),
+
+    // Provider-specific subcommands (explicit)
+    /// Cloudflare infrastructure commands (explicit provider)
     #[command(alias = "cf")]
     Cloudflare(CloudflareArgs),
+
+    // Provider-agnostic commands
     /// List known services
     Services(ServicesArgs),
     /// Stream live telemetry
@@ -193,10 +209,6 @@ pub struct CreateArgs {
     /// Build worker locally instead of downloading from GitHub releases
     #[arg(long)]
     pub use_local: bool,
-
-    /// Enable Cloudflare Access protection (service token auth)
-    #[arg(long)]
-    pub access: bool,
 }
 
 #[derive(clap::Args)]

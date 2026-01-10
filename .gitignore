@@ -9,3 +9,4 @@ wrangler.toml
 
 frontend/.ladle
 build/
+.otlp2pipeline.toml
