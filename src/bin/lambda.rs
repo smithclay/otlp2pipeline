@@ -98,8 +98,9 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
             handle_signal::<MetricsHandler, _>(body_bytes, is_gzipped, format, &*sender).await
         }
         "/services/collector" | "/services/collector/event" => {
-            // Splunk HEC endpoint
-            handle_signal::<HecLogsHandler, _>(body_bytes, is_gzipped, format, &*sender).await
+            // Splunk HEC is always JSON, ignore content-type
+            handle_signal::<HecLogsHandler, _>(body_bytes, is_gzipped, DecodeFormat::Json, &*sender)
+                .await
         }
         _ => {
             return Ok(Response::builder()
