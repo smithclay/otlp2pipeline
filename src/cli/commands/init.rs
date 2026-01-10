@@ -27,6 +27,8 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         environment: args.env.clone(),
         worker_url: args.worker_url,
         account_id: None,
+        region: None,
+        stack_name: None,
     };
 
     config.save()?;
@@ -38,7 +40,18 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         eprintln!("  worker_url: {}", url);
     }
     eprintln!();
-    eprintln!("Next: otlp2pipeline create");
+
+    match config.provider.as_str() {
+        "cloudflare" => {
+            eprintln!("Next: otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml");
+        }
+        "aws" => {
+            eprintln!("Next: otlp2pipeline aws create --output template.yaml");
+        }
+        _ => {
+            eprintln!("Next: otlp2pipeline create");
+        }
+    }
 
     Ok(())
 }

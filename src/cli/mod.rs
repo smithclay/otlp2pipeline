@@ -36,6 +36,9 @@ pub enum Commands {
     #[command(alias = "cf")]
     Cloudflare(CloudflareArgs),
 
+    /// AWS infrastructure commands (explicit provider)
+    Aws(AwsArgs),
+
     // Provider-agnostic commands
     /// List known services
     Services(ServicesArgs),
@@ -86,6 +89,80 @@ pub enum CloudflareCommands {
     Catalog(CatalogArgs),
     /// Manage R2 bucket data
     Bucket(BucketArgs),
+}
+
+#[derive(clap::Args)]
+pub struct AwsArgs {
+    #[command(subcommand)]
+    pub command: AwsCommands,
+}
+
+#[derive(Subcommand)]
+pub enum AwsCommands {
+    /// Generate CloudFormation template for S3 Tables + Firehose
+    Create(AwsCreateArgs),
+    /// Show CloudFormation stack status
+    Status(AwsStatusArgs),
+    /// Delete CloudFormation stack
+    Destroy(AwsDestroyArgs),
+    /// Show what would be generated
+    Plan(AwsPlanArgs),
+}
+
+#[derive(clap::Args)]
+pub struct AwsCreateArgs {
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
+
+    /// AWS region
+    #[arg(long, default_value = "us-east-1")]
+    pub region: String,
+
+    /// Path to write CloudFormation template (stdout if not specified)
+    #[arg(long, short)]
+    pub output: Option<String>,
+
+    /// S3 Table Bucket name
+    #[arg(long, default_value = "otlp2pipeline")]
+    pub table_bucket_name: String,
+
+    /// S3 Table Namespace name
+    #[arg(long, default_value = "default")]
+    pub namespace: String,
+}
+
+#[derive(clap::Args)]
+pub struct AwsStatusArgs {
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
+
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct AwsDestroyArgs {
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
+
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(clap::Args)]
+pub struct AwsPlanArgs {
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
 }
 
 #[derive(clap::Args)]

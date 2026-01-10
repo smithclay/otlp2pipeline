@@ -1,8 +1,8 @@
 use anyhow::{bail, Context};
 use clap::Parser;
 use otlp2pipeline::cli::{
-    commands, config, BucketCommands, CatalogCommands, Cli, CloudflareCommands, Commands,
-    ConnectCommands,
+    commands, config, AwsCommands, BucketCommands, CatalogCommands, Cli, CloudflareCommands,
+    Commands, ConnectCommands,
 };
 use std::future::Future;
 
@@ -17,6 +17,7 @@ fn require_config() -> anyhow::Result<config::Config> {
 }
 
 /// Route a command through config-based provider dispatch
+/// Note: Top-level commands use Cloudflare-specific args. AWS users should use `aws` subcommand.
 async fn route_via_config<F, Fut>(cloudflare_handler: F) -> anyhow::Result<()>
 where
     F: FnOnce() -> Fut,
@@ -25,7 +26,14 @@ where
     let cfg = require_config()?;
     match cfg.provider.as_str() {
         "cloudflare" => cloudflare_handler().await,
-        other => bail!("Provider '{}' not yet supported", other),
+        "aws" => bail!(
+            "AWS provider detected in config. Use explicit commands instead:\n  \
+            otlp2pipeline aws create\n  \
+            otlp2pipeline aws status\n  \
+            otlp2pipeline aws plan\n  \
+            otlp2pipeline aws destroy"
+        ),
+        other => bail!("Provider '{}' not supported", other),
     }
 }
 
@@ -72,6 +80,14 @@ async fn main() -> anyhow::Result<()> {
                 }
             },
         },
+        // Explicit AWS provider subcommand
+        Commands::Aws(aws_args) => match aws_args.command {
+            AwsCommands::Create(args) => commands::aws::execute_create(args).await?,
+            AwsCommands::Status(args) => commands::aws::execute_status(args).await?,
+            AwsCommands::Plan(args) => commands::aws::execute_plan(args).await?,
+            AwsCommands::Destroy(args) => commands::aws::execute_destroy(args).await?,
+        },
+
         Commands::Services(args) => commands::execute_services(args).await?,
         Commands::Tail(args) => commands::execute_tail(args).await?,
         Commands::Connect(args) => match args.command {
