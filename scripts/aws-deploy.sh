@@ -3,10 +3,10 @@
 # Unified AWS deployment script for otlp2pipeline
 #
 # This script handles the complete deployment lifecycle:
-# - S3 Tables + Lake Formation setup (Phase 0)
-# - CloudFormation Phase 1 (table bucket, namespace, table, IAM role)
+# - S3 Tables + Lake Formation setup
+# - CloudFormation stack (table bucket, namespace, tables, IAM role, logging)
 # - LakeFormation permissions grant
-# - CloudFormation Phase 2 (Firehose delivery stream)
+# - Firehose streams via API (AppendOnly mode for unlimited throughput)
 #
 # Prerequisites:
 # - AWS CLI configured with credentials
@@ -127,6 +127,25 @@ ENV="${ENV#otlp2pipeline-}"
 STACK="otlp2pipeline-${ENV}"
 BUCKET="otlp2pipeline-${ENV}"
 
+# Validate name lengths early (S3 bucket names max 63 chars)
+# Error bucket format: ${STACK}-errors-${ACCOUNT_ID}-${REGION}
+# With 12-char account ID and up to 14-char region, stack must be ≤28 chars
+validate_name_lengths() {
+    local stack_len=${#STACK}
+    # Error bucket: stack + "-errors-" (8) + account_id (12) + "-" (1) + region (up to 14) = stack + 35
+    local max_stack_len=$((63 - 8 - 12 - 1 - ${#REGION}))
+
+    if [ "$stack_len" -gt "$max_stack_len" ]; then
+        local error_bucket_len=$((stack_len + 8 + 12 + 1 + ${#REGION}))
+        echo -e "${CROSS} Stack name '${STACK}' is too long (${stack_len} chars)"
+        echo "    Error bucket would be ${error_bucket_len} chars (max 63)"
+        echo "    Max stack name length for region ${REGION}: ${max_stack_len} chars"
+        echo ""
+        echo "    Use a shorter --env name (current: ${ENV})"
+        exit 1
+    fi
+}
+
 # Get AWS account info
 get_account_info() {
     ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null) || {
@@ -210,14 +229,6 @@ check_stack_exists() {
     aws cloudformation describe-stacks --stack-name "${STACK}" --region "${REGION}" >/dev/null 2>&1
 }
 
-get_stack_phase() {
-    local phase
-    phase=$(aws cloudformation describe-stacks --stack-name "${STACK}" --region "${REGION}" \
-        --query 'Stacks[0].Parameters[?ParameterKey==`Phase`].ParameterValue' \
-        --output text 2>/dev/null)
-    echo "${phase:-0}"
-}
-
 get_stack_status() {
     aws cloudformation describe-stacks --stack-name "${STACK}" --region "${REGION}" \
         --query 'Stacks[0].StackStatus' --output text 2>/dev/null
@@ -292,11 +303,9 @@ cmd_status() {
     echo ""
     echo "CloudFormation Stack: ${STACK}"
     if check_stack_exists; then
-        local status phase
+        local status
         status=$(get_stack_status)
-        phase=$(get_stack_phase)
         echo -e "  ${CHECK} Status: ${status}"
-        echo -e "  ${CHECK} Phase: ${phase}"
 
         local role_arn
         role_arn=$(get_firehose_role_arn)
@@ -334,12 +343,38 @@ cmd_status() {
             fi
         fi
 
-        if [ "$phase" = "2" ]; then
+        # Check Firehose streams
+        echo ""
+        echo "Firehose Streams:"
+        local all_streams_ready=true
+        for signal in logs traces sum gauge; do
+            local stream_name="${STACK}-${signal}"
+            local stream_info
+            stream_info=$(aws firehose describe-delivery-stream \
+                --delivery-stream-name "$stream_name" \
+                --region "$REGION" 2>/dev/null)
+
+            if [ -n "$stream_info" ]; then
+                # Check if AppendOnly (no UniqueKeys in destination config)
+                local has_unique_keys
+                has_unique_keys=$(echo "$stream_info" | grep -c "UniqueKeys" || true)
+                if [ "$has_unique_keys" = "0" ]; then
+                    echo -e "  ${CHECK} ${stream_name} (AppendOnly: true)"
+                else
+                    echo -e "  ${CHECK} ${stream_name} (AppendOnly: false)"
+                fi
+            else
+                echo -e "  ${CROSS} ${stream_name} (not found)"
+                all_streams_ready=false
+            fi
+        done
+
+        if [ "$all_streams_ready" = true ]; then
             echo ""
             echo -e "${CHECK} Deployment complete! Firehose is ready to receive data."
-        elif [ "$phase" = "1" ]; then
+        else
             echo ""
-            echo -e "${ARROW} Phase 1 complete. Run deploy again to complete Phase 2."
+            echo -e "${ARROW} Some Firehose streams are missing. Run deploy to create them."
         fi
     else
         echo -e "  ${CROSS} Stack does not exist"
@@ -439,21 +474,158 @@ setup_s3_tables() {
     echo -e "    ${CHECK} Done"
 }
 
-deploy_phase1() {
+# ============================================================================
+# Firehose stream management via API (for AppendOnly mode)
+# ============================================================================
+
+get_stack_output() {
+    local output_key="$1"
+    aws cloudformation describe-stacks --stack-name "${STACK}" --region "${REGION}" \
+        --query "Stacks[0].Outputs[?OutputKey==\`${output_key}\`].OutputValue" \
+        --output text 2>/dev/null
+}
+
+create_firehose_streams() {
     echo ""
-    echo "==> Phase 1: CloudFormation (table bucket, namespace, table, IAM role)"
+    echo "==> Creating Firehose streams via API (AppendOnly mode)"
+
+    local role_arn
+    role_arn=$(get_firehose_role_arn)
+
+    if [ -z "$role_arn" ] || [ "$role_arn" = "None" ]; then
+        echo -e "    ${CROSS} Could not find FirehoseRoleARN in stack outputs"
+        exit 1
+    fi
+
+    # Get configuration from stack outputs
+    local bucket_name namespace log_group error_bucket error_prefix batch_time batch_size
+    bucket_name=$(get_stack_output "TableBucketName")
+    namespace=$(get_stack_output "NamespaceName")
+    log_group=$(get_stack_output "FirehoseLogGroupName")
+    error_bucket=$(get_stack_output "FirehoseErrorBucketName")
+    error_prefix=$(get_stack_output "FirehoseErrorPrefix")
+    batch_time=$(get_stack_output "FirehoseBatchTime")
+    batch_size=$(get_stack_output "FirehoseBatchSize")
+
+    local catalog_arn="arn:aws:glue:${REGION}:${ACCOUNT_ID}:catalog/s3tablescatalog/${bucket_name}"
+
+    echo "    Role ARN: ${role_arn}"
+    echo "    Catalog ARN: ${catalog_arn}"
+
+    local signals=("logs" "traces" "sum" "gauge")
+    local log_streams=("Logs_Destination_Errors" "Traces_Destination_Errors" "Sum_Destination_Errors" "Gauge_Destination_Errors")
+
+    for i in "${!signals[@]}"; do
+        local signal="${signals[$i]}"
+        local log_stream="${log_streams[$i]}"
+        local stream_name="${STACK}-${signal}"
+
+        echo ""
+        echo -e "${ARROW} Checking stream: ${stream_name}"
+
+        # Check if stream exists
+        if aws firehose describe-delivery-stream \
+            --delivery-stream-name "$stream_name" \
+            --region "$REGION" >/dev/null 2>&1; then
+            echo "    Stream exists (skipping)"
+            continue
+        fi
+
+        echo "    Creating stream with AppendOnly=true..."
+
+        # Build the Iceberg destination configuration
+        local iceberg_config
+        iceberg_config=$(cat <<EOF
+{
+    "RoleARN": "${role_arn}",
+    "CatalogConfiguration": {
+        "CatalogARN": "${catalog_arn}"
+    },
+    "DestinationTableConfigurationList": [
+        {
+            "DestinationDatabaseName": "${namespace}",
+            "DestinationTableName": "${signal}"
+        }
+    ],
+    "BufferingHints": {
+        "IntervalInSeconds": ${batch_time},
+        "SizeInMBs": ${batch_size}
+    },
+    "CloudWatchLoggingOptions": {
+        "Enabled": true,
+        "LogGroupName": "${log_group}",
+        "LogStreamName": "${log_stream}"
+    },
+    "S3Configuration": {
+        "RoleARN": "${role_arn}",
+        "BucketARN": "arn:aws:s3:::${error_bucket}",
+        "ErrorOutputPrefix": "${error_prefix}${signal}/"
+    }
+}
+EOF
+)
+
+        aws firehose create-delivery-stream \
+            --delivery-stream-name "$stream_name" \
+            --delivery-stream-type DirectPut \
+            --iceberg-destination-configuration "$iceberg_config" \
+            --region "$REGION" >/dev/null
+
+        echo -e "    ${CHECK} Created"
+    done
+
     echo ""
-    echo -e "${ARROW} Deploying CloudFormation stack: ${STACK}"
+    echo -e "${CHECK} Firehose streams ready"
+}
+
+delete_firehose_streams() {
+    echo ""
+    echo "==> Deleting Firehose streams"
+
+    local signals=("logs" "traces" "sum" "gauge")
+
+    for signal in "${signals[@]}"; do
+        local stream_name="${STACK}-${signal}"
+
+        echo ""
+        echo -e "${ARROW} Checking stream: ${stream_name}"
+
+        if aws firehose describe-delivery-stream \
+            --delivery-stream-name "$stream_name" \
+            --region "$REGION" >/dev/null 2>&1; then
+            echo "    Deleting..."
+            aws firehose delete-delivery-stream \
+                --delivery-stream-name "$stream_name" \
+                --region "$REGION" >/dev/null
+            echo -e "    ${CHECK} Deleted"
+        else
+            echo "    Stream does not exist (skipping)"
+        fi
+    done
+}
+
+check_firehose_stream() {
+    local stream_name="$1"
+    aws firehose describe-delivery-stream \
+        --delivery-stream-name "$stream_name" \
+        --region "$REGION" 2>/dev/null
+}
+
+deploy_cfn() {
+    echo ""
+    echo "==> Deploying CloudFormation stack"
+    echo ""
+    echo -e "${ARROW} Deploying stack: ${STACK}"
 
     aws cloudformation deploy \
         --template-file "${TEMPLATE}" \
         --stack-name "${STACK}" \
         --region "${REGION}" \
         --capabilities CAPABILITY_NAMED_IAM \
-        --parameter-overrides "Phase=1" "TableBucketName=${BUCKET}" "NamespaceName=${NAMESPACE}" \
+        --parameter-overrides "TableBucketName=${BUCKET}" "NamespaceName=${NAMESPACE}" \
         --no-fail-on-empty-changeset
 
-    echo -e "    ${CHECK} Phase 1 complete"
+    echo -e "    ${CHECK} CloudFormation complete"
 }
 
 grant_lakeformation_permissions() {
@@ -516,23 +688,6 @@ grant_lakeformation_permissions() {
     echo -e "    ${CHECK} Done"
 }
 
-deploy_phase2() {
-    echo ""
-    echo "==> Phase 2: CloudFormation (Firehose delivery stream)"
-    echo ""
-    echo -e "${ARROW} Updating CloudFormation stack: ${STACK}"
-
-    aws cloudformation deploy \
-        --template-file "${TEMPLATE}" \
-        --stack-name "${STACK}" \
-        --region "${REGION}" \
-        --capabilities CAPABILITY_NAMED_IAM \
-        --parameter-overrides "Phase=2" "TableBucketName=${BUCKET}" "NamespaceName=${NAMESPACE}" \
-        --no-fail-on-empty-changeset
-
-    echo -e "    ${CHECK} Phase 2 complete"
-}
-
 cmd_deploy() {
     if [ -z "$TEMPLATE" ]; then
         echo "Error: Template file is required for deploy"
@@ -548,6 +703,7 @@ cmd_deploy() {
     echo "Deploying otlp2pipeline to AWS"
     echo ""
     get_account_info
+    validate_name_lengths
     echo "Account:   ${ACCOUNT_ID}"
     echo "Region:    ${REGION}"
     echo "Stack:     ${STACK}"
@@ -555,33 +711,17 @@ cmd_deploy() {
     echo "Namespace: ${NAMESPACE}"
     echo "Template:  ${TEMPLATE}"
 
-    # Phase 0: S3 Tables setup (always run for idempotency)
+    # S3 Tables setup (always run for idempotency)
     setup_s3_tables
 
-    # Check current stack state
-    local current_phase=0
-    if check_stack_exists; then
-        current_phase=$(get_stack_phase)
-    fi
-
-    # Phase 1: Deploy infrastructure
-    if [ "$current_phase" -lt 1 ]; then
-        deploy_phase1
-    else
-        echo ""
-        echo "==> Phase 1: Already complete (skipping)"
-    fi
+    # Deploy CloudFormation stack (tables, IAM role, logging)
+    deploy_cfn
 
     # Grant LakeFormation permissions
     grant_lakeformation_permissions
 
-    # Phase 2: Deploy Firehose
-    if [ "$current_phase" -lt 2 ]; then
-        deploy_phase2
-    else
-        echo ""
-        echo "==> Phase 2: Already complete (skipping)"
-    fi
+    # Create Firehose streams via API (AppendOnly mode)
+    create_firehose_streams
 
     echo ""
     echo "=========================================="
@@ -611,6 +751,7 @@ cmd_destroy() {
 
     if [ "$FORCE" != true ]; then
         echo "This will delete:"
+        echo "  - Firehose streams: ${STACK}-{logs,traces,sum,gauge}"
         echo "  - CloudFormation stack: ${STACK}"
         echo "  - S3 Table Bucket: ${BUCKET}"
         echo "  - All data in the bucket"
@@ -621,6 +762,9 @@ cmd_destroy() {
             exit 0
         fi
     fi
+
+    # Delete Firehose streams first (they depend on IAM role in stack)
+    delete_firehose_streams
 
     # Delete CloudFormation stack
     if check_stack_exists; then
