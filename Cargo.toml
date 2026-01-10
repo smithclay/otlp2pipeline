@@ -10,6 +10,10 @@ crate-type = ["cdylib", "rlib"]
 name = "otlp2pipeline"
 path = "src/bin/otlp2pipeline.rs"
 
+[features]
+default = []
+lambda = ["dep:lambda_http", "dep:aws-sdk-firehose", "dep:aws-config", "dep:rand"]
+
 [dependencies]
 worker = "0.7"
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +34,12 @@ urlencoding = "2"
 # We'll implement a minimal set of custom WASM-compatible functions
 vrl = { version = "0.29", default-features = false, features = ["compiler", "value"] }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+
+# Lambda dependencies (optional, gated by lambda feature)
+lambda_http = { version = "1.0.2", optional = true }
+aws-sdk-firehose = { version = "1.67", optional = true }
+aws-config = { version = "1.6", optional = true }
+rand = { version = "0.8", optional = true }
 
 # Tracing
 tracing = "0.1"
