@@ -100,69 +100,13 @@ pub struct AwsArgs {
 #[derive(Subcommand)]
 pub enum AwsCommands {
     /// Generate CloudFormation template for S3 Tables + Firehose
-    Create(AwsCreateArgs),
+    Create(CreateArgs),
     /// Show CloudFormation stack status
-    Status(AwsStatusArgs),
+    Status(StatusArgs),
     /// Delete CloudFormation stack
-    Destroy(AwsDestroyArgs),
+    Destroy(DestroyArgs),
     /// Show what would be generated
-    Plan(AwsPlanArgs),
-}
-
-#[derive(clap::Args)]
-pub struct AwsCreateArgs {
-    /// Environment name (overrides .otlp2pipeline.toml)
-    #[arg(long)]
-    pub env: Option<String>,
-
-    /// AWS region
-    #[arg(long, default_value = "us-east-1")]
-    pub region: String,
-
-    /// Path to write CloudFormation template (stdout if not specified)
-    #[arg(long, short)]
-    pub output: Option<String>,
-
-    /// S3 Table Bucket name
-    #[arg(long, default_value = "otlp2pipeline")]
-    pub table_bucket_name: String,
-
-    /// S3 Table Namespace name
-    #[arg(long, default_value = "default")]
-    pub namespace: String,
-}
-
-#[derive(clap::Args)]
-pub struct AwsStatusArgs {
-    /// Environment name (overrides .otlp2pipeline.toml)
-    #[arg(long)]
-    pub env: Option<String>,
-
-    /// AWS region (overrides .otlp2pipeline.toml)
-    #[arg(long)]
-    pub region: Option<String>,
-}
-
-#[derive(clap::Args)]
-pub struct AwsDestroyArgs {
-    /// Environment name (overrides .otlp2pipeline.toml)
-    #[arg(long)]
-    pub env: Option<String>,
-
-    /// AWS region (overrides .otlp2pipeline.toml)
-    #[arg(long)]
-    pub region: Option<String>,
-
-    /// Skip confirmation prompt
-    #[arg(long)]
-    pub force: bool,
-}
-
-#[derive(clap::Args)]
-pub struct AwsPlanArgs {
-    /// Environment name (overrides .otlp2pipeline.toml)
-    #[arg(long)]
-    pub env: Option<String>,
+    Plan(PlanArgs),
 }
 
 #[derive(clap::Args)]
@@ -245,47 +189,62 @@ pub struct CreateArgs {
     #[arg(long)]
     pub env: Option<String>,
 
+    /// Path to write config file (stdout if not specified)
+    #[arg(long, short)]
+    pub output: Option<String>,
+
+    // --- Cloudflare-specific options ---
     /// R2 API token (create at dash.cloudflare.com > R2 > Manage R2 API Tokens)
     ///
     /// Required permissions: Admin Read & Write. This is separate from CF_API_TOKEN.
+    /// Required for Cloudflare provider.
     #[arg(long = "r2-token", env = "R2_API_TOKEN")]
-    pub r2_token: String,
+    pub r2_token: Option<String>,
 
-    /// Path to write wrangler.toml (stdout if not specified)
-    #[arg(long)]
-    pub output: Option<String>,
-
-    /// Enable logs signal
+    /// Enable logs signal (Cloudflare)
     #[arg(long, default_value = "true")]
     pub logs: bool,
 
-    /// Enable traces signal
+    /// Enable traces signal (Cloudflare)
     #[arg(long, default_value = "true")]
     pub traces: bool,
 
-    /// Enable metrics signals (gauge, sum)
+    /// Enable metrics signals (Cloudflare)
     #[arg(long, default_value = "true")]
     pub metrics: bool,
 
-    /// Enable RED metrics Durable Object
+    /// Enable RED metrics Durable Object (Cloudflare)
     #[arg(long, default_value = "true")]
     pub aggregator: bool,
 
-    /// Enable WebSocket streaming Durable Object
+    /// Enable WebSocket streaming Durable Object (Cloudflare)
     #[arg(long, default_value = "true")]
     pub livetail: bool,
 
-    /// Aggregator retention in minutes
+    /// Aggregator retention in minutes (Cloudflare)
     #[arg(long, default_value = "60")]
     pub retention: u32,
 
-    /// Rolling policy interval in seconds (how often files are written to R2)
+    /// Rolling policy interval in seconds (Cloudflare)
     #[arg(long, default_value = "300")]
     pub rolling_interval: u32,
 
-    /// Build worker locally instead of downloading from GitHub releases
+    /// Build worker locally instead of downloading from GitHub releases (Cloudflare)
     #[arg(long)]
     pub use_local: bool,
+
+    // --- AWS-specific options ---
+    /// AWS region
+    #[arg(long, default_value = "us-east-1")]
+    pub region: String,
+
+    /// S3 Table Bucket name (AWS)
+    #[arg(long, default_value = "otlp2pipeline")]
+    pub table_bucket_name: String,
+
+    /// S3 Table Namespace name (AWS)
+    #[arg(long, default_value = "default")]
+    pub namespace: String,
 }
 
 #[derive(clap::Args)]
@@ -298,9 +257,14 @@ pub struct DestroyArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Also delete the worker script
+    /// Also delete the worker script (Cloudflare)
     #[arg(long)]
     pub include_worker: bool,
+
+    // --- AWS-specific options ---
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -308,6 +272,11 @@ pub struct StatusArgs {
     /// Environment name (overrides .otlp2pipeline.toml)
     #[arg(long)]
     pub env: Option<String>,
+
+    // --- AWS-specific options ---
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 }
 
 #[derive(clap::Args)]

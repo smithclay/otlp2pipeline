@@ -31,7 +31,61 @@ Purpose of this project is to explore the idea of a "serverless" observability b
 
 Using new query engines like duckdb, this makes long term analytics of observability data cheap and feasible with any tool that can query Apache Iceberg data sources (duckdb, pandas, Trino, Athena, etc).
 
-## Setup
+## Quickstart
+
+Install the CLI:
+```bash
+cargo install otlp2pipeline
+```
+
+### Deploy to Cloudflare
+
+```bash
+# 1. Create R2 API token at https://dash.cloudflare.com → R2 → Manage R2 API Tokens
+#    Permissions: Admin Read & Write
+
+# 2. Initialize and create
+otlp2pipeline init --provider cf --env prod
+otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml
+
+# 3. Deploy
+npx wrangler deploy
+```
+
+### Deploy to AWS
+
+```bash
+# 1. Initialize
+otlp2pipeline init --provider aws --env prod
+
+# 2. Generate CloudFormation template
+otlp2pipeline create --output template.yaml
+
+# 3. Deploy Phase 1 (S3 Tables, IAM)
+aws cloudformation deploy \
+  --template-file template.yaml \
+  --stack-name otlp2pipeline-prod \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides Phase=1
+
+# 4. Grant LakeFormation permissions to the Firehose role (see CLI output)
+
+# 5. Deploy Phase 2 (Firehose)
+aws cloudformation deploy \
+  --template-file template.yaml \
+  --stack-name otlp2pipeline-prod \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides Phase=2
+```
+
+After `init`, top-level commands automatically route to your configured provider:
+```bash
+otlp2pipeline status   # Works for both Cloudflare and AWS
+otlp2pipeline plan     # Shows what would be created
+otlp2pipeline destroy  # Tears down the environment
+```
+
+## Setup (Cloudflare)
 
 ### 1. Create R2 API token
 

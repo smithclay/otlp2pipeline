@@ -1,25 +1,14 @@
 use anyhow::Result;
 
-use crate::cli::config::Config;
-use crate::cli::AwsCreateArgs;
+use super::helpers::{resolve_env_name, stack_name};
+use crate::cli::CreateArgs;
 
 /// Embedded CloudFormation template for OTLP logs
 const LOGS_TEMPLATE: &str = include_str!("../../../../templates/aws/logs.cfn.yaml");
 
-pub async fn execute_create(args: AwsCreateArgs) -> Result<()> {
-    let env_name = args
-        .env
-        .clone()
-        .or_else(|| Config::load().ok().map(|c| c.environment))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No environment specified. Either:\n  \
-                1. Run `otlp2pipeline init --provider aws --env <name>` first\n  \
-                2. Pass --env <name> explicitly"
-            )
-        })?;
-
-    let stack_name = format!("otlp2pipeline-{}", env_name);
+pub fn execute_create(args: CreateArgs) -> Result<()> {
+    let env_name = resolve_env_name(args.env)?;
+    let stack_name = stack_name(&env_name);
 
     eprintln!("==> Generating CloudFormation template");
     eprintln!("    Environment: {}", env_name);
@@ -28,17 +17,13 @@ pub async fn execute_create(args: AwsCreateArgs) -> Result<()> {
     eprintln!("    Table bucket: {}", args.table_bucket_name);
     eprintln!("    Namespace: {}", args.namespace);
 
-    // The template uses CloudFormation parameters, so we don't need to do string substitution
-    // Users can override defaults via --parameter-overrides when deploying
-    let template = LOGS_TEMPLATE.to_string();
-
     match &args.output {
         Some(path) => {
-            std::fs::write(path, &template)?;
+            std::fs::write(path, LOGS_TEMPLATE)?;
             eprintln!("\n==> Template written to: {}", path);
         }
         None => {
-            println!("{}", template);
+            println!("{}", LOGS_TEMPLATE);
             return Ok(());
         }
     }

@@ -1,15 +1,14 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::process::Command;
 
-use crate::cli::config::Config;
-use crate::cli::AwsStatusArgs;
+use super::helpers::{load_config, require_aws_cli, resolve_region, stack_name};
+use crate::cli::StatusArgs;
 
-pub async fn execute_status(args: AwsStatusArgs) -> Result<()> {
-    let config = Config::load().ok();
+pub fn execute_status(args: StatusArgs) -> Result<()> {
+    let config = load_config()?;
 
     let env_name = args
         .env
-        .clone()
         .or_else(|| config.as_ref().map(|c| c.environment.clone()))
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -19,24 +18,10 @@ pub async fn execute_status(args: AwsStatusArgs) -> Result<()> {
             )
         })?;
 
-    let region = args
-        .region
-        .clone()
-        .or_else(|| config.as_ref().and_then(|c| c.region.clone()))
-        .unwrap_or_else(|| "us-east-1".to_string());
+    let region = resolve_region(args.region, &config);
+    let stack_name = stack_name(&env_name);
 
-    let stack_name = format!("otlp2pipeline-{}", env_name);
-
-    // Check if AWS CLI is available
-    if Command::new("aws").arg("--version").output().is_err() {
-        bail!(
-            "AWS CLI not found. Install it from https://aws.amazon.com/cli/\n\n\
-            Or check status manually:\n  \
-            aws cloudformation describe-stacks --stack-name {} --region {}",
-            stack_name,
-            region
-        );
-    }
+    require_aws_cli(&stack_name, &region, "describe-stacks")?;
 
     eprintln!("==> AWS CloudFormation Stack Status");
     eprintln!("    Stack: {}", stack_name);
@@ -64,12 +49,14 @@ pub async fn execute_status(args: AwsStatusArgs) -> Result<()> {
         let stderr = String::from_utf8_lossy(&status.stderr);
         if stderr.contains("does not exist") {
             eprintln!("    Stack does not exist");
+            return Ok(());
         } else {
             eprintln!("    Error: {}", stderr.trim());
+            return Ok(());
         }
-    } else {
-        print!("{}", String::from_utf8_lossy(&status.stdout));
     }
+
+    print!("{}", String::from_utf8_lossy(&status.stdout));
 
     // Get stack resources
     eprintln!("\n==> Stack Resources");
@@ -90,6 +77,9 @@ pub async fn execute_status(args: AwsStatusArgs) -> Result<()> {
 
     if resources.status.success() {
         print!("{}", String::from_utf8_lossy(&resources.stdout));
+    } else {
+        let stderr = String::from_utf8_lossy(&resources.stderr);
+        eprintln!("    Failed to retrieve resources: {}", stderr.trim());
     }
 
     Ok(())

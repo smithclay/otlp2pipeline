@@ -2,15 +2,14 @@ use anyhow::{bail, Result};
 use std::io::{self, Write};
 use std::process::Command;
 
-use crate::cli::config::Config;
-use crate::cli::AwsDestroyArgs;
+use super::helpers::{load_config, require_aws_cli, resolve_region, stack_name};
+use crate::cli::DestroyArgs;
 
-pub async fn execute_destroy(args: AwsDestroyArgs) -> Result<()> {
-    let config = Config::load().ok();
+pub fn execute_destroy(args: DestroyArgs) -> Result<()> {
+    let config = load_config()?;
 
     let env_name = args
         .env
-        .clone()
         .or_else(|| config.as_ref().map(|c| c.environment.clone()))
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -20,24 +19,10 @@ pub async fn execute_destroy(args: AwsDestroyArgs) -> Result<()> {
             )
         })?;
 
-    let region = args
-        .region
-        .clone()
-        .or_else(|| config.as_ref().and_then(|c| c.region.clone()))
-        .unwrap_or_else(|| "us-east-1".to_string());
+    let region = resolve_region(args.region, &config);
+    let stack_name = stack_name(&env_name);
 
-    let stack_name = format!("otlp2pipeline-{}", env_name);
-
-    // Check if AWS CLI is available
-    if Command::new("aws").arg("--version").output().is_err() {
-        bail!(
-            "AWS CLI not found. Install it from https://aws.amazon.com/cli/\n\n\
-            Or delete manually:\n  \
-            aws cloudformation delete-stack --stack-name {} --region {}",
-            stack_name,
-            region
-        );
-    }
+    require_aws_cli(&stack_name, &region, "delete-stack")?;
 
     eprintln!("==> AWS CloudFormation Stack Deletion");
     eprintln!("    Stack: {}", stack_name);
@@ -105,14 +90,14 @@ pub async fn execute_destroy(args: AwsDestroyArgs) -> Result<()> {
     if wait.success() {
         eprintln!();
         eprintln!("Stack deleted successfully.");
+        Ok(())
     } else {
         eprintln!();
-        eprintln!("Warning: Stack deletion may have failed or timed out.");
+        eprintln!("Stack deletion may have failed or timed out.");
         eprintln!(
             "Check status with: otlp2pipeline aws status --env {}",
             env_name
         );
+        bail!("Stack deletion did not complete successfully")
     }
-
-    Ok(())
 }

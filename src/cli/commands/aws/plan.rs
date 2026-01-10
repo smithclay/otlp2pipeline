@@ -1,22 +1,11 @@
 use anyhow::Result;
 
-use crate::cli::config::Config;
-use crate::cli::AwsPlanArgs;
+use super::helpers::{resolve_env_name, stack_name};
+use crate::cli::PlanArgs;
 
-pub async fn execute_plan(args: AwsPlanArgs) -> Result<()> {
-    let env_name = args
-        .env
-        .clone()
-        .or_else(|| Config::load().ok().map(|c| c.environment))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No environment specified. Either:\n  \
-                1. Run `otlp2pipeline init --provider aws --env <name>` first\n  \
-                2. Pass --env <name> explicitly"
-            )
-        })?;
-
-    let stack_name = format!("otlp2pipeline-{}", env_name);
+pub fn execute_plan(args: PlanArgs) -> Result<()> {
+    let env_name = resolve_env_name(args.env)?;
+    let stack_name = stack_name(&env_name);
 
     eprintln!("==> AWS CloudFormation Plan");
     eprintln!();

@@ -49,6 +49,14 @@ fn enabled_signals(args: &CreateArgs) -> Vec<&'static SignalConfig> {
 }
 
 pub async fn execute_create(args: CreateArgs) -> Result<()> {
+    // Validate Cloudflare-specific requirements
+    let r2_token = args.r2_token.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "R2 API token required for Cloudflare provider.\n  \
+            Pass --r2-token <token> or set R2_API_TOKEN environment variable."
+        )
+    })?;
+
     let env_name = args
         .env
         .clone()
@@ -109,9 +117,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     // Step 3: Set service credential
     eprintln!("\n==> Setting service credential...");
-    client
-        .set_catalog_credential(&bucket, &args.r2_token)
-        .await?;
+    client.set_catalog_credential(&bucket, r2_token).await?;
     eprintln!("    Set");
 
     // Step 4: Configure maintenance
@@ -159,7 +165,7 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
                 &name,
                 &bucket,
                 signal.table,
-                &args.r2_token,
+                r2_token,
                 args.rolling_interval,
             )
             .await?
