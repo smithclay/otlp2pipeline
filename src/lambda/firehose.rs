@@ -93,17 +93,19 @@ impl FirehoseSender {
                 }
 
                 // Convert to Firehose records (one JSON object per record, newline-delimited)
+                // Fail fast if any record cannot be serialized to maintain 1:1 correspondence
                 let firehose_records: Vec<Record> = pending
                     .iter()
-                    .filter_map(|json_obj| {
-                        let mut data = serde_json::to_vec(json_obj).ok()?;
+                    .map(|json_obj| {
+                        let mut data = serde_json::to_vec(json_obj)
+                            .map_err(|e| format!("JSON serialization failed: {e}"))?;
                         data.push(b'\n'); // NDJSON format
                         Record::builder()
                             .data(aws_sdk_firehose::primitives::Blob::new(data))
                             .build()
-                            .ok()
+                            .map_err(|e| format!("Record build failed: {e}"))
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, String>>()?;
 
                 let response = self
                     .client
