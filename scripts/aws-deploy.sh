@@ -320,6 +320,18 @@ cmd_status() {
             else
                 echo -e "  ${CROSS} ALL on table 'traces' (not granted)"
             fi
+
+            if check_lakeformation_table_permission "$role_arn" "sum"; then
+                echo -e "  ${CHECK} ALL on table 'sum'"
+            else
+                echo -e "  ${CROSS} ALL on table 'sum' (not granted)"
+            fi
+
+            if check_lakeformation_table_permission "$role_arn" "gauge"; then
+                echo -e "  ${CHECK} ALL on table 'gauge'"
+            else
+                echo -e "  ${CROSS} ALL on table 'gauge' (not granted)"
+            fi
         fi
 
         if [ "$phase" = "2" ]; then
@@ -482,6 +494,24 @@ grant_lakeformation_permissions() {
         --region "${REGION}" \
         --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
         --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"traces\"}}" \
+        --permissions ALL 2>/dev/null || true
+    echo -e "    ${CHECK} Done"
+
+    echo ""
+    echo -e "${ARROW} Granting ALL on table 'sum'"
+    aws lakeformation grant-permissions \
+        --region "${REGION}" \
+        --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
+        --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"sum\"}}" \
+        --permissions ALL 2>/dev/null || true
+    echo -e "    ${CHECK} Done"
+
+    echo ""
+    echo -e "${ARROW} Granting ALL on table 'gauge'"
+    aws lakeformation grant-permissions \
+        --region "${REGION}" \
+        --principal "{\"DataLakePrincipalIdentifier\":\"${role_arn}\"}" \
+        --resource "{\"Table\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${BUCKET}\",\"DatabaseName\":\"${NAMESPACE}\",\"Name\":\"gauge\"}}" \
         --permissions ALL 2>/dev/null || true
     echo -e "    ${CHECK} Done"
 }

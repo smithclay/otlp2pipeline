@@ -4,16 +4,18 @@
 #
 # Usage:
 #   ./scripts/aws-send-test-record.sh <stack-name> [region] [signal]
-#   ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1        # both logs and traces
+#   ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1        # all signals
 #   ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1 logs   # logs only
 #   ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1 traces # traces only
+#   ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1 sum    # sum metrics only
+#   ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1 gauge  # gauge metrics only
 #
 
 set -e
 
 STACK_NAME="${1:?Usage: $0 <stack-name> [region] [signal]}"
 REGION="${2:-us-east-1}"
-SIGNAL="${3:-both}"  # logs, traces, or both
+SIGNAL="${3:-all}"  # logs, traces, sum, gauge, or all
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 OBSERVED_TS=$(date +%s)000
 END_TS=$((OBSERVED_TS + 100))
@@ -56,7 +58,7 @@ echo "    Signal: ${SIGNAL}"
 echo "    Timestamp: ${TIMESTAMP}"
 
 # Send logs record
-if [ "${SIGNAL}" = "logs" ] || [ "${SIGNAL}" = "both" ]; then
+if [ "${SIGNAL}" = "logs" ] || [ "${SIGNAL}" = "all" ]; then
     LOG_RECORD=$(cat <<EOF
 {
   "timestamp": "${TIMESTAMP}",
@@ -79,7 +81,7 @@ EOF
 fi
 
 # Send traces record
-if [ "${SIGNAL}" = "traces" ] || [ "${SIGNAL}" = "both" ]; then
+if [ "${SIGNAL}" = "traces" ] || [ "${SIGNAL}" = "all" ]; then
     TRACE_RECORD=$(cat <<EOF
 {
   "timestamp": "${TIMESTAMP}",
@@ -113,11 +115,61 @@ EOF
     send_record "${STACK_NAME}-traces" "${TRACE_RECORD}" "traces"
 fi
 
+# Send sum metrics record
+if [ "${SIGNAL}" = "sum" ] || [ "${SIGNAL}" = "all" ]; then
+    SUM_RECORD=$(cat <<EOF
+{
+  "timestamp": "${TIMESTAMP}",
+  "start_timestamp": ${OBSERVED_TS},
+  "metric_name": "http.server.request.count",
+  "metric_description": "Number of HTTP requests",
+  "metric_unit": "1",
+  "value": 42.0,
+  "service_name": "test-service",
+  "service_namespace": "",
+  "service_instance_id": "",
+  "resource_attributes": "{\"host.name\":\"test-host\"}",
+  "scope_name": "test-scope",
+  "scope_version": "1.0.0",
+  "scope_attributes": "{}",
+  "metric_attributes": "{\"http.method\":\"GET\",\"http.status_code\":200}",
+  "flags": 0,
+  "exemplars_json": "[]",
+  "aggregation_temporality": 2,
+  "is_monotonic": true
+}
+EOF
+)
+    send_record "${STACK_NAME}-sum" "${SUM_RECORD}" "sum"
+fi
+
+# Send gauge metrics record
+if [ "${SIGNAL}" = "gauge" ] || [ "${SIGNAL}" = "all" ]; then
+    GAUGE_RECORD=$(cat <<EOF
+{
+  "timestamp": "${TIMESTAMP}",
+  "start_timestamp": ${OBSERVED_TS},
+  "metric_name": "system.cpu.utilization",
+  "metric_description": "CPU utilization percentage",
+  "metric_unit": "1",
+  "value": 0.75,
+  "service_name": "test-service",
+  "service_namespace": "",
+  "service_instance_id": "",
+  "resource_attributes": "{\"host.name\":\"test-host\"}",
+  "scope_name": "test-scope",
+  "scope_version": "1.0.0",
+  "scope_attributes": "{}",
+  "metric_attributes": "{\"cpu\":\"cpu0\"}",
+  "flags": 0,
+  "exemplars_json": "[]"
+}
+EOF
+)
+    send_record "${STACK_NAME}-gauge" "${GAUGE_RECORD}" "gauge"
+fi
+
 echo ""
 echo "==> Records sent! Data will appear in tables after Firehose buffering (~2 min)."
 echo ""
-echo "    Query logs:"
-echo "    aws s3tables query --table-bucket-arn <bucket-arn> --namespace default --name logs --region ${REGION}"
-echo ""
-echo "    Query traces:"
-echo "    aws s3tables query --table-bucket-arn <bucket-arn> --namespace default --name traces --region ${REGION}"
+echo "    Use 'otlp2pipeline query' to query the tables via DuckDB."

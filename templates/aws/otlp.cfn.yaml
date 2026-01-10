@@ -36,6 +36,18 @@ Parameters:
     AllowedValues: ["true", "false"]
     Default: "true"
 
+  EnableSum:
+    Description: Create sum metrics table and Firehose stream
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableGauge:
+    Description: Create gauge metrics table and Firehose stream
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
   TableBucketName:
     Description: Name of the S3 Table Bucket
     Type: String
@@ -55,6 +67,16 @@ Parameters:
     Description: Name of the traces table
     Type: String
     Default: traces
+
+  SumTableName:
+    Description: Name of the sum metrics table
+    Type: String
+    Default: sum
+
+  GaugeTableName:
+    Description: Name of the gauge metrics table
+    Type: String
+    Default: gauge
 
   CompactionTargetFileSizeMB:
     Description: Target file size for Iceberg compaction (MB)
@@ -99,11 +121,19 @@ Parameters:
 Conditions:
   CreateLogs: !Equals [!Ref EnableLogs, "true"]
   CreateTraces: !Equals [!Ref EnableTraces, "true"]
+  CreateSum: !Equals [!Ref EnableSum, "true"]
+  CreateGauge: !Equals [!Ref EnableGauge, "true"]
   CreateLogsFirehose: !And
     - !Condition CreateLogs
     - !Equals [!Ref Phase, "2"]
   CreateTracesFirehose: !And
     - !Condition CreateTraces
+    - !Equals [!Ref Phase, "2"]
+  CreateSumFirehose: !And
+    - !Condition CreateSum
+    - !Equals [!Ref Phase, "2"]
+  CreateGaugeFirehose: !And
+    - !Condition CreateGauge
     - !Equals [!Ref Phase, "2"]
 
 Resources:
@@ -156,6 +186,20 @@ Resources:
     Properties:
       LogGroupName: !Ref FirehoseLogGroup
       LogStreamName: Traces_Destination_Errors
+
+  SumDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateSum
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Sum_Destination_Errors
+
+  GaugeDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateGauge
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Gauge_Destination_Errors
 
   ############################################################
   # Firehose IAM Role (shared)
@@ -474,6 +518,226 @@ Resources:
           BucketARN: !Sub arn:aws:s3:::${FirehoseErrorBucket}
           ErrorOutputPrefix: !Sub ${FirehoseErrorPrefix}traces/
 
+  ############################################################
+  # Sum Metrics Table
+  ############################################################
+  SumTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateSum
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref SumTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: start_timestamp
+              Type: long
+              Required: false
+            - Name: metric_name
+              Type: string
+              Required: true
+            - Name: metric_description
+              Type: string
+              Required: false
+            - Name: metric_unit
+              Type: string
+              Required: false
+            - Name: value
+              Type: double
+              Required: true
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: metric_attributes
+              Type: string
+              Required: false
+            - Name: flags
+              Type: int
+              Required: false
+            - Name: exemplars_json
+              Type: string
+              Required: false
+            - Name: aggregation_temporality
+              Type: int
+              Required: true
+            - Name: is_monotonic
+              Type: boolean
+              Required: true
+
+  ############################################################
+  # Sum Metrics Firehose
+  ############################################################
+  SumFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Condition: CreateSumFirehose
+    Properties:
+      DeliveryStreamName: !Sub ${AWS::StackName}-sum
+      DeliveryStreamType: DirectPut
+
+      IcebergDestinationConfiguration:
+        RoleARN: !GetAtt FirehoseRole.Arn
+
+        CatalogConfiguration:
+          CatalogArn: !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/${TableBucketName}
+
+        DestinationTableConfigurationList:
+          - DestinationDatabaseName: !Ref NamespaceName
+            DestinationTableName: !Ref SumTableName
+            UniqueKeys:
+              - timestamp
+
+        BufferingHints:
+          IntervalInSeconds: !Ref FirehoseBatchTime
+          SizeInMBs: !Ref FirehoseBatchSize
+
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref FirehoseLogGroup
+          LogStreamName: !Ref SumDestLogStream
+
+        S3Configuration:
+          RoleARN: !GetAtt FirehoseRole.Arn
+          BucketARN: !Sub arn:aws:s3:::${FirehoseErrorBucket}
+          ErrorOutputPrefix: !Sub ${FirehoseErrorPrefix}sum/
+
+  ############################################################
+  # Gauge Metrics Table
+  ############################################################
+  GaugeTable:
+    Type: AWS::S3Tables::Table
+    Condition: CreateGauge
+    DependsOn: Namespace
+    Properties:
+      TableName: !Ref GaugeTableName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+      Namespace: !Ref NamespaceName
+      OpenTableFormat: ICEBERG
+      Compaction:
+        Status: enabled
+        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
+      SnapshotManagement:
+        Status: enabled
+        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
+        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
+      IcebergMetadata:
+        IcebergSchema:
+          SchemaFieldList:
+            - Name: timestamp
+              Type: timestamp
+              Required: true
+            - Name: start_timestamp
+              Type: long
+              Required: false
+            - Name: metric_name
+              Type: string
+              Required: true
+            - Name: metric_description
+              Type: string
+              Required: false
+            - Name: metric_unit
+              Type: string
+              Required: false
+            - Name: value
+              Type: double
+              Required: true
+            - Name: service_name
+              Type: string
+              Required: true
+            - Name: service_namespace
+              Type: string
+              Required: false
+            - Name: service_instance_id
+              Type: string
+              Required: false
+            - Name: resource_attributes
+              Type: string
+              Required: false
+            - Name: scope_name
+              Type: string
+              Required: false
+            - Name: scope_version
+              Type: string
+              Required: false
+            - Name: scope_attributes
+              Type: string
+              Required: false
+            - Name: metric_attributes
+              Type: string
+              Required: false
+            - Name: flags
+              Type: int
+              Required: false
+            - Name: exemplars_json
+              Type: string
+              Required: false
+
+  ############################################################
+  # Gauge Metrics Firehose
+  ############################################################
+  GaugeFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Condition: CreateGaugeFirehose
+    Properties:
+      DeliveryStreamName: !Sub ${AWS::StackName}-gauge
+      DeliveryStreamType: DirectPut
+
+      IcebergDestinationConfiguration:
+        RoleARN: !GetAtt FirehoseRole.Arn
+
+        CatalogConfiguration:
+          CatalogArn: !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/${TableBucketName}
+
+        DestinationTableConfigurationList:
+          - DestinationDatabaseName: !Ref NamespaceName
+            DestinationTableName: !Ref GaugeTableName
+            UniqueKeys:
+              - timestamp
+
+        BufferingHints:
+          IntervalInSeconds: !Ref FirehoseBatchTime
+          SizeInMBs: !Ref FirehoseBatchSize
+
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref FirehoseLogGroup
+          LogStreamName: !Ref GaugeDestLogStream
+
+        S3Configuration:
+          RoleARN: !GetAtt FirehoseRole.Arn
+          BucketARN: !Sub arn:aws:s3:::${FirehoseErrorBucket}
+          ErrorOutputPrefix: !Sub ${FirehoseErrorPrefix}gauge/
+
 Outputs:
   TableBucketARN:
     Description: ARN of the S3 Table Bucket
@@ -506,3 +770,23 @@ Outputs:
     Condition: CreateTracesFirehose
     Description: ARN of the Traces Firehose Delivery Stream
     Value: !GetAtt TracesFirehose.Arn
+
+  SumFirehoseDeliveryStreamName:
+    Condition: CreateSumFirehose
+    Description: Name of the Sum Metrics Firehose Delivery Stream
+    Value: !Ref SumFirehose
+
+  SumFirehoseDeliveryStreamARN:
+    Condition: CreateSumFirehose
+    Description: ARN of the Sum Metrics Firehose Delivery Stream
+    Value: !GetAtt SumFirehose.Arn
+
+  GaugeFirehoseDeliveryStreamName:
+    Condition: CreateGaugeFirehose
+    Description: Name of the Gauge Metrics Firehose Delivery Stream
+    Value: !Ref GaugeFirehose
+
+  GaugeFirehoseDeliveryStreamARN:
+    Condition: CreateGaugeFirehose
+    Description: ARN of the Gauge Metrics Firehose Delivery Stream
+    Value: !GetAtt GaugeFirehose.Arn
