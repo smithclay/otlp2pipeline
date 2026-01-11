@@ -23,25 +23,28 @@ fn test_chunk_at_500_records() {
     assert_eq!(chunks[1].len(), 1);
 }
 
-/// Test exponential backoff calculation.
+/// Test exponential backoff calculation via shared RetryConfig.
 #[test]
 fn test_backoff_calculation() {
-    use otlp2pipeline::lambda::firehose::calculate_backoff;
+    use otlp2pipeline::lambda::RetryConfig;
 
-    // Attempt 0: base delay (100ms)
-    let delay0 = calculate_backoff(0);
+    // Create config matching Firehose defaults: 100ms base, 10s max, 3 attempts
+    let config = RetryConfig::exponential(3, 100, 10_000);
+
+    // Attempt 0: 100ms base + jitter (up to 50ms)
+    let delay0 = config.delay_for_attempt(0).as_millis() as u64;
     assert!((100..=150).contains(&delay0), "attempt 0 delay: {}", delay0);
 
-    // Attempt 1: 200ms base + jitter
-    let delay1 = calculate_backoff(1);
+    // Attempt 1: 200ms base + jitter (up to 100ms)
+    let delay1 = config.delay_for_attempt(1).as_millis() as u64;
     assert!((200..=300).contains(&delay1), "attempt 1 delay: {}", delay1);
 
-    // Attempt 2: 400ms base + jitter
-    let delay2 = calculate_backoff(2);
+    // Attempt 2: 400ms base + jitter (up to 200ms)
+    let delay2 = config.delay_for_attempt(2).as_millis() as u64;
     assert!((400..=600).contains(&delay2), "attempt 2 delay: {}", delay2);
 
-    // Should cap at MAX_DELAY_MS (10000)
-    let delay10 = calculate_backoff(10);
+    // Should cap at max_ms (10000)
+    let delay10 = config.delay_for_attempt(10).as_millis() as u64;
     assert!(
         delay10 <= 10000,
         "attempt 10 should cap at 10000ms: {}",

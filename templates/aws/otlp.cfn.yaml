@@ -97,7 +97,7 @@ Parameters:
     Type: Number
     MinValue: 60
     MaxValue: 900
-    Default: 120
+    Default: 300
 
   FirehoseBatchSize:
     Description: Firehose buffering size (MB)

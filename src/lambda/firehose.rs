@@ -3,18 +3,20 @@
 use aws_sdk_firehose::{
     error::ProvideErrorMetadata, operation::RequestId, types::Record, Client as AwsClient,
 };
-use rand::Rng;
 use std::collections::HashMap;
-use std::time::Duration;
 use tracing::{debug, error, warn};
 use vrl::value::Value;
 
+use crate::pipeline::retry::RetryConfig;
 use crate::pipeline::{PipelineSender, SendResult};
 
 const MAX_RECORDS_PER_BATCH: usize = 500; // Firehose limit
-const MAX_RETRIES: usize = 3;
-const BASE_DELAY_MS: u64 = 100;
-const MAX_DELAY_MS: u64 = 10_000;
+
+/// Default retry configuration for Firehose operations.
+/// Uses exponential backoff with jitter (100ms base, 10s max, 3 attempts).
+fn default_retry_config() -> RetryConfig {
+    RetryConfig::exponential(3, 100, 10_000)
+}
 
 /// Firehose delivery stream configuration per signal type.
 #[derive(Clone)]
@@ -53,13 +55,6 @@ impl StreamConfig {
     }
 }
 
-/// Calculate exponential backoff with jitter.
-pub fn calculate_backoff(attempt: usize) -> u64 {
-    let base = BASE_DELAY_MS.saturating_mul(2_u64.saturating_pow(attempt as u32));
-    let jitter = rand::thread_rng().gen_range(0..=base / 2);
-    base.saturating_add(jitter).min(MAX_DELAY_MS)
-}
-
 /// Firehose client that implements PipelineSender.
 pub struct FirehoseSender {
     client: AwsClient,
@@ -83,21 +78,27 @@ impl FirehoseSender {
         stream_name: &str,
         records: Vec<Value>,
     ) -> Result<usize, String> {
+        let retry_config = default_retry_config();
+        let max_attempts = retry_config.max_attempts;
         let mut total_succeeded = 0;
         let mut final_failed: Vec<Value> = Vec::new();
 
         for chunk in records.chunks(MAX_RECORDS_PER_BATCH) {
             let mut pending: Vec<Value> = chunk.to_vec();
 
-            for attempt in 0..=MAX_RETRIES {
+            for attempt in 0..max_attempts {
                 if pending.is_empty() {
                     break;
                 }
 
                 if attempt > 0 {
-                    let delay = calculate_backoff(attempt);
-                    debug!(attempt, delay_ms = delay, "retrying after backoff");
-                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    let delay = retry_config.delay_for_attempt(attempt - 1);
+                    debug!(
+                        attempt,
+                        delay_ms = delay.as_millis() as u64,
+                        "retrying after backoff"
+                    );
+                    tokio::time::sleep(delay).await;
                 }
 
                 // Convert to Firehose records (one JSON object per record, newline-delimited)
@@ -135,7 +136,7 @@ impl FirehoseSender {
                             "Firehose API call failed"
                         );
                         // Retry API-level errors (throttling, network issues)
-                        if attempt < MAX_RETRIES {
+                        if attempt + 1 < max_attempts {
                             warn!(
                                 attempt,
                                 stream = stream_name,
@@ -144,8 +145,8 @@ impl FirehoseSender {
                             continue;
                         }
                         return Err(format!(
-                            "Firehose API error after {} retries: {}",
-                            MAX_RETRIES, e
+                            "Firehose API error after {} attempts: {}",
+                            max_attempts, e
                         ));
                     }
                 };

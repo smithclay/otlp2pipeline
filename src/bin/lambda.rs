@@ -12,6 +12,58 @@ use otlp2pipeline::{
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
+/// Optional auth token loaded at cold start
+static AUTH_TOKEN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+/// Initialize auth token from environment (call once at cold start)
+fn init_auth_token() {
+    AUTH_TOKEN.get_or_init(|| std::env::var("AUTH_TOKEN").ok().filter(|t| !t.is_empty()));
+}
+
+/// Validate bearer token if AUTH_TOKEN env var is set.
+/// Returns Ok(()) if auth is valid or not required, Err(Response) if unauthorized.
+#[allow(clippy::result_large_err)] // Response<Body> is large but acceptable here
+fn check_auth(req: &Request) -> Result<(), Response<Body>> {
+    let expected_token = match AUTH_TOKEN.get().and_then(|t| t.as_ref()) {
+        Some(token) => token,
+        None => return Ok(()), // Auth disabled
+    };
+
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok());
+
+    let provided_token = match auth_header {
+        Some(header) => match header.strip_prefix("Bearer ") {
+            Some(token) => token,
+            None => {
+                return Err(Response::builder()
+                    .status(401)
+                    .body(Body::from(
+                        "Unauthorized: invalid Authorization header format",
+                    ))
+                    .unwrap());
+            }
+        },
+        None => {
+            return Err(Response::builder()
+                .status(401)
+                .body(Body::from("Unauthorized: missing Authorization header"))
+                .unwrap());
+        }
+    };
+
+    if provided_token != expected_token {
+        return Err(Response::builder()
+            .status(401)
+            .body(Body::from("Unauthorized: invalid token"))
+            .unwrap());
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // Initialize tracing for CloudWatch Logs
@@ -25,7 +77,10 @@ async fn main() -> Result<(), Error> {
         .without_time() // Lambda adds timestamps
         .init();
 
-    info!("Lambda cold start - initializing Firehose client");
+    info!("Lambda cold start - initializing");
+
+    // Load auth token from environment (optional)
+    init_auth_token();
 
     // Load stream configuration from environment
     let streams = StreamConfig::from_env().map_err(Error::from)?;
@@ -40,12 +95,17 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
     let path = event.uri().path().to_string();
     let method = event.method().clone();
 
-    // Health check endpoint
+    // Health check endpoint (no auth required)
     if path == "/health" || path == "/" {
         return Ok(Response::builder()
             .status(200)
             .body(Body::from("OK"))
             .unwrap());
+    }
+
+    // Check auth if AUTH_TOKEN is configured
+    if let Err(response) = check_auth(&event) {
+        return Ok(response);
     }
 
     // Only accept POST for telemetry endpoints
