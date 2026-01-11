@@ -47,9 +47,13 @@ pub fn setup_s3_tables(cli: &AwsCli, ctx: &DeployContext) -> Result<()> {
     // Step 4: Glue catalog
     eprintln!("\n    Creating/updating s3tablescatalog federated catalog");
     let glue = cli.glue();
-    glue.delete_catalog("s3tablescatalog")?;
-    glue.create_catalog("s3tablescatalog", &ctx.s3_tables_resource_arn())?;
-    eprintln!("    Done");
+    // Note: Skip delete - create_catalog handles AlreadyExistsException.
+    // Deleting requires DROP permission which we haven't granted yet.
+    if glue.create_catalog("s3tablescatalog", &ctx.s3_tables_resource_arn())? {
+        eprintln!("    Created");
+    } else {
+        eprintln!("    Already exists");
+    }
 
     // Step 5: Catalog permissions
     eprintln!("\n    Granting catalog permissions to caller");
