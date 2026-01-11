@@ -1161,6 +1161,30 @@ cmd_destroy() {
     # Delete Firehose streams first (they depend on IAM role in stack)
     delete_firehose_streams
 
+    # Delete tables from namespace (required before namespace can be deleted)
+    echo ""
+    echo "==> Deleting tables from namespace"
+    for table in logs traces sum gauge; do
+        echo -e "${ARROW} Deleting table: ${table}"
+        aws s3tables delete-table \
+            --table-bucket-arn "arn:aws:s3tables:${REGION}:${ACCOUNT_ID}:bucket/${BUCKET}" \
+            --namespace "${NAMESPACE}" \
+            --name "$table" \
+            --region "${REGION}" 2>/dev/null && echo -e "    ${CHECK} Deleted" || echo "    Table does not exist (skipping)"
+    done
+
+    # Empty S3 buckets (required before CFN can delete them)
+    echo ""
+    echo "==> Emptying S3 buckets"
+    local error_bucket="${STACK}-errors-${ACCOUNT_ID}-${REGION}"
+    local artifact_bucket="${STACK}-artifacts-${ACCOUNT_ID}"
+
+    echo -e "${ARROW} Emptying error bucket: ${error_bucket}"
+    aws s3 rm "s3://${error_bucket}" --recursive --region "${REGION}" 2>/dev/null || true
+
+    echo -e "${ARROW} Emptying artifact bucket: ${artifact_bucket}"
+    aws s3 rm "s3://${artifact_bucket}" --recursive --region "${REGION}" 2>/dev/null || true
+
     # Delete CloudFormation stack
     if check_stack_exists; then
         echo ""
