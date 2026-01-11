@@ -180,7 +180,8 @@ fn print_table_info(
     // Get metadata location and fetch Iceberg metadata
     if let Some(metadata_location) = detail.get("metadataLocation").and_then(|v| v.as_str()) {
         // Fetch and parse the Iceberg metadata file
-        if let Some(metadata) = fetch_iceberg_metadata(metadata_location, region) {
+        let (metadata_opt, error_opt) = fetch_iceberg_metadata(metadata_location, region);
+        if let Some(metadata) = metadata_opt {
             // Current schema ID
             if let Some(schema_id) = metadata.current_schema_id {
                 println!("  Current schema ID: {}", schema_id);
@@ -207,6 +208,10 @@ fn print_table_info(
             // Last updated
             println!("  Last updated: {}", metadata.format_last_updated());
         } else {
+            // Log the specific error if we failed to fetch metadata
+            if let Some(error) = error_opt {
+                eprintln!("  (could not fetch metadata: {})", error);
+            }
             // Fallback: show basic info from get-table response
             if let Some(format) = detail.get("format").and_then(|v| v.as_str()) {
                 println!("  Format: {}", format);
@@ -221,9 +226,13 @@ fn print_table_info(
 }
 
 /// Fetch and parse Iceberg metadata from S3
-fn fetch_iceberg_metadata(metadata_location: &str, region: &str) -> Option<TableMetadataInner> {
+/// Returns (metadata, error_message) - error_message is set if fetch failed
+fn fetch_iceberg_metadata(
+    metadata_location: &str,
+    region: &str,
+) -> (Option<TableMetadataInner>, Option<String>) {
     // Use aws s3 cp to fetch the metadata file to stdout
-    let output = Command::new("aws")
+    let output = match Command::new("aws")
         .args([
             "s3",
             "cp",
@@ -233,12 +242,26 @@ fn fetch_iceberg_metadata(metadata_location: &str, region: &str) -> Option<Table
             region,
         ])
         .output()
-        .ok()?;
+    {
+        Ok(out) => out,
+        Err(e) => return (None, Some(format!("failed to execute aws s3 cp: {}", e))),
+    };
 
     if !output.status.success() {
-        return None;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return (None, Some(format!("aws s3 cp failed: {}", stderr.trim())));
     }
 
-    let json_str = String::from_utf8(output.stdout).ok()?;
-    serde_json::from_str(&json_str).ok()
+    let json_str = match String::from_utf8(output.stdout) {
+        Ok(s) => s,
+        Err(e) => return (None, Some(format!("metadata not valid UTF-8: {}", e))),
+    };
+
+    match serde_json::from_str(&json_str) {
+        Ok(metadata) => (Some(metadata), None),
+        Err(e) => (
+            None,
+            Some(format!("failed to parse Iceberg metadata: {}", e)),
+        ),
+    }
 }

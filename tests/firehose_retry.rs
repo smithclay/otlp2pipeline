@@ -1,8 +1,9 @@
-//! Tests for Firehose retry logic.
+//! Tests for Firehose retry logic and StreamConfig.
 //! Run with: cargo test --features lambda --test firehose_retry
 
 #![cfg(feature = "lambda")]
 
+use otlp2pipeline::lambda::firehose::StreamConfig;
 use vrl::value::Value;
 
 /// Test that records are chunked at 500-record Firehose limit.
@@ -50,4 +51,57 @@ fn test_backoff_calculation() {
         "attempt 10 should cap at 10000ms: {}",
         delay10
     );
+}
+
+/// Test StreamConfig::stream_for_table returns correct stream names.
+#[test]
+fn test_stream_config_known_tables() {
+    let config = StreamConfig {
+        logs: "test-logs-stream".to_string(),
+        traces: "test-traces-stream".to_string(),
+        sum: "test-sum-stream".to_string(),
+        gauge: "test-gauge-stream".to_string(),
+    };
+
+    assert_eq!(config.stream_for_table("logs"), Some("test-logs-stream"));
+    assert_eq!(
+        config.stream_for_table("traces"),
+        Some("test-traces-stream")
+    );
+    assert_eq!(config.stream_for_table("sum"), Some("test-sum-stream"));
+    assert_eq!(config.stream_for_table("gauge"), Some("test-gauge-stream"));
+}
+
+/// Test StreamConfig::stream_for_table returns None for unknown tables.
+#[test]
+fn test_stream_config_unknown_table() {
+    let config = StreamConfig {
+        logs: "logs-stream".to_string(),
+        traces: "traces-stream".to_string(),
+        sum: "sum-stream".to_string(),
+        gauge: "gauge-stream".to_string(),
+    };
+
+    // Unknown tables should return None
+    assert_eq!(config.stream_for_table("unknown"), None);
+    assert_eq!(config.stream_for_table("metrics"), None);
+    assert_eq!(config.stream_for_table(""), None);
+    assert_eq!(config.stream_for_table("LOGS"), None); // Case sensitive
+}
+
+/// Test StreamConfig::stream_for_table edge cases.
+#[test]
+fn test_stream_config_table_name_variations() {
+    let config = StreamConfig {
+        logs: "logs-stream".to_string(),
+        traces: "traces-stream".to_string(),
+        sum: "sum-stream".to_string(),
+        gauge: "gauge-stream".to_string(),
+    };
+
+    // These are NOT valid table names and should return None
+    assert_eq!(config.stream_for_table("log"), None); // Singular
+    assert_eq!(config.stream_for_table("trace"), None); // Singular
+    assert_eq!(config.stream_for_table("spans"), None); // Alternate name
+    assert_eq!(config.stream_for_table("histogram"), None); // Unsupported metric type
 }

@@ -29,6 +29,7 @@
 #
 
 set -e
+set -o pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -206,12 +207,19 @@ wait_for_athena_query() {
     local attempt=0
 
     while [ $attempt -lt $max_attempts ]; do
-        local state
-        state=$(aws athena get-query-execution \
+        local result
+        result=$(aws athena get-query-execution \
             --query-execution-id "$query_id" \
             --region "$REGION" \
-            --query 'QueryExecution.Status.State' \
-            --output text 2>/dev/null)
+            --output json 2>&1)
+
+        if [ $? -ne 0 ]; then
+            echo "    Failed to check query status: $result"
+            return 1
+        fi
+
+        local state
+        state=$(echo "$result" | jq -r '.QueryExecution.Status.State')
 
         case "$state" in
             SUCCEEDED)
@@ -219,11 +227,7 @@ wait_for_athena_query() {
                 ;;
             FAILED|CANCELLED)
                 local reason
-                reason=$(aws athena get-query-execution \
-                    --query-execution-id "$query_id" \
-                    --region "$REGION" \
-                    --query 'QueryExecution.Status.StateChangeReason' \
-                    --output text 2>/dev/null)
+                reason=$(echo "$result" | jq -r '.QueryExecution.Status.StateChangeReason // "unknown"')
                 echo "    Query failed: $reason"
                 return 1
                 ;;
@@ -1041,18 +1045,34 @@ build_and_deploy_lambda() {
         # Create function URL
         echo ""
         echo -e "${ARROW} Creating function URL"
-        aws lambda create-function-url-config \
+        local url_result
+        url_result=$(aws lambda create-function-url-config \
             --function-name "$function_name" \
             --auth-type NONE \
-            --region "$REGION" >/dev/null 2>&1 || true
+            --region "$REGION" 2>&1) || {
+            if echo "$url_result" | grep -q "ResourceConflictException"; then
+                echo "    Function URL already exists (OK)"
+            else
+                echo -e "    ${CROSS} Failed to create function URL: $url_result"
+                exit 1
+            fi
+        }
 
-        aws lambda add-permission \
+        local perm_result
+        perm_result=$(aws lambda add-permission \
             --function-name "$function_name" \
             --statement-id FunctionURLAllowPublicAccess \
             --action lambda:InvokeFunctionUrl \
             --principal "*" \
             --function-url-auth-type NONE \
-            --region "$REGION" >/dev/null 2>&1 || true
+            --region "$REGION" 2>&1) || {
+            if echo "$perm_result" | grep -q "ResourceConflictException"; then
+                echo "    Permission already exists (OK)"
+            else
+                echo -e "    ${CROSS} Failed to add permission: $perm_result"
+                exit 1
+            fi
+        }
 
         echo -e "    ${CHECK} Function URL created"
     fi
@@ -1180,10 +1200,26 @@ cmd_destroy() {
     local artifact_bucket="${STACK}-artifacts-${ACCOUNT_ID}"
 
     echo -e "${ARROW} Emptying error bucket: ${error_bucket}"
-    aws s3 rm "s3://${error_bucket}" --recursive --region "${REGION}" 2>/dev/null || true
+    local rm_error_result
+    rm_error_result=$(aws s3 rm "s3://${error_bucket}" --recursive --region "${REGION}" 2>&1) || {
+        if echo "$rm_error_result" | grep -qE "NoSuchBucket|does not exist"; then
+            echo "    Bucket does not exist (skipping)"
+        else
+            echo -e "    ${ARROW} Warning: Could not empty bucket: $rm_error_result"
+            echo "    Stack deletion may fail - manual cleanup may be required"
+        fi
+    }
 
     echo -e "${ARROW} Emptying artifact bucket: ${artifact_bucket}"
-    aws s3 rm "s3://${artifact_bucket}" --recursive --region "${REGION}" 2>/dev/null || true
+    local rm_artifact_result
+    rm_artifact_result=$(aws s3 rm "s3://${artifact_bucket}" --recursive --region "${REGION}" 2>&1) || {
+        if echo "$rm_artifact_result" | grep -qE "NoSuchBucket|does not exist"; then
+            echo "    Bucket does not exist (skipping)"
+        else
+            echo -e "    ${ARROW} Warning: Could not empty bucket: $rm_artifact_result"
+            echo "    Stack deletion may fail - manual cleanup may be required"
+        fi
+    }
 
     # Delete CloudFormation stack
     if check_stack_exists; then

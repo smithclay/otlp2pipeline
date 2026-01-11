@@ -12,6 +12,20 @@ use otlp2pipeline::{
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
+/// Constant-time byte comparison to prevent timing attacks on auth tokens.
+/// Returns true if both slices are equal, using XOR accumulation to ensure
+/// the comparison time is independent of where differences occur.
+#[inline]
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
 /// Optional auth token loaded at cold start
 static AUTH_TOKEN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
@@ -54,7 +68,8 @@ fn check_auth(req: &Request) -> Result<(), Response<Body>> {
         }
     };
 
-    if provided_token != expected_token {
+    // Use constant-time comparison to prevent timing attacks
+    if !constant_time_eq(provided_token.as_bytes(), expected_token.as_bytes()) {
         return Err(Response::builder()
             .status(401)
             .body(Body::from("Unauthorized: invalid token"))
@@ -174,20 +189,23 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
     };
 
     match result {
-        Ok(response) => {
-            let json = match serde_json::to_string(&response) {
-                Ok(j) => j,
-                Err(e) => {
-                    error!(error = %e, "failed to serialize response");
-                    r#"{"status":"ok","serialization_error":true}"#.to_string()
-                }
-            };
-            Ok(Response::builder()
+        Ok(response) => match serde_json::to_string(&response) {
+            Ok(json) => Ok(Response::builder()
                 .status(200)
                 .header("content-type", "application/json")
                 .body(Body::from(json))
-                .unwrap())
-        }
+                .unwrap()),
+            Err(e) => {
+                error!(error = %e, "failed to serialize response");
+                Ok(Response::builder()
+                    .status(500)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"error":"Internal error: response serialization failed"}"#,
+                    ))
+                    .unwrap())
+            }
+        },
         Err(e) => {
             let (status, message) = match &e {
                 HandleError::Decompress(msg) => {
@@ -212,5 +230,47 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
                 .body(Body::from(message))
                 .unwrap())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constant_time_eq_equal_strings() {
+        assert!(constant_time_eq(b"test-token-123", b"test-token-123"));
+        assert!(constant_time_eq(b"", b""));
+        assert!(constant_time_eq(b"a", b"a"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_different_strings() {
+        assert!(!constant_time_eq(b"test-token-123", b"test-token-124"));
+        assert!(!constant_time_eq(b"test-token-123", b"wrong-token"));
+        assert!(!constant_time_eq(b"a", b"b"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_different_lengths() {
+        assert!(!constant_time_eq(b"short", b"longer-string"));
+        assert!(!constant_time_eq(b"", b"non-empty"));
+        assert!(!constant_time_eq(b"test-token-123", b"test-token-12"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_similar_strings_differ_at_start() {
+        // Ensure timing is consistent regardless of where difference occurs
+        assert!(!constant_time_eq(b"Xest-token", b"test-token"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_similar_strings_differ_at_end() {
+        assert!(!constant_time_eq(b"test-tokeX", b"test-token"));
+    }
+
+    #[test]
+    fn test_constant_time_eq_similar_strings_differ_in_middle() {
+        assert!(!constant_time_eq(b"test-Xoken", b"test-token"));
     }
 }

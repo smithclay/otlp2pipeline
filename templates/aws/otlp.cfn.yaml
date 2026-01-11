@@ -131,7 +131,11 @@ Parameters:
     Default: 30
 
   FunctionUrlAuth:
-    Description: Function URL authentication type
+    Description: >
+      Function URL authentication type.
+      WARNING: NONE creates a publicly accessible endpoint that anyone on the internet can invoke.
+      This may lead to data injection, cost overruns, or abuse. Consider using AWS_IAM for production,
+      or set the AUTH_TOKEN environment variable on the Lambda to require bearer token authentication.
     Type: String
     AllowedValues: [NONE, AWS_IAM]
     Default: NONE
