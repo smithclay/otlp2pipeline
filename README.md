@@ -3,11 +3,75 @@
 [![Crates.io](https://img.shields.io/crates/v/otlp2pipeline.svg)](https://crates.io/crates/otlp2pipeline)
 [![License](https://img.shields.io/crates/l/otlp2pipeline.svg)](https://github.com/smithclay/otlp2pipeline/blob/main/LICENSE)
 
-Experimental Cloudflare Worker for telemetry ingestion to Cloudflare R2 Data Catalog (Apache Iceberg).
+> Stream OpenTelemetry metrics, logs or traces to Cloudflare R2 Data Catalog or Amazon S3 Tables (Apache Iceberg).
 
 ## What it does
 
-Receives OpenTelemetry logs, traces, and metrics, plus Splunk HEC logs. Transforms them via [VRL](https://crates.io/crates/vrl) and forwards to [Cloudflare Pipelines](https://developers.cloudflare.com/pipelines/) for storage in [R2 Data Catalog](https://developers.cloudflare.com/r2/data-catalog/) tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
+Receives OpenTelemetry logs, traces, and metrics (plus Splunk HEC logs). Transforms them via [VRL](https://crates.io/crates/vrl) and forwards via pipelines for long-term storage in AWS or Cloudflare R2 tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
+
+Cloudflare Pipelines or Amazon Data Firehose streams are used for batching and data delivery and converting the data to parquet format. Catalog maintenence features (compaction, snapshot pruning) are enabled by default for performance.
+
+## Why?
+
+Purpose of this project is to explore the idea of a fully-managed observability backend built around a data lake using emerging managed services from Cloudflare and AWS.
+
+Using new query engines like duckdb, this makes long term analytics of observability data cheap and feasible with any tool—or AI agent—that can query Apache Iceberg data sources (duckdb, pandas, Trino, Athena, etc).
+
+## Quickstart
+
+Install the CLI:
+```bash
+# requires rust toolchain: `curl https://sh.rustup.rs -sSf | sh`
+cargo install otlp2pipeline
+```
+
+### Deploy to Cloudflare
+
+Requires the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) connected to your Cloudflare account and an [R2 Token]([R2 API Tokens](https://dash.cloudflare.com/?to=/:account/r2/api-tokens).
+
+```bash
+# 1. Create R2 API token at https://dash.cloudflare.com/?to=/:account/r2/api-token
+#    Permissions: Admin Read & Write
+
+# 2. Initialize and create
+otlp2pipeline init --provider cf --env cftest01
+otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml
+
+# 3. Deploy worker defined in wrangler.toml
+npx wrangler deploy
+
+# 4. Check status
+otlp2pipeline status
+
+# 5. Stream telemetry from an OTel Collector, Claude Code, or Codex
+otlp2pipeline connect
+```
+
+### Deploy to AWS
+
+Requires a locally configured `aws` CLI connected to your AWS account.
+
+```bash
+# 1. Initialize (requires AWS CLI configured)
+otlp2pipeline init --provider aws --env awstest01 --region us-east-1
+
+# 2. Generate CloudFormation template
+otlp2pipeline create --output template.yaml
+
+# 3. Deploy S3 Tables and Firehoses defined in template.yaml
+# The script is needed as some configuration is not supported by Cloudformation (yet)
+./scripts/aws-deploy.sh template.yaml --env awstest01 --region us-east-1
+
+# 4. Check status
+otlp2pipeline status
+
+# 5. Stream telemetry from an OTel Collector, Claude Code, or Codex
+otlp2pipeline connect
+```
+
+## Cloudflare
+
+### Worker Architecture
 
 ```mermaid
 flowchart TB
@@ -25,57 +89,7 @@ flowchart TB
     end
 ```
 
-## Why?
-
-Purpose of this project is to explore the idea of a "serverless" observability backend built around object storage using emerging managed services from Cloudflare.
-
-Using new query engines like duckdb, this makes long term analytics of observability data cheap and feasible with any tool that can query Apache Iceberg data sources (duckdb, pandas, Trino, Athena, etc).
-
-## Quickstart
-
-Install the CLI:
-```bash
-cargo install otlp2pipeline
-```
-
-### Deploy to Cloudflare
-
-Requires a locally configured `wrangler` CLI connected to your Cloudflare account.
-
-```bash
-# 1. Create R2 API token at https://dash.cloudflare.com → R2 → Manage R2 API Tokens
-#    Permissions: Admin Read & Write
-
-# 2. Initialize and create
-otlp2pipeline init --provider cf --env cftest01
-otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml
-
-# 3. Deploy
-npx wrangler deploy
-
-# 4. Check status
-otlp2pipeline status
-```
-
-### Deploy to AWS
-
-Requires a locally configured `aws` CLI connected to your AWS account.
-
-```bash
-# 1. Initialize (requires AWS CLI configured)
-otlp2pipeline init --provider aws --env awstest01 --region us-east-1
-
-# 2. Generate CloudFormation template
-otlp2pipeline create --output template.yaml
-
-# 3. Deploy (S3 Tables, IAM permissions, LakeFormation, CloudFormation, Firehose)
-./scripts/aws-deploy.sh template.yaml --env awstest01 --region us-east-1
-
-# 4. Check status
-otlp2pipeline status
-```
-
-## Setup (Cloudflare)
+The worker uses Durable Objects for real-time RED metrics, see `openapi.yaml` for API details.
 
 ### 1. Create R2 API token
 
@@ -151,57 +165,101 @@ otlp2pipeline tail my-service traces
 otlp2pipeline destroy --force
 ```
 
+## AWS
+
+### Lambda Architecture
+
+```mermaid
+flowchart TB
+    subgraph Ingest["Ingest + Store"]
+        OTLP[OTLP] --> L[Lambda]
+        HEC[Splunk HEC] --> L
+        L --> F[Data Firehose]
+        F --> S3[(S3 Tables / Iceberg)]
+    end
+
+    subgraph Query["Query"]
+        DuckDB[🦆 DuckDB] -->|batch| S3
+        Athena[Athena / Trino] -->|batch| S3
+    end
+```
+
+### 1. Install AWS CLI
+
+Install and configure the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html):
+
+```bash
+# Verify installation
+aws --version
+
+# Configure credentials
+aws configure
+```
+
+Ensure your IAM user/role has permissions for:
+- CloudFormation (create/update/delete stacks)
+- S3 Tables (create buckets, tables)
+- Kinesis Firehose (create delivery streams)
+- Lambda (create functions)
+- Lake Formation (grant permissions)
+- IAM (create roles)
+
+### 2. Install CLI
+
+```bash
+cargo install otlp2pipeline
+```
+
+### 3. Initialize project
+
+```bash
+# Initialize config file (.otlp2pipeline.toml)
+otlp2pipeline init --provider aws --env prod --region us-east-1
+```
+
+This auto-detects your AWS account ID and stores configuration locally.
+
+### 4. Create CloudFormation template
+
+```bash
+# Preview what would be created
+otlp2pipeline plan
+
+# Generate CloudFormation template
+otlp2pipeline create --output template.yaml
+```
+
+This creates a CloudFormation template with:
+- S3 Tables bucket with Data Catalog (Iceberg format)
+- Tables for logs, traces, sum metrics, and gauge metrics
+- Kinesis Firehose delivery streams for each signal type
+- Lambda function for OTLP ingestion
+- Lambda Function URL (public HTTP endpoint)
+- Lake Formation permissions
+- CloudWatch logging and error alarms
+
+### 5. Deploy
+
+```bash
+# Deploy infrastructure (S3 Tables, Lambda, Firehose, Lake Formation)
+./scripts/aws-deploy.sh template.yaml --env prod --region us-east-1
+
+# Check status
+otlp2pipeline status
+
+# Test with sample data
+./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1
+```
+
+The deploy script handles:
+- Lake Formation setup and permissions
+- CloudFormation stack deployment
+- Firehose stream creation with S3 Tables destination
+
 ## Usage
 
-Send OTLP logs:
-```bash
-curl -X POST https://otlp2pipeline.<subdomain>.workers.dev/v1/logs \
-  -H "Content-Type: application/json" \
-  -d @sample-logs.json
-```
-
-Send OTLP traces:
-```bash
-curl -X POST https://otlp2pipeline.<subdomain>.workers.dev/v1/traces \
-  -H "Content-Type: application/json" \
-  -d @sample-traces.json
-```
-
-Send OTLP metrics (gauge and sum):
-```bash
-curl -X POST https://otlp2pipeline.<subdomain>.workers.dev/v1/metrics \
-  -H "Content-Type: application/json" \
-  -d @sample-metrics.json
-```
-
-Send Splunk HEC logs:
-```bash
-curl -X POST https://otlp2pipeline.<subdomain>.workers.dev/services/collector/event \
-  -H "Content-Type: application/json" \
-  -d '{"time": 1702300000, "host": "web-1", "event": "User logged in"}'
-```
-
-HEC supports NDJSON (multiple events per request) and gzip compression.
-
-Supports `Content-Type: application/x-protobuf` and `Content-Encoding: gzip`.
-
-Query aggregated stats (per-minute RED metrics):
-```bash
-# Get log stats for a service
-curl https://otlp2pipeline.<subdomain>.workers.dev/v1/services/my-service/logs/stats
-
-# Get trace stats with time filter (minutes since epoch)
-curl https://otlp2pipeline.<subdomain>.workers.dev/v1/services/my-service/traces/stats?from=29000000&to=29000060
-```
-
-Stats include count, error_count, and latency metrics (traces only).
-
-List all registered services:
-```bash
-curl https://otlp2pipeline.<subdomain>.workers.dev/v1/services
-```
-
-LiveTail uses WebSocket hibernation for zero cost when no clients are connected.
+- Connect telemetry to your pipeline from any OTLP source, including Claude Code or Codex. Run `otlp2pipeline connect` for instructions and setup.
+- After deployment, Run `otlp2pipline query` to start a live duckdb terminal to query your cloud telemetry.
 
 ## Schema
 

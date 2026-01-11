@@ -97,7 +97,7 @@ Parameters:
     Type: Number
     MinValue: 60
     MaxValue: 900
-    Default: 120
+    Default: 300
 
   FirehoseBatchSize:
     Description: Firehose buffering size (MB)
@@ -106,11 +106,52 @@ Parameters:
     MaxValue: 128
     Default: 32
 
+  LambdaVersion:
+    Description: GitHub release tag for Lambda artifact (e.g., v0.2.0 or latest)
+    Type: String
+    Default: latest
+
+  GitHubRepo:
+    Description: GitHub repository (owner/repo format)
+    Type: String
+    Default: your-org/otlp2pipeline
+
+  LambdaMemoryMB:
+    Description: Lambda memory size in MB
+    Type: Number
+    MinValue: 128
+    MaxValue: 10240
+    Default: 512
+
+  LambdaTimeoutSeconds:
+    Description: Lambda timeout in seconds
+    Type: Number
+    MinValue: 1
+    MaxValue: 900
+    Default: 30
+
+  FunctionUrlAuth:
+    Description: >
+      Function URL authentication type.
+      WARNING: NONE creates a publicly accessible endpoint that anyone on the internet can invoke.
+      This may lead to data injection, cost overruns, or abuse. Consider using AWS_IAM for production,
+      or set the AUTH_TOKEN environment variable on the Lambda to require bearer token authentication.
+    Type: String
+    AllowedValues: [NONE, AWS_IAM]
+    Default: NONE
+
+  SkipLambda:
+    Description: Skip Lambda creation (for local builds deployed separately)
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+
 Conditions:
   CreateLogs: !Equals [!Ref EnableLogs, "true"]
   CreateTraces: !Equals [!Ref EnableTraces, "true"]
   CreateSum: !Equals [!Ref EnableSum, "true"]
   CreateGauge: !Equals [!Ref EnableGauge, "true"]
+  CreateLambda: !Equals [!Ref SkipLambda, "false"]
 
 Resources:
   ############################################################
@@ -257,318 +298,226 @@ Resources:
                   - !Sub arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}*
 
   ############################################################
-  # Logs Table
+  # Lambda: Artifact Bucket and CodeFetcher
   ############################################################
-  LogsTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateLogs
-    DependsOn: Namespace
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
-      TableName: !Ref LogsTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: observed_timestamp
-              Type: long
-              Required: true
-            - Name: trace_id
-              Type: string
-              Required: false
-            - Name: span_id
-              Type: string
-              Required: false
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: severity_number
-              Type: int
-              Required: true
-            - Name: severity_text
-              Type: string
-              Required: true
-            - Name: body
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: log_attributes
-              Type: string
-              Required: false
+      BucketName: !Sub ${AWS::StackName}-artifacts-${AWS::AccountId}
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 7
+
+  CodeFetcherRole:
+    Type: AWS::IAM::Role
+    Condition: CreateLambda
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-CodeFetcher-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Upload
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub arn:aws:s3:::${ArtifactBucket}/*
+
+  CodeFetcherFunction:
+    Type: AWS::Lambda::Function
+    Condition: CreateLambda
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-code-fetcher
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CodeFetcherRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import hashlib
+          import json
+          import os
+          import tempfile
+          import traceback
+          import urllib.request
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  props = event['ResourceProperties']
+                  repo = props['GitHubRepo']
+                  version = props['Version']
+                  bucket = props['ArtifactBucket']
+
+                  # Resolve 'latest' to actual tag
+                  if version == 'latest':
+                      url = f'https://api.github.com/repos/{repo}/releases/latest'
+                      with urllib.request.urlopen(url) as resp:
+                          version = json.loads(resp.read())['tag_name']
+
+                  # Download artifact and checksum
+                  base_url = f'https://github.com/{repo}/releases/download/{version}'
+                  artifact_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip'
+                  checksum_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip.sha256'
+
+                  s3 = boto3.client('s3')
+                  with tempfile.TemporaryDirectory() as tmpdir:
+                      artifact_path = os.path.join(tmpdir, 'bootstrap.zip')
+                      checksum_path = os.path.join(tmpdir, 'checksum.txt')
+
+                      # Download files
+                      urllib.request.urlretrieve(artifact_url, artifact_path)
+                      urllib.request.urlretrieve(checksum_url, checksum_path)
+
+                      # Verify checksum
+                      with open(checksum_path, 'r') as f:
+                          expected = f.read().strip()
+
+                      sha256 = hashlib.sha256()
+                      with open(artifact_path, 'rb') as f:
+                          for chunk in iter(lambda: f.read(8192), b''):
+                              sha256.update(chunk)
+                      actual = sha256.hexdigest()
+
+                      if actual != expected:
+                          raise ValueError(f'Checksum mismatch: expected {expected}, got {actual}')
+
+                      # Upload to S3 and verify
+                      s3_key = f'lambda/{version}/bootstrap.zip'
+                      local_size = os.path.getsize(artifact_path)
+                      s3.upload_file(artifact_path, bucket, s3_key)
+
+                      # Verify upload succeeded
+                      head = s3.head_object(Bucket=bucket, Key=s3_key)
+                      if head['ContentLength'] != local_size:
+                          raise ValueError(f'S3 upload verification failed: expected {local_size} bytes, got {head["ContentLength"]}')
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'S3Bucket': bucket,
+                      'S3Key': s3_key,
+                      'Version': version
+                  })
+
+              except Exception as e:
+                  print(f'Error: {e}')
+                  traceback.print_exc()
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  FetchLambdaCode:
+    Type: Custom::FetchLambdaCode
+    Condition: CreateLambda
+    Properties:
+      ServiceToken: !GetAtt CodeFetcherFunction.Arn
+      GitHubRepo: !Ref GitHubRepo
+      Version: !Ref LambdaVersion
+      ArtifactBucket: !Ref ArtifactBucket
 
   ############################################################
-  # Traces Table
+  # Lambda: OTLP Ingest Function
   ############################################################
-  TracesTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateTraces
-    DependsOn: Namespace
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    # No condition - always create so local builds can use it
     Properties:
-      TableName: !Ref TracesTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: end_timestamp
-              Type: long
-              Required: true
-            - Name: duration
-              Type: long
-              Required: true
-            - Name: trace_id
-              Type: string
-              Required: false
-            - Name: span_id
-              Type: string
-              Required: false
-            - Name: parent_span_id
-              Type: string
-              Required: false
-            - Name: trace_state
-              Type: string
-              Required: false
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: span_name
-              Type: string
-              Required: true
-            - Name: span_kind
-              Type: int
-              Required: true
-            - Name: status_code
-              Type: int
-              Required: true
-            - Name: status_message
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: span_attributes
-              Type: string
-              Required: false
-            - Name: events_json
-              Type: string
-              Required: false
-            - Name: links_json
-              Type: string
-              Required: false
-            - Name: dropped_attributes_count
-              Type: int
-              Required: false
-            - Name: dropped_events_count
-              Type: int
-              Required: false
-            - Name: dropped_links_count
-              Type: int
-              Required: false
-            - Name: flags
-              Type: int
-              Required: false
+      RoleName: !Sub ${AWS::StackName}-Lambda-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: FirehoseWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource:
+                  - !Sub arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${AWS::StackName}-*
+
+  OtlpIngestFunction:
+    Type: AWS::Lambda::Function
+    Condition: CreateLambda
+    DependsOn: FetchLambdaCode
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-ingest
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      Handler: bootstrap
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemoryMB
+      Timeout: !Ref LambdaTimeoutSeconds
+      Code:
+        S3Bucket: !GetAtt FetchLambdaCode.S3Bucket
+        S3Key: !GetAtt FetchLambdaCode.S3Key
+      Environment:
+        Variables:
+          RUST_LOG: info
+          PIPELINE_LOGS: !Sub ${AWS::StackName}-logs
+          PIPELINE_TRACES: !Sub ${AWS::StackName}-traces
+          PIPELINE_SUM: !Sub ${AWS::StackName}-sum
+          PIPELINE_GAUGE: !Sub ${AWS::StackName}-gauge
+
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Condition: CreateLambda
+    Properties:
+      AuthType: !Ref FunctionUrlAuth
+      TargetFunctionArn: !GetAtt OtlpIngestFunction.Arn
+
+  FunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Condition: CreateLambda
+    Properties:
+      FunctionName: !Ref OtlpIngestFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: !Ref FunctionUrlAuth
 
   ############################################################
-  # Sum Metrics Table
+  # CloudWatch Alarm for Lambda Errors
   ############################################################
-  SumTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateSum
-    DependsOn: Namespace
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateLambda
     Properties:
-      TableName: !Ref SumTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: start_timestamp
-              Type: long
-              Required: false
-            - Name: metric_name
-              Type: string
-              Required: true
-            - Name: metric_description
-              Type: string
-              Required: false
-            - Name: metric_unit
-              Type: string
-              Required: false
-            - Name: value
-              Type: double
-              Required: true
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: metric_attributes
-              Type: string
-              Required: false
-            - Name: flags
-              Type: int
-              Required: false
-            - Name: exemplars_json
-              Type: string
-              Required: false
-            - Name: aggregation_temporality
-              Type: int
-              Required: true
-            - Name: is_monotonic
-              Type: boolean
-              Required: true
-
-  ############################################################
-  # Gauge Metrics Table
-  ############################################################
-  GaugeTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateGauge
-    DependsOn: Namespace
-    Properties:
-      TableName: !Ref GaugeTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: start_timestamp
-              Type: long
-              Required: false
-            - Name: metric_name
-              Type: string
-              Required: true
-            - Name: metric_description
-              Type: string
-              Required: false
-            - Name: metric_unit
-              Type: string
-              Required: false
-            - Name: value
-              Type: double
-              Required: true
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: metric_attributes
-              Type: string
-              Required: false
-            - Name: flags
-              Type: int
-              Required: false
-            - Name: exemplars_json
-              Type: string
-              Required: false
+      AlarmName: !Sub ${AWS::StackName}-lambda-errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref OtlpIngestFunction
 
 Outputs:
   TableBucketARN:
@@ -610,3 +559,18 @@ Outputs:
   FirehoseBatchSize:
     Description: Firehose buffering size (MB)
     Value: !Ref FirehoseBatchSize
+
+  LambdaFunctionArn:
+    Condition: CreateLambda
+    Description: ARN of the OTLP ingest Lambda function
+    Value: !GetAtt OtlpIngestFunction.Arn
+
+  FunctionUrl:
+    Condition: CreateLambda
+    Description: Function URL for OTLP ingestion
+    Value: !GetAtt FunctionUrl.FunctionUrl
+
+  LambdaVersion:
+    Condition: CreateLambda
+    Description: Deployed Lambda artifact version
+    Value: !GetAtt FetchLambdaCode.Version

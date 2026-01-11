@@ -26,6 +26,10 @@ npx wrangler deploy
 
 # Local development (note: secrets not available without .dev.vars)
 npx wrangler dev
+
+# Build for Lambda (ARM64)
+pip3 install cargo-lambda  # one-time setup
+cargo lambda build --release --arm64 --features lambda --bin lambda
 ```
 
 ## CLI Tool
@@ -64,6 +68,12 @@ otlp2pipeline query
 
 # Explicit provider (skip config): use 'cf' or 'cloudflare' subcommand
 otlp2pipeline cf create --r2-token $R2_TOKEN --output wrangler.toml
+
+# Generate AWS CloudFormation template
+otlp2pipeline aws create --output otlp.cfn.yaml
+
+# Check AWS stack status
+otlp2pipeline aws status
 
 # List known services
 otlp2pipeline services --url https://my-worker.workers.dev

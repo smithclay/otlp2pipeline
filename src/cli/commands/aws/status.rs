@@ -72,5 +72,74 @@ pub fn execute_status(args: StatusArgs) -> Result<()> {
         eprintln!("    Failed to retrieve resources: {}", stderr.trim());
     }
 
+    // Query Lambda function details
+    let lambda_name = format!("{}-ingest", stack_name);
+    let lambda_output = Command::new("aws")
+        .args([
+            "lambda",
+            "get-function",
+            "--function-name",
+            &lambda_name,
+            "--region",
+            &region,
+            "--query",
+            "Configuration.{Runtime:Runtime,Memory:MemorySize,Timeout:Timeout,Arch:Architectures[0]}",
+            "--output",
+            "json",
+        ])
+        .output();
+
+    if let Ok(output) = lambda_output {
+        if output.status.success() {
+            eprintln!("\n==> Lambda Function");
+            eprintln!("    Name: {}", lambda_name);
+
+            // Parse and display Lambda details
+            let json_str = String::from_utf8_lossy(&output.stdout);
+            if let Ok(details) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                if let Some(runtime) = details.get("Runtime").and_then(|v| v.as_str()) {
+                    eprintln!("    Runtime: {}", runtime);
+                }
+                if let Some(memory) = details.get("Memory").and_then(|v| v.as_i64()) {
+                    eprintln!("    Memory: {} MB", memory);
+                }
+                if let Some(timeout) = details.get("Timeout").and_then(|v| v.as_i64()) {
+                    eprintln!("    Timeout: {} seconds", timeout);
+                }
+                if let Some(arch) = details.get("Arch").and_then(|v| v.as_str()) {
+                    eprintln!("    Architecture: {}", arch);
+                }
+            }
+        }
+    }
+
+    // Query Function URL
+    let url_output = Command::new("aws")
+        .args([
+            "lambda",
+            "get-function-url-config",
+            "--function-name",
+            &lambda_name,
+            "--region",
+            &region,
+            "--query",
+            "FunctionUrl",
+            "--output",
+            "text",
+        ])
+        .output();
+
+    if let Ok(output) = url_output {
+        if output.status.success() {
+            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !url.is_empty() && !url.contains("error") {
+                eprintln!("\n==> OTLP Endpoints");
+                eprintln!("    POST {}v1/logs", url);
+                eprintln!("    POST {}v1/traces", url);
+                eprintln!("    POST {}v1/metrics", url);
+            }
+        }
+    }
+
     Ok(())
 }

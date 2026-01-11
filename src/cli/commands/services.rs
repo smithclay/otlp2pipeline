@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
+use crate::cli::config::try_load_config;
 use crate::cli::url::resolve_worker_url;
 use crate::cli::ServicesArgs;
 
@@ -9,6 +10,17 @@ use crate::cli::ServicesArgs;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn execute_services(args: ServicesArgs) -> Result<()> {
+    // Check if provider is AWS - services command is Cloudflare-only
+    if let Some(config) = try_load_config() {
+        if config.provider == "aws" {
+            bail!(
+                "The `services` command is only available for Cloudflare.\n\n\
+                AWS Lambda does not support the service registry feature.\n\
+                Use `otlp2pipeline aws status` to check your AWS deployment."
+            );
+        }
+    }
+
     let base_url = resolve_worker_url(args.url.as_deref()).await?;
     let url = format!("{}/v1/services", base_url);
 

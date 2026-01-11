@@ -29,6 +29,7 @@
 #
 
 set -e
+set -o pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -53,6 +54,7 @@ REGION="us-east-1"
 NAMESPACE="default"
 ROLE_NAME="S3TablesRoleForLakeFormation"
 FORCE=false
+LOCAL_BUILD=false
 ENV=""
 
 # Parse arguments
@@ -82,6 +84,10 @@ while [[ $# -gt 0 ]]; do
             FORCE=true
             shift
             ;;
+        --local)
+            LOCAL_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage:"
             echo "  $0 <template.yaml> --env <env> [--region <region>] [--namespace <ns>]"
@@ -98,6 +104,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --region     AWS region (default: us-east-1)"
             echo "  --namespace  S3 Tables namespace (default: default)"
             echo "  --force      Skip confirmation for destroy"
+            echo "  --local      Build and deploy Lambda from local repo (skips GitHub fetch)"
             echo ""
             echo "Naming convention:"
             echo "  --env prod  →  stack: otlp2pipeline-prod, bucket: otlp2pipeline-prod"
@@ -190,6 +197,92 @@ run_idempotent() {
             exit $exit_code
         fi
     fi
+}
+
+# Wait for Athena query to complete
+# Usage: wait_for_athena_query <query_execution_id>
+wait_for_athena_query() {
+    local query_id="$1"
+    local max_attempts=60
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        local result
+        result=$(aws athena get-query-execution \
+            --query-execution-id "$query_id" \
+            --region "$REGION" \
+            --output json 2>&1)
+
+        if [ $? -ne 0 ]; then
+            echo "    Failed to check query status: $result"
+            return 1
+        fi
+
+        local state
+        state=$(echo "$result" | jq -r '.QueryExecution.Status.State')
+
+        case "$state" in
+            SUCCEEDED)
+                return 0
+                ;;
+            FAILED|CANCELLED)
+                local reason
+                reason=$(echo "$result" | jq -r '.QueryExecution.Status.StateChangeReason // "unknown"')
+                echo "    Query failed: $reason"
+                return 1
+                ;;
+            *)
+                sleep 2
+                attempt=$((attempt + 1))
+                ;;
+        esac
+    done
+
+    echo "    Query timed out after $max_attempts attempts"
+    return 1
+}
+
+# Generate Athena CREATE TABLE DDL from schema JSON
+# Usage: generate_athena_ddl <table_name> <namespace>
+# Note: bucket is set in query execution context, not in the DDL
+generate_athena_ddl() {
+    local table="$1"
+    local namespace="$2"
+
+    # Map table name to schema file (traces -> spans.schema.json)
+    local schema_file
+    if [ "$table" = "traces" ]; then
+        schema_file="schemas/spans.schema.json"
+    else
+        schema_file="schemas/${table}.schema.json"
+    fi
+
+    if [ ! -f "$schema_file" ]; then
+        echo "Schema file not found: $schema_file" >&2
+        return 1
+    fi
+
+    # Transform JSON schema to SQL column definitions
+    # Type mapping: int64->bigint, int32->int, float64->double, bool->boolean, json->string
+    local columns
+    columns=$(jq -r '.fields | map(
+        .name + " " + (
+            if .type == "int64" then "bigint"
+            elif .type == "int32" then "int"
+            elif .type == "float64" then "double"
+            elif .type == "bool" then "boolean"
+            elif .type == "json" then "string"
+            else .type end
+        )
+    ) | join(", ")' "$schema_file")
+
+    # Use backticks for S3 Tables catalog compatibility
+    cat <<EOF
+CREATE TABLE \`${namespace}\`.${table} (
+  ${columns}
+)
+PARTITIONED BY (day(timestamp))
+EOF
 }
 
 # Policy documents for S3 Tables role
@@ -298,6 +391,12 @@ check_lakeformation_table_permission() {
         --output text 2>/dev/null | grep -q ALL
 }
 
+check_partition_spec() {
+    # Partition evolution is currently disabled - always return false
+    # See docs/aws-partition-evolution.md
+    return 1
+}
+
 # ============================================================================
 # Status command
 # ============================================================================
@@ -379,6 +478,33 @@ cmd_status() {
                 echo -e "  ${CROSS} ALL on table 'gauge' (not granted)"
             fi
         fi
+
+        # Check if tables have Iceberg partition specs
+        # (Iceberg uses hidden partitions in metadata, not Hive-style PartitionKeys)
+        echo ""
+        echo "Table Partitions:"
+        for table in logs traces sum gauge; do
+            local metadata_url
+            metadata_url=$(aws glue get-table \
+                --catalog-id "${ACCOUNT_ID}:s3tablescatalog/${BUCKET}" \
+                --database-name "${NAMESPACE}" \
+                --name "$table" \
+                --region "$REGION" \
+                --query 'Table.Parameters.metadata_location' \
+                --output text 2>/dev/null)
+
+            if [ -n "$metadata_url" ] && [ "$metadata_url" != "None" ]; then
+                local partition_field
+                partition_field=$(aws s3 cp "$metadata_url" - 2>/dev/null | jq -r '.["partition-specs"][0].fields[0].name // "none"')
+                if [ "$partition_field" != "none" ] && [ -n "$partition_field" ]; then
+                    echo -e "  ${CHECK} ${table}: partitioned (${partition_field})"
+                else
+                    echo -e "  ${CROSS} ${table}: not partitioned"
+                fi
+            else
+                echo -e "  ${CROSS} ${table}: not found"
+            fi
+        done
 
         # Check Firehose streams
         echo ""
@@ -672,12 +798,18 @@ deploy_cfn() {
     echo ""
     echo -e "${ARROW} Deploying stack: ${STACK}"
 
+    local params="TableBucketName=${BUCKET} NamespaceName=${NAMESPACE}"
+    if [ "$LOCAL_BUILD" = true ]; then
+        params="$params SkipLambda=true"
+        echo "    (Lambda will be deployed separately from local build)"
+    fi
+
     aws cloudformation deploy \
         --template-file "${TEMPLATE}" \
         --stack-name "${STACK}" \
         --region "${REGION}" \
         --capabilities CAPABILITY_NAMED_IAM \
-        --parameter-overrides "TableBucketName=${BUCKET}" "NamespaceName=${NAMESPACE}" \
+        --parameter-overrides $params \
         --no-fail-on-empty-changeset
 
     echo -e "    ${CHECK} CloudFormation complete"
@@ -748,6 +880,221 @@ grant_lakeformation_permissions() {
     echo -e "    ${CHECK} Done"
 }
 
+# ============================================================================
+# Create tables via Athena DDL (with partition specs)
+# ============================================================================
+#
+# Tables are created via Athena DDL instead of CloudFormation because:
+# 1. AWS::S3Tables::Table does not support PartitionSpec
+# 2. Athena CREATE TABLE supports PARTITIONED BY (day(timestamp))
+#
+# See docs/aws-partition-evolution.md for background.
+#
+
+create_tables_via_athena() {
+    echo ""
+    echo "==> Creating tables via Athena DDL (with partitions)"
+
+    local bucket_name namespace error_bucket
+    bucket_name=$(get_stack_output "TableBucketName")
+    namespace=$(get_stack_output "NamespaceName")
+    error_bucket=$(get_stack_output "FirehoseErrorBucketName")
+
+    if [ -z "$bucket_name" ] || [ "$bucket_name" = "None" ]; then
+        echo -e "    ${CROSS} Missing stack output: TableBucketName"
+        return 1
+    fi
+
+    # Grant CREATE_TABLE permission on the database to the caller
+    # (Required for Athena to create tables in S3 Tables catalog)
+    echo ""
+    echo -e "${ARROW} Granting CREATE_TABLE permission on database '${namespace}'"
+    run_idempotent "Grant database CREATE_TABLE permission" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
+        --region "${REGION}" \
+        --principal "{\"DataLakePrincipalIdentifier\":\"${CALLER_ARN}\"}" \
+        --resource "{\"Database\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${bucket_name}\",\"Name\":\"${namespace}\"}}" \
+        --permissions CREATE_TABLE DESCRIBE ALTER DROP \
+        --permissions-with-grant-option CREATE_TABLE DESCRIBE ALTER DROP
+    echo -e "    ${CHECK} Done"
+
+    local tables=("logs" "traces" "sum" "gauge")
+
+    for table in "${tables[@]}"; do
+        echo ""
+        echo -e "${ARROW} Creating table: ${table}"
+
+        # Generate DDL (bucket is set in query context, not DDL)
+        local ddl
+        ddl=$(generate_athena_ddl "$table" "$namespace")
+
+        if [ $? -ne 0 ]; then
+            echo -e "    ${CROSS} Failed to generate DDL"
+            return 1
+        fi
+
+        # Execute via Athena with S3 Tables catalog context
+        local query_id
+        query_id=$(aws athena start-query-execution \
+            --query-string "$ddl" \
+            --query-execution-context "Catalog=s3tablescatalog/${bucket_name}" \
+            --result-configuration "OutputLocation=s3://${error_bucket}/athena/" \
+            --region "$REGION" \
+            --output text \
+            --query 'QueryExecutionId' 2>&1)
+
+        if [ $? -ne 0 ]; then
+            echo -e "    ${CROSS} Failed to start query: $query_id"
+            return 1
+        fi
+
+        echo "    Query ID: $query_id"
+
+        # Wait for completion
+        if wait_for_athena_query "$query_id"; then
+            echo -e "    ${CHECK} Created with day(timestamp) partition"
+        else
+            echo -e "    ${CROSS} Query failed"
+            return 1
+        fi
+    done
+
+    echo ""
+    echo -e "${CHECK} All tables created with partitions"
+}
+
+# ============================================================================
+# Local Lambda build and deploy
+# ============================================================================
+
+build_and_deploy_lambda() {
+    echo ""
+    echo "==> Building and deploying Lambda from local repo"
+
+    # Check for cargo-lambda
+    if ! command -v cargo-lambda &> /dev/null; then
+        echo -e "    ${CROSS} cargo-lambda not found. Install with: pip3 install cargo-lambda"
+        exit 1
+    fi
+
+    # Build Lambda
+    echo ""
+    echo -e "${ARROW} Building Lambda (ARM64)"
+    cargo lambda build --release --arm64 --features lambda --bin lambda 2>&1 | tail -5
+
+    if [ $? -ne 0 ]; then
+        echo -e "    ${CROSS} Build failed"
+        exit 1
+    fi
+    echo -e "    ${CHECK} Build complete"
+
+    # Get artifact bucket from stack outputs
+    local artifact_bucket
+    artifact_bucket=$(get_stack_output "ArtifactBucketName" 2>/dev/null)
+
+    # If no output, construct the bucket name
+    if [ -z "$artifact_bucket" ] || [ "$artifact_bucket" = "None" ]; then
+        artifact_bucket="${STACK}-artifacts-${ACCOUNT_ID}"
+    fi
+
+    # Zip the bootstrap binary
+    echo ""
+    echo -e "${ARROW} Uploading to S3"
+    local build_dir="target/lambda/lambda"
+    local zip_path="/tmp/lambda-${STACK}.zip"
+
+    (cd "$build_dir" && zip -j "$zip_path" bootstrap) >/dev/null
+    local s3_key="lambda/local/bootstrap.zip"
+
+    aws s3 cp "$zip_path" "s3://${artifact_bucket}/${s3_key}" --region "${REGION}" >/dev/null
+    echo -e "    ${CHECK} Uploaded to s3://${artifact_bucket}/${s3_key}"
+
+    # Create or update Lambda function
+    echo ""
+    echo -e "${ARROW} Creating/updating Lambda function"
+
+    local function_name="${STACK}-ingest"
+    local role_arn="arn:aws:iam::${ACCOUNT_ID}:role/${STACK}-Lambda-${REGION}"
+
+    # Check if function exists
+    if aws lambda get-function --function-name "$function_name" --region "$REGION" >/dev/null 2>&1; then
+        # Update existing function
+        aws lambda update-function-code \
+            --function-name "$function_name" \
+            --s3-bucket "$artifact_bucket" \
+            --s3-key "$s3_key" \
+            --region "$REGION" >/dev/null
+
+        echo -e "    ${CHECK} Updated function: ${function_name}"
+    else
+        # Create new function
+        aws lambda create-function \
+            --function-name "$function_name" \
+            --runtime provided.al2023 \
+            --architectures arm64 \
+            --handler bootstrap \
+            --role "$role_arn" \
+            --memory-size 512 \
+            --timeout 30 \
+            --code "S3Bucket=${artifact_bucket},S3Key=${s3_key}" \
+            --environment "Variables={RUST_LOG=info,PIPELINE_LOGS=${STACK}-logs,PIPELINE_TRACES=${STACK}-traces,PIPELINE_SUM=${STACK}-sum,PIPELINE_GAUGE=${STACK}-gauge}" \
+            --region "$REGION" >/dev/null
+
+        echo -e "    ${CHECK} Created function: ${function_name}"
+
+        # Create function URL
+        echo ""
+        echo -e "${ARROW} Creating function URL"
+        local url_result
+        url_result=$(aws lambda create-function-url-config \
+            --function-name "$function_name" \
+            --auth-type NONE \
+            --region "$REGION" 2>&1) || {
+            if echo "$url_result" | grep -q "ResourceConflictException"; then
+                echo "    Function URL already exists (OK)"
+            else
+                echo -e "    ${CROSS} Failed to create function URL: $url_result"
+                exit 1
+            fi
+        }
+
+        local perm_result
+        perm_result=$(aws lambda add-permission \
+            --function-name "$function_name" \
+            --statement-id FunctionURLAllowPublicAccess \
+            --action lambda:InvokeFunctionUrl \
+            --principal "*" \
+            --function-url-auth-type NONE \
+            --region "$REGION" 2>&1) || {
+            if echo "$perm_result" | grep -q "ResourceConflictException"; then
+                echo "    Permission already exists (OK)"
+            else
+                echo -e "    ${CROSS} Failed to add permission: $perm_result"
+                exit 1
+            fi
+        }
+
+        echo -e "    ${CHECK} Function URL created"
+    fi
+
+    # Get and display function URL
+    local function_url
+    function_url=$(aws lambda get-function-url-config \
+        --function-name "$function_name" \
+        --region "$REGION" \
+        --query 'FunctionUrl' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$function_url" ] && [ "$function_url" != "None" ]; then
+        echo ""
+        echo "    Function URL: ${function_url}"
+    fi
+
+    rm -f "$zip_path"
+    echo ""
+    echo -e "${CHECK} Lambda deployed from local build"
+}
+
 cmd_deploy() {
     if [ -z "$TEMPLATE" ]; then
         echo "Error: Template file is required for deploy"
@@ -774,14 +1121,22 @@ cmd_deploy() {
     # S3 Tables setup (always run for idempotency)
     setup_s3_tables
 
-    # Deploy CloudFormation stack (tables, IAM role, logging)
+    # Deploy CloudFormation stack (bucket, namespace, IAM role, logging)
     deploy_cfn
 
-    # Grant LakeFormation permissions
+    # Create tables via Athena DDL (with partition specs)
+    create_tables_via_athena
+
+    # Grant LakeFormation permissions (after tables exist)
     grant_lakeformation_permissions
 
     # Create Firehose streams via API (AppendOnly mode)
     create_firehose_streams
+
+    # Build and deploy Lambda from local repo (if --local flag)
+    if [ "$LOCAL_BUILD" = true ]; then
+        build_and_deploy_lambda
+    fi
 
     echo ""
     echo "=========================================="
@@ -825,6 +1180,46 @@ cmd_destroy() {
 
     # Delete Firehose streams first (they depend on IAM role in stack)
     delete_firehose_streams
+
+    # Delete tables from namespace (required before namespace can be deleted)
+    echo ""
+    echo "==> Deleting tables from namespace"
+    for table in logs traces sum gauge; do
+        echo -e "${ARROW} Deleting table: ${table}"
+        aws s3tables delete-table \
+            --table-bucket-arn "arn:aws:s3tables:${REGION}:${ACCOUNT_ID}:bucket/${BUCKET}" \
+            --namespace "${NAMESPACE}" \
+            --name "$table" \
+            --region "${REGION}" 2>/dev/null && echo -e "    ${CHECK} Deleted" || echo "    Table does not exist (skipping)"
+    done
+
+    # Empty S3 buckets (required before CFN can delete them)
+    echo ""
+    echo "==> Emptying S3 buckets"
+    local error_bucket="${STACK}-errors-${ACCOUNT_ID}-${REGION}"
+    local artifact_bucket="${STACK}-artifacts-${ACCOUNT_ID}"
+
+    echo -e "${ARROW} Emptying error bucket: ${error_bucket}"
+    local rm_error_result
+    rm_error_result=$(aws s3 rm "s3://${error_bucket}" --recursive --region "${REGION}" 2>&1) || {
+        if echo "$rm_error_result" | grep -qE "NoSuchBucket|does not exist"; then
+            echo "    Bucket does not exist (skipping)"
+        else
+            echo -e "    ${ARROW} Warning: Could not empty bucket: $rm_error_result"
+            echo "    Stack deletion may fail - manual cleanup may be required"
+        fi
+    }
+
+    echo -e "${ARROW} Emptying artifact bucket: ${artifact_bucket}"
+    local rm_artifact_result
+    rm_artifact_result=$(aws s3 rm "s3://${artifact_bucket}" --recursive --region "${REGION}" 2>&1) || {
+        if echo "$rm_artifact_result" | grep -qE "NoSuchBucket|does not exist"; then
+            echo "    Bucket does not exist (skipping)"
+        else
+            echo -e "    ${ARROW} Warning: Could not empty bucket: $rm_artifact_result"
+            echo "    Stack deletion may fail - manual cleanup may be required"
+        fi
+    }
 
     # Delete CloudFormation stack
     if check_stack_exists; then

@@ -5,6 +5,7 @@ use futures::StreamExt;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+use crate::cli::config::try_load_config;
 use crate::cli::url::resolve_worker_url;
 use crate::cli::TailArgs;
 
@@ -12,6 +13,17 @@ use crate::cli::TailArgs;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn execute_tail(args: TailArgs) -> Result<()> {
+    // Check if provider is AWS - tail command is Cloudflare-only
+    if let Some(config) = try_load_config() {
+        if config.provider == "aws" {
+            bail!(
+                "The `tail` command is only available for Cloudflare.\n\n\
+                AWS Lambda does not support the live tail feature.\n\
+                Use CloudWatch Logs to view Lambda logs instead."
+            );
+        }
+    }
+
     // Validate signal
     if args.signal != "logs" && args.signal != "traces" {
         bail!("Signal must be 'logs' or 'traces', got: {}", args.signal);

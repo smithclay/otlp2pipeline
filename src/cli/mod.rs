@@ -113,6 +113,31 @@ pub enum AwsCommands {
     Plan(PlanArgs),
     /// Start a DuckDB query session connected to S3 Tables
     Query(QueryArgs),
+    /// Manage S3 Tables catalog
+    Catalog(AwsCatalogArgs),
+}
+
+#[derive(clap::Args)]
+pub struct AwsCatalogArgs {
+    #[command(subcommand)]
+    pub command: AwsCatalogCommands,
+}
+
+#[derive(Subcommand)]
+pub enum AwsCatalogCommands {
+    /// List S3 Tables metadata
+    List(AwsCatalogListArgs),
+}
+
+#[derive(clap::Args)]
+pub struct AwsCatalogListArgs {
+    /// Environment name (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub env: Option<String>,
+
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 }
 
 #[derive(clap::Args)]

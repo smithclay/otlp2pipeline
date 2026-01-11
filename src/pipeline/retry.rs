@@ -1,11 +1,24 @@
 use std::future::Future;
 use std::time::Duration;
 
+/// Backoff strategy for retries
+#[derive(Clone, Debug, Default)]
+pub enum BackoffStrategy {
+    /// Fixed delay between retries
+    #[default]
+    Fixed,
+    /// Exponential backoff with jitter: delay = min(base * 2^attempt + jitter, max)
+    /// Used by Lambda for AWS API compatibility.
+    #[allow(dead_code)] // Used with lambda feature
+    ExponentialWithJitter { base_ms: u64, max_ms: u64 },
+}
+
 /// Retry configuration
 #[derive(Clone, Debug)]
 pub struct RetryConfig {
     pub max_attempts: u32,
     pub delay: Duration,
+    pub backoff: BackoffStrategy,
 }
 
 impl Default for RetryConfig {
@@ -13,7 +26,55 @@ impl Default for RetryConfig {
         Self {
             max_attempts: 3, // 1 initial + 2 retries
             delay: Duration::from_millis(500),
+            backoff: BackoffStrategy::Fixed,
         }
+    }
+}
+
+impl RetryConfig {
+    /// Create a config with exponential backoff and jitter (recommended for AWS APIs)
+    #[allow(dead_code)] // Used with lambda feature
+    pub fn exponential(max_attempts: u32, base_ms: u64, max_ms: u64) -> Self {
+        Self {
+            max_attempts,
+            delay: Duration::from_millis(base_ms), // Used as base for exponential
+            backoff: BackoffStrategy::ExponentialWithJitter { base_ms, max_ms },
+        }
+    }
+
+    /// Calculate delay for a given attempt number
+    pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
+        match &self.backoff {
+            BackoffStrategy::Fixed => self.delay,
+            BackoffStrategy::ExponentialWithJitter { base_ms, max_ms } => {
+                let base = base_ms.saturating_mul(2_u64.saturating_pow(attempt));
+                let jitter = random_jitter(base / 2);
+                let total = base.saturating_add(jitter).min(*max_ms);
+                Duration::from_millis(total)
+            }
+        }
+    }
+}
+
+/// Generate random jitter up to max_jitter
+fn random_jitter(max_jitter: u64) -> u64 {
+    if max_jitter == 0 {
+        return 0;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Use js_sys for WASM randomness
+        (js_sys::Math::random() * max_jitter as f64) as u64
+    }
+    #[cfg(all(not(target_arch = "wasm32"), feature = "lambda"))]
+    {
+        use rand::Rng;
+        rand::thread_rng().gen_range(0..=max_jitter)
+    }
+    // For native builds without lambda feature (tests), use deterministic half of max
+    #[cfg(all(not(target_arch = "wasm32"), not(feature = "lambda")))]
+    {
+        max_jitter / 2
     }
 }
 
@@ -37,13 +98,15 @@ where
         match operation().await {
             Ok(result) => return Ok(result),
             Err(e) if e.is_retryable() && attempt + 1 < attempts => {
+                let delay = config.delay_for_attempt(attempt);
                 tracing::debug!(
                     attempt = attempt + 1,
                     max = attempts,
+                    delay_ms = delay.as_millis() as u64,
                     "retrying after transient error"
                 );
                 last_error = Some(e);
-                sleep(config.delay).await;
+                sleep(delay).await;
             }
             Err(e) => return Err(e),
         }
@@ -101,6 +164,7 @@ mod tests {
         let config = RetryConfig {
             max_attempts: 3,
             delay: Duration::from_millis(1), // fast for tests
+            backoff: BackoffStrategy::Fixed,
         };
         let call_count = Arc::new(AtomicU32::new(0));
         let count = call_count.clone();
@@ -142,6 +206,7 @@ mod tests {
         let config = RetryConfig {
             max_attempts: 0,
             delay: Duration::from_millis(1),
+            backoff: BackoffStrategy::Fixed,
         };
         let call_count = Arc::new(AtomicU32::new(0));
         let count = call_count.clone();
