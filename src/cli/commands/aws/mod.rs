@@ -1,4 +1,5 @@
 mod catalog;
+mod cli;
 mod create;
 mod destroy;
 mod helpers;
