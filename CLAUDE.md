@@ -69,11 +69,20 @@ otlp2pipeline query
 # Explicit provider (skip config): use 'cf' or 'cloudflare' subcommand
 otlp2pipeline cf create --r2-token $R2_TOKEN --output wrangler.toml
 
-# Generate AWS CloudFormation template
-otlp2pipeline aws create --output otlp.cfn.yaml
+# AWS deployment (full orchestration)
+otlp2pipeline aws create --env prod --region us-east-1
 
-# Check AWS stack status
-otlp2pipeline aws status
+# AWS deployment with local Lambda build
+otlp2pipeline aws create --env prod --region us-east-1 --local
+
+# AWS dry-run (show what would be created)
+otlp2pipeline aws plan --env prod
+
+# Check AWS status
+otlp2pipeline aws status --env prod --region us-east-1
+
+# AWS teardown
+otlp2pipeline aws destroy --env prod --region us-east-1 --force
 
 # List known services
 otlp2pipeline services --url https://my-worker.workers.dev
