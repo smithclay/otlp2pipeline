@@ -280,6 +280,14 @@ pub struct CreateArgs {
     /// Build and deploy Lambda from local repo (AWS)
     #[arg(long)]
     pub local: bool,
+
+    // --- Shared options ---
+    /// Generate and configure bearer token authentication (recommended)
+    ///
+    /// Generates a secure random token and configures it on the Lambda/Worker.
+    /// The token is saved to .otlp2pipeline.toml for use with the connect command.
+    #[arg(long)]
+    pub auth: bool,
 }
 
 #[derive(clap::Args)]

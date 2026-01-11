@@ -152,4 +152,31 @@ impl LambdaCli<'_> {
         let output = run_idempotent(&mut cmd, &["ResourceConflictException"])?;
         Ok(!output.already_existed)
     }
+
+    /// Update Lambda function environment variables
+    pub fn update_function_configuration(
+        &self,
+        name: &str,
+        env_vars: &[(String, String)],
+    ) -> Result<()> {
+        let env_str: String = env_vars
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let mut cmd = Command::new("aws");
+        cmd.args([
+            "lambda",
+            "update-function-configuration",
+            "--function-name",
+            name,
+            "--environment",
+            &format!("Variables={{{}}}", env_str),
+            "--region",
+            self.aws.region(),
+        ]);
+        run_idempotent(&mut cmd, &[])?;
+        Ok(())
+    }
 }

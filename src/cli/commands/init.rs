@@ -77,6 +77,7 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         account_id,
         region,
         stack_name: None,
+        auth_token: None,
     };
 
     config.save()?;

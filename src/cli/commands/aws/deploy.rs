@@ -302,6 +302,13 @@ pub fn build_and_deploy_lambda(cli: &AwsCli, ctx: &DeployContext) -> Result<()> 
     if lambda.function_exists(&function_name)? {
         lambda.update_function_code(&function_name, &artifact_bucket, s3_key)?;
         eprintln!("    Updated function: {}", function_name);
+
+        // Update environment if auth token is set
+        if ctx.auth_token.is_some() {
+            eprintln!("    Updating environment with AUTH_TOKEN");
+            let env_vars = build_lambda_env(ctx);
+            lambda.update_function_configuration(&function_name, &env_vars)?;
+        }
     } else {
         let config = LambdaConfig {
             name: function_name.clone(),
@@ -310,22 +317,7 @@ pub fn build_and_deploy_lambda(cli: &AwsCli, ctx: &DeployContext) -> Result<()> 
             s3_key: s3_key.to_string(),
             memory_size: 512,
             timeout: 30,
-            environment: vec![
-                ("RUST_LOG".to_string(), "info".to_string()),
-                (
-                    "PIPELINE_LOGS".to_string(),
-                    ctx.firehose_stream_name("logs"),
-                ),
-                (
-                    "PIPELINE_TRACES".to_string(),
-                    ctx.firehose_stream_name("traces"),
-                ),
-                ("PIPELINE_SUM".to_string(), ctx.firehose_stream_name("sum")),
-                (
-                    "PIPELINE_GAUGE".to_string(),
-                    ctx.firehose_stream_name("gauge"),
-                ),
-            ],
+            environment: build_lambda_env(ctx),
         };
 
         lambda.create_function(&config)?;
@@ -346,4 +338,30 @@ pub fn build_and_deploy_lambda(cli: &AwsCli, ctx: &DeployContext) -> Result<()> 
     std::fs::remove_file(&zip_path).ok();
     eprintln!("\n    Lambda deployed from local build");
     Ok(())
+}
+
+/// Build Lambda environment variables
+fn build_lambda_env(ctx: &DeployContext) -> Vec<(String, String)> {
+    let mut env = vec![
+        ("RUST_LOG".to_string(), "info".to_string()),
+        (
+            "PIPELINE_LOGS".to_string(),
+            ctx.firehose_stream_name("logs"),
+        ),
+        (
+            "PIPELINE_TRACES".to_string(),
+            ctx.firehose_stream_name("traces"),
+        ),
+        ("PIPELINE_SUM".to_string(), ctx.firehose_stream_name("sum")),
+        (
+            "PIPELINE_GAUGE".to_string(),
+            ctx.firehose_stream_name("gauge"),
+        ),
+    ];
+
+    if let Some(ref token) = ctx.auth_token {
+        env.push(("AUTH_TOKEN".to_string(), token.clone()));
+    }
+
+    env
 }

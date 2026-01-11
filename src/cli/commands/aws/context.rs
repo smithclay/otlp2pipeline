@@ -67,6 +67,7 @@ pub struct DeployContext {
     pub bucket_name: String,
     pub namespace: String,
     pub local_build: bool,
+    pub auth_token: Option<String>,
     stack_outputs: HashMap<String, String>,
 }
 
@@ -86,6 +87,7 @@ impl DeployContext {
             bucket_name: bucket,
             namespace: namespace.to_string(),
             local_build,
+            auth_token: None,
             stack_outputs: HashMap::new(),
         })
     }
