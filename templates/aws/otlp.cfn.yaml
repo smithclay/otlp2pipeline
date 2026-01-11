@@ -106,6 +106,36 @@ Parameters:
     MaxValue: 128
     Default: 32
 
+  LambdaVersion:
+    Description: GitHub release tag for Lambda artifact (e.g., v0.2.0 or latest)
+    Type: String
+    Default: latest
+
+  GitHubRepo:
+    Description: GitHub repository (owner/repo format)
+    Type: String
+    Default: your-org/otlp2pipeline
+
+  LambdaMemoryMB:
+    Description: Lambda memory size in MB
+    Type: Number
+    MinValue: 128
+    MaxValue: 10240
+    Default: 512
+
+  LambdaTimeoutSeconds:
+    Description: Lambda timeout in seconds
+    Type: Number
+    MinValue: 1
+    MaxValue: 900
+    Default: 30
+
+  FunctionUrlAuth:
+    Description: Function URL authentication type
+    Type: String
+    AllowedValues: [NONE, AWS_IAM]
+    Default: NONE
+
 Conditions:
   CreateLogs: !Equals [!Ref EnableLogs, "true"]
   CreateTraces: !Equals [!Ref EnableTraces, "true"]
@@ -570,6 +600,211 @@ Resources:
               Type: string
               Required: false
 
+  ############################################################
+  # Lambda: Artifact Bucket and CodeFetcher
+  ############################################################
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-artifacts-${AWS::AccountId}
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 7
+
+  CodeFetcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-CodeFetcher-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Upload
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub arn:aws:s3:::${ArtifactBucket}/*
+
+  CodeFetcherFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-code-fetcher
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CodeFetcherRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import hashlib
+          import json
+          import os
+          import tempfile
+          import urllib.request
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  props = event['ResourceProperties']
+                  repo = props['GitHubRepo']
+                  version = props['Version']
+                  bucket = props['ArtifactBucket']
+
+                  # Resolve 'latest' to actual tag
+                  if version == 'latest':
+                      url = f'https://api.github.com/repos/{repo}/releases/latest'
+                      with urllib.request.urlopen(url) as resp:
+                          version = json.loads(resp.read())['tag_name']
+
+                  # Download artifact and checksum
+                  base_url = f'https://github.com/{repo}/releases/download/{version}'
+                  artifact_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip'
+                  checksum_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip.sha256'
+
+                  with tempfile.TemporaryDirectory() as tmpdir:
+                      artifact_path = os.path.join(tmpdir, 'bootstrap.zip')
+                      checksum_path = os.path.join(tmpdir, 'checksum.txt')
+
+                      # Download files
+                      urllib.request.urlretrieve(artifact_url, artifact_path)
+                      urllib.request.urlretrieve(checksum_url, checksum_path)
+
+                      # Verify checksum
+                      with open(checksum_path, 'r') as f:
+                          expected = f.read().strip()
+
+                      sha256 = hashlib.sha256()
+                      with open(artifact_path, 'rb') as f:
+                          for chunk in iter(lambda: f.read(8192), b''):
+                              sha256.update(chunk)
+                      actual = sha256.hexdigest()
+
+                      if actual != expected:
+                          raise ValueError(f'Checksum mismatch: expected {expected}, got {actual}')
+
+                      # Upload to S3
+                      s3_key = f'lambda/{version}/bootstrap.zip'
+                      boto3.client('s3').upload_file(artifact_path, bucket, s3_key)
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'S3Bucket': bucket,
+                      'S3Key': s3_key,
+                      'Version': version
+                  })
+
+              except Exception as e:
+                  print(f'Error: {e}')
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  FetchLambdaCode:
+    Type: Custom::FetchLambdaCode
+    Properties:
+      ServiceToken: !GetAtt CodeFetcherFunction.Arn
+      GitHubRepo: !Ref GitHubRepo
+      Version: !Ref LambdaVersion
+      ArtifactBucket: !Ref ArtifactBucket
+
+  ############################################################
+  # Lambda: OTLP Ingest Function
+  ############################################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-Lambda-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: FirehoseWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource:
+                  - !Sub arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${AWS::StackName}-*
+
+  OtlpIngestFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: FetchLambdaCode
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-ingest
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      Handler: bootstrap
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemoryMB
+      Timeout: !Ref LambdaTimeoutSeconds
+      Code:
+        S3Bucket: !GetAtt FetchLambdaCode.S3Bucket
+        S3Key: !GetAtt FetchLambdaCode.S3Key
+      Environment:
+        Variables:
+          RUST_LOG: info
+          PIPELINE_LOGS: !Sub ${AWS::StackName}-logs
+          PIPELINE_TRACES: !Sub ${AWS::StackName}-traces
+          PIPELINE_SUM: !Sub ${AWS::StackName}-sum
+          PIPELINE_GAUGE: !Sub ${AWS::StackName}-gauge
+
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: !Ref FunctionUrlAuth
+      TargetFunctionArn: !GetAtt OtlpIngestFunction.Arn
+
+  FunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OtlpIngestFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: !Ref FunctionUrlAuth
+
+  ############################################################
+  # CloudWatch Alarm for Lambda Errors
+  ############################################################
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-lambda-errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref OtlpIngestFunction
+
 Outputs:
   TableBucketARN:
     Description: ARN of the S3 Table Bucket
@@ -610,3 +845,15 @@ Outputs:
   FirehoseBatchSize:
     Description: Firehose buffering size (MB)
     Value: !Ref FirehoseBatchSize
+
+  LambdaFunctionArn:
+    Description: ARN of the OTLP ingest Lambda function
+    Value: !GetAtt OtlpIngestFunction.Arn
+
+  FunctionUrl:
+    Description: Function URL for OTLP ingestion
+    Value: !GetAtt FunctionUrl.FunctionUrl
+
+  LambdaVersion:
+    Description: Deployed Lambda artifact version
+    Value: !GetAtt FetchLambdaCode.Version
