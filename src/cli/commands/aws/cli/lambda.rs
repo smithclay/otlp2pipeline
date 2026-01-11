@@ -1,6 +1,7 @@
 use super::{run_idempotent, run_optional, AwsCli};
 use anyhow::Result;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::process::Command;
 
 pub struct LambdaCli<'a> {
@@ -61,12 +62,6 @@ impl LambdaCli<'_> {
     }
 
     pub fn create_function(&self, config: &LambdaConfig) -> Result<()> {
-        let env_vars: String = config
-            .environment
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join(",");
         let mut cmd = Command::new("aws");
         cmd.args([
             "lambda",
@@ -90,8 +85,15 @@ impl LambdaCli<'_> {
             "--region",
             self.aws.region(),
         ]);
-        if !env_vars.is_empty() {
-            cmd.args(["--environment", &format!("Variables={{{}}}", env_vars)]);
+        if !config.environment.is_empty() {
+            // Use JSON format for env vars to handle special characters safely
+            let vars: HashMap<&str, &str> = config
+                .environment
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            let env_json = serde_json::json!({ "Variables": vars }).to_string();
+            cmd.args(["--environment", &env_json]);
         }
         run_idempotent(&mut cmd, &["ResourceConflictException"])?;
         Ok(())
@@ -159,11 +161,12 @@ impl LambdaCli<'_> {
         name: &str,
         env_vars: &[(String, String)],
     ) -> Result<()> {
-        let env_str: String = env_vars
+        // Use JSON format for env vars to handle special characters safely
+        let vars: HashMap<&str, &str> = env_vars
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect::<Vec<_>>()
-            .join(",");
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        let env_json = serde_json::json!({ "Variables": vars }).to_string();
 
         let mut cmd = Command::new("aws");
         cmd.args([
@@ -172,7 +175,7 @@ impl LambdaCli<'_> {
             "--function-name",
             name,
             "--environment",
-            &format!("Variables={{{}}}", env_str),
+            &env_json,
             "--region",
             self.aws.region(),
         ]);

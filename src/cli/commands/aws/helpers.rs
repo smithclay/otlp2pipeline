@@ -123,6 +123,7 @@ mod tests {
             account_id: None,
             region: Some("ap-southeast-1".to_string()),
             stack_name: None,
+            namespace: None,
             auth_token: None,
         });
         let region = resolve_region(None, &config);

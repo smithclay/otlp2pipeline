@@ -20,6 +20,8 @@ pub struct Config {
     pub region: Option<String>,
     #[serde(default)]
     pub stack_name: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
     // Shared
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_token: Option<String>,

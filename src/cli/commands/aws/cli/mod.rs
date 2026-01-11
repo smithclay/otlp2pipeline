@@ -83,7 +83,8 @@ pub struct CommandOutput {
     pub already_existed: bool,
 }
 
-/// Run command, treating specific error patterns as "already exists"
+/// Run command idempotently by treating specific AWS exception patterns as success.
+/// This allows deployment commands to be re-run safely without failing if resources already exist.
 pub fn run_idempotent(cmd: &mut Command, expected_errors: &[&str]) -> Result<CommandOutput> {
     let output = cmd.output()?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -97,6 +98,7 @@ pub fn run_idempotent(cmd: &mut Command, expected_errors: &[&str]) -> Result<Com
         });
     }
 
+    // Check for expected AWS exception patterns (e.g., AlreadyExistsException)
     for pattern in expected_errors {
         if stderr.contains(pattern) || stdout.contains(pattern) {
             return Ok(CommandOutput {
@@ -107,23 +109,49 @@ pub fn run_idempotent(cmd: &mut Command, expected_errors: &[&str]) -> Result<Com
         }
     }
 
-    bail!("Command failed: {}", stderr.trim());
+    // Include command info for better debugging
+    let program = cmd.get_program().to_string_lossy();
+    let args: Vec<_> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect();
+    bail!(
+        "Command `{} {}` failed: {}",
+        program,
+        args.join(" "),
+        stderr.trim()
+    );
 }
 
 /// Run command and parse JSON output
 pub fn run_json<T: DeserializeOwned>(cmd: &mut Command) -> Result<T> {
+    let program = cmd.get_program().to_string_lossy().to_string();
+    let args: Vec<_> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect();
+    let cmd_str = format!("{} {}", program, args.join(" "));
+
     let output = cmd.output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Command failed: {}", stderr.trim());
+        bail!("Command `{}` failed: {}", cmd_str, stderr.trim());
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: T = serde_json::from_str(&stdout)?;
+    let parsed: T = serde_json::from_str(&stdout)
+        .map_err(|e| anyhow::anyhow!("Failed to parse JSON from `{}`: {}", cmd_str, e))?;
     Ok(parsed)
 }
 
 /// Run command and return stdout as string, or None if command fails with expected error
 pub fn run_optional(cmd: &mut Command, not_found_errors: &[&str]) -> Result<Option<String>> {
+    let program = cmd.get_program().to_string_lossy().to_string();
+    let args: Vec<_> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect();
+    let cmd_str = format!("{} {}", program, args.join(" "));
+
     let output = cmd.output()?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -138,5 +166,5 @@ pub fn run_optional(cmd: &mut Command, not_found_errors: &[&str]) -> Result<Opti
         }
     }
 
-    bail!("Command failed: {}", stderr.trim());
+    bail!("Command `{}` failed: {}", cmd_str, stderr.trim());
 }

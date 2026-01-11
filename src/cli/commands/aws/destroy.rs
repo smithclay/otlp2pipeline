@@ -11,6 +11,11 @@ pub fn execute_destroy(args: DestroyArgs) -> Result<()> {
     let env_name = resolve_env_with_config(args.env, &config)?;
     let region = resolve_region(args.region, &config);
     let stack = stack_name(&env_name);
+    // Read namespace from config, defaulting to "default" for backwards compatibility
+    let namespace = config
+        .as_ref()
+        .and_then(|c| c.namespace.clone())
+        .unwrap_or_else(|| "default".to_string());
 
     let cli = AwsCli::new(&region);
     let account = cli.sts().get_caller_identity()?;
@@ -57,7 +62,7 @@ pub fn execute_destroy(args: DestroyArgs) -> Result<()> {
     let s3tables = cli.s3tables();
     for table in TABLES {
         eprintln!("    Deleting table: {}", table);
-        s3tables.delete_table(&bucket_arn, "default", table)?;
+        s3tables.delete_table(&bucket_arn, &namespace, table)?;
     }
 
     // Empty S3 buckets

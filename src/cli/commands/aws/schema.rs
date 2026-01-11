@@ -14,7 +14,7 @@ pub struct SchemaField {
 }
 
 impl Schema {
-    /// Load schema from embedded file
+    /// Load schema from JSON file on disk
     pub fn load(table: &str) -> Result<Self> {
         let schema_file = match table {
             "traces" => "schemas/spans.schema.json",

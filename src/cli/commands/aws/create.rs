@@ -90,11 +90,15 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("    AUTH_TOKEN configured");
     }
 
-    // Save auth token to config
-    if let Some(ref token) = auth_token {
+    // Save namespace (and auth token) to config
+    {
         let mut config = Config::load()?;
-        config.set_auth_token(token.clone())?;
-        eprintln!("    Token saved to .otlp2pipeline.toml");
+        config.namespace = Some(ctx.namespace.clone());
+        if let Some(ref token) = auth_token {
+            config.auth_token = Some(token.clone());
+        }
+        config.save()?;
+        eprintln!("    Config saved to .otlp2pipeline.toml");
     }
 
     // Print success

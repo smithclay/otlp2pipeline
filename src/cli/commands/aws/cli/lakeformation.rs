@@ -36,7 +36,8 @@ impl LakeFormationCli<'_> {
             "--region",
             self.aws.region(),
         ]);
-        run_idempotent(&mut cmd, &["EntityNotFoundException", "not registered"])?;
+        // EntityNotFoundException is the specific AWS exception for unregistered resources
+        run_idempotent(&mut cmd, &["EntityNotFoundException"])?;
         Ok(())
     }
 

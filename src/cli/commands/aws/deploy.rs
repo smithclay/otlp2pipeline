@@ -185,18 +185,30 @@ pub fn create_firehose_streams(cli: &AwsCli, ctx: &DeployContext) -> Result<()> 
 
     let error_prefix = ctx
         .get_output("FirehoseErrorPrefix")
-        .unwrap_or(&"errors/".to_string())
-        .clone();
+        .cloned()
+        .unwrap_or_else(|| "errors/".to_string());
 
-    let batch_time: u32 = ctx
-        .get_output("FirehoseBatchTime")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(120);
+    let batch_time: u32 = match ctx.get_output("FirehoseBatchTime") {
+        Some(s) => s.parse().map_err(|e| {
+            anyhow::anyhow!(
+                "Invalid FirehoseBatchTime '{}': {}. Expected integer seconds.",
+                s,
+                e
+            )
+        })?,
+        None => 120,
+    };
 
-    let batch_size: u32 = ctx
-        .get_output("FirehoseBatchSize")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(32);
+    let batch_size: u32 = match ctx.get_output("FirehoseBatchSize") {
+        Some(s) => s.parse().map_err(|e| {
+            anyhow::anyhow!(
+                "Invalid FirehoseBatchSize '{}': {}. Expected integer MB.",
+                s,
+                e
+            )
+        })?,
+        None => 32,
+    };
 
     eprintln!("    Role ARN: {}", firehose_role_arn);
     eprintln!("    Catalog ARN: {}", ctx.glue_catalog_arn());
