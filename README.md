@@ -55,17 +55,13 @@ Requires a locally configured `aws` CLI connected to your AWS account.
 # 1. Initialize (requires AWS CLI configured)
 otlp2pipeline init --provider aws --env awstest01 --region us-east-1
 
-# 2. Generate CloudFormation template
-otlp2pipeline create --output template.yaml
+# 2. Deploy (S3 Tables, Lambda, Firehose, Lake Formation)
+otlp2pipeline create
 
-# 3. Deploy S3 Tables and Firehoses defined in template.yaml
-# The script is needed as some configuration is not supported by Cloudformation (yet)
-./scripts/aws-deploy.sh template.yaml --env awstest01 --region us-east-1
-
-# 4. Check status
+# 3. Check status
 otlp2pipeline status
 
-# 5. Stream telemetry from an OTel Collector, Claude Code, or Codex
+# 4. Stream telemetry from an OTel Collector, Claude Code, or Codex
 otlp2pipeline connect
 ```
 
@@ -219,42 +215,39 @@ otlp2pipeline init --provider aws --env prod --region us-east-1
 
 This auto-detects your AWS account ID and stores configuration locally.
 
-### 4. Create CloudFormation template
+### 4. Deploy
 
 ```bash
 # Preview what would be created
 otlp2pipeline plan
 
-# Generate CloudFormation template
-otlp2pipeline create --output template.yaml
+# Deploy all infrastructure
+otlp2pipeline create
+
+# Or build Lambda locally instead of fetching from GitHub releases
+otlp2pipeline create --local
 ```
 
-This creates a CloudFormation template with:
-- S3 Tables bucket with Data Catalog (Iceberg format)
-- Tables for logs, traces, sum metrics, and gauge metrics
-- Kinesis Firehose delivery streams for each signal type
-- Lambda function for OTLP ingestion
-- Lambda Function URL (public HTTP endpoint)
-- Lake Formation permissions
-- CloudWatch logging and error alarms
+This deploys:
+- S3 Tables bucket with Iceberg catalog
+- Tables for logs, traces, sum metrics, and gauge metrics (via Athena DDL)
+- Lake Formation permissions and Glue catalog federation
+- CloudFormation stack (IAM roles, CloudWatch logs, error bucket)
+- Kinesis Firehose delivery streams with S3 Tables destination
+- Lambda function with public Function URL
 
-### 5. Deploy
+### 5. Verify
 
 ```bash
-# Deploy infrastructure (S3 Tables, Lambda, Firehose, Lake Formation)
-./scripts/aws-deploy.sh template.yaml --env prod --region us-east-1
-
-# Check status
+# Check deployment status
 otlp2pipeline status
 
 # Test with sample data
 ./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1
-```
 
-The deploy script handles:
-- Lake Formation setup and permissions
-- CloudFormation stack deployment
-- Firehose stream creation with S3 Tables destination
+# Query tables with DuckDB
+otlp2pipeline query
+```
 
 ## Usage
 
