@@ -276,6 +276,18 @@ pub struct CreateArgs {
     /// S3 Table Namespace name (AWS)
     #[arg(long, default_value = "default")]
     pub namespace: String,
+
+    /// Build and deploy Lambda from local repo (AWS)
+    #[arg(long)]
+    pub local: bool,
+
+    // --- Shared options ---
+    /// Generate and configure bearer token authentication (recommended)
+    ///
+    /// Generates a secure random token and configures it on the Lambda/Worker.
+    /// The token is saved to .otlp2pipeline.toml for use with the connect command.
+    #[arg(long)]
+    pub auth: bool,
 }
 
 #[derive(clap::Args)]
@@ -315,6 +327,10 @@ pub struct PlanArgs {
     /// Environment name (overrides .otlp2pipeline.toml)
     #[arg(long)]
     pub env: Option<String>,
+
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 }
 
 #[derive(clap::Args)]

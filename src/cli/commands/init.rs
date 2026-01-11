@@ -77,6 +77,8 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         account_id,
         region,
         stack_name: None,
+        namespace: None,
+        auth_token: None,
     };
 
     config.save()?;
@@ -101,7 +103,7 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
             eprintln!("Next: otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml");
         }
         "aws" => {
-            eprintln!("Next: otlp2pipeline create --output template.yaml");
+            eprintln!("Next: otlp2pipeline create");
         }
         _ => {
             eprintln!("Next: otlp2pipeline create");

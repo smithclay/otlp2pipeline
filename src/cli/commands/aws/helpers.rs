@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use std::path::Path;
-use std::process::Command;
 
 use crate::cli::commands::naming;
 use crate::cli::config::{Config, CONFIG_FILENAME};
@@ -57,15 +56,26 @@ pub fn stack_name(env: &str) -> String {
     format!("otlp2pipeline-{}", naming::normalize(env))
 }
 
-/// Check if AWS CLI is available, with helpful error message
-pub fn require_aws_cli(stack_name: &str, region: &str, fallback_command: &str) -> Result<()> {
-    if Command::new("aws").arg("--version").output().is_err() {
+/// Validate that stack name won't exceed S3 bucket name limits (63 chars max)
+/// Error bucket format: ${STACK}-errors-${ACCOUNT_ID}-${REGION}
+/// Fixed overhead: "-errors-" (8) + account_id (12) + "-" (1) = 21 chars + region length
+pub fn validate_name_lengths(stack: &str, region: &str) -> Result<()> {
+    let stack_len = stack.len();
+    // Error bucket: stack + "-errors-" (8) + account_id (12) + "-" (1) + region
+    let max_stack_len = 63 - 8 - 12 - 1 - region.len();
+
+    if stack_len > max_stack_len {
+        let error_bucket_len = stack_len + 8 + 12 + 1 + region.len();
         bail!(
-            "AWS CLI not found. Install it from https://aws.amazon.com/cli/\n\n\
-            Or run manually:\n  aws cloudformation {} --stack-name {} --region {}",
-            fallback_command,
-            stack_name,
-            region
+            "Stack name '{}' is too long ({} chars)\n\
+            Error bucket would be {} chars (max 63)\n\
+            Max stack name length for region {}: {} chars\n\n\
+            Use a shorter --env name",
+            stack,
+            stack_len,
+            error_bucket_len,
+            region,
+            max_stack_len
         );
     }
     Ok(())
@@ -113,6 +123,8 @@ mod tests {
             account_id: None,
             region: Some("ap-southeast-1".to_string()),
             stack_name: None,
+            namespace: None,
+            auth_token: None,
         });
         let region = resolve_region(None, &config);
         assert_eq!(region, "ap-southeast-1");

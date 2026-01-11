@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -18,6 +20,11 @@ pub struct Config {
     pub region: Option<String>,
     #[serde(default)]
     pub stack_name: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    // Shared
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_token: Option<String>,
 }
 
 impl Config {
@@ -30,6 +37,19 @@ impl Config {
         std::fs::write(CONFIG_FILENAME, content)?;
         Ok(())
     }
+
+    /// Update only the auth_token field and save
+    pub fn set_auth_token(&mut self, token: String) -> Result<()> {
+        self.auth_token = Some(token);
+        self.save()
+    }
+}
+
+/// Generate a secure random auth token (32 bytes, base64 URL-safe, ~43 chars)
+pub fn generate_auth_token() -> String {
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 pub fn load_config_from_path(path: impl AsRef<Path>) -> Result<Config> {

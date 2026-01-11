@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::cli::auth;
 use crate::cli::commands::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
-use crate::cli::config::Config;
+use crate::cli::config::{generate_auth_token, Config};
 use crate::cli::CreateArgs;
 use crate::cloudflare::{CloudflareClient, CorsAllowed, CorsRule, SchemaField};
 
@@ -71,6 +71,13 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     eprintln!("==> Creating pipeline environment: {}", env_name);
 
+    // Generate auth token if requested
+    let auth_token = if args.auth {
+        Some(generate_auth_token())
+    } else {
+        None
+    };
+
     // Resolve auth
     eprintln!("==> Resolving credentials...");
     let creds = auth::resolve_credentials()?;
@@ -79,6 +86,9 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     let bucket = bucket_name(&env_name);
     let signals = enabled_signals(&args);
+    if auth_token.is_some() {
+        eprintln!("    Auth: enabled");
+    }
 
     eprintln!("    Bucket: {}", bucket);
     eprintln!(
@@ -204,18 +214,47 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         }
     }
 
+    // Save auth token to config if generated
+    if let Some(ref token) = auth_token {
+        let mut config = Config::load()?;
+        config.set_auth_token(token.clone())?;
+        eprintln!("\n==> Auth token saved to .otlp2pipeline.toml");
+    }
+
     // Summary
     eprintln!("\n==========================================");
     eprintln!("ENVIRONMENT CREATED");
     eprintln!("==========================================\n");
+
+    // Print auth instructions if token was generated
+    if let Some(ref token) = auth_token {
+        eprintln!("Authentication:");
+        eprintln!("  Token: {}", token);
+        eprintln!();
+        eprintln!("  Set the secret before deploying:");
+        eprintln!("    echo '{}' | npx wrangler secret put AUTH_TOKEN", token);
+        eprintln!();
+        eprintln!("  IMPORTANT: Keep this token secure. Do not commit it to version control");
+        eprintln!("  or share it in logs. The token is saved to .otlp2pipeline.toml and will");
+        eprintln!("  be included automatically when using 'otlp2pipeline connect'.");
+        eprintln!();
+    }
+
     eprintln!("Next steps:");
-    eprintln!("  1. (Optional) Set auth token for ingestion:");
-    eprintln!("     npx wrangler secret put PIPELINE_AUTH_TOKEN");
-    eprintln!();
-    eprintln!("  2. Deploy:");
+    if auth_token.is_none() {
+        eprintln!("  1. (Optional) Set auth token for ingestion:");
+        eprintln!("     npx wrangler secret put AUTH_TOKEN");
+        eprintln!();
+        eprintln!("  2. Deploy:");
+    } else {
+        eprintln!("  1. Set the auth secret (see above), then deploy:");
+    }
     eprintln!("     npx wrangler deploy");
     eprintln!();
-    eprintln!("  3. IMPORTANT: After ingesting data, add partitioning for query performance:");
+    eprintln!(
+        "  {}. IMPORTANT: After ingesting data, add partitioning for query performance:",
+        if auth_token.is_some() { "2" } else { "3" }
+    );
     eprintln!("     otlp2pipeline catalog partition --r2-token $R2_API_TOKEN");
     eprintln!();
     eprintln!("     This adds service_name partitioning to Iceberg tables. Without it,");
