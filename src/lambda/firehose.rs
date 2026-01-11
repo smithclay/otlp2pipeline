@@ -1,6 +1,8 @@
 //! Firehose client implementing PipelineSender trait with retry logic.
 
-use aws_sdk_firehose::{types::Record, Client as AwsClient};
+use aws_sdk_firehose::{
+    error::ProvideErrorMetadata, operation::RequestId, types::Record, Client as AwsClient,
+};
 use rand::Rng;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -25,12 +27,17 @@ pub struct StreamConfig {
 
 impl StreamConfig {
     /// Load stream names from environment variables.
-    pub fn from_env() -> Result<Self, std::env::VarError> {
+    /// Returns an error message including the missing variable name.
+    pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            logs: std::env::var("PIPELINE_LOGS")?,
-            traces: std::env::var("PIPELINE_TRACES")?,
-            sum: std::env::var("PIPELINE_SUM")?,
-            gauge: std::env::var("PIPELINE_GAUGE")?,
+            logs: std::env::var("PIPELINE_LOGS")
+                .map_err(|_| "PIPELINE_LOGS environment variable not set")?,
+            traces: std::env::var("PIPELINE_TRACES")
+                .map_err(|_| "PIPELINE_TRACES environment variable not set")?,
+            sum: std::env::var("PIPELINE_SUM")
+                .map_err(|_| "PIPELINE_SUM environment variable not set")?,
+            gauge: std::env::var("PIPELINE_GAUGE")
+                .map_err(|_| "PIPELINE_GAUGE environment variable not set")?,
         })
     }
 
@@ -70,6 +77,7 @@ impl FirehoseSender {
     }
 
     /// Send records to a single Firehose stream with retry.
+    /// Retries both API-level errors (throttling, network) and partial failures.
     async fn send_to_stream(
         &self,
         stream_name: &str,
@@ -107,25 +115,62 @@ impl FirehoseSender {
                     })
                     .collect::<Result<Vec<_>, String>>()?;
 
-                let response = self
+                let response = match self
                     .client
                     .put_record_batch()
                     .delivery_stream_name(stream_name)
                     .set_records(Some(firehose_records))
                     .send()
                     .await
-                    .map_err(|e| e.to_string())?;
+                {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        // Log detailed error info including request ID for AWS support
+                        let request_id = e.meta().request_id().unwrap_or("unknown");
+                        error!(
+                            error = %e,
+                            request_id = request_id,
+                            stream = stream_name,
+                            attempt = attempt,
+                            "Firehose API call failed"
+                        );
+                        // Retry API-level errors (throttling, network issues)
+                        if attempt < MAX_RETRIES {
+                            warn!(
+                                attempt,
+                                stream = stream_name,
+                                "Firehose API error, will retry"
+                            );
+                            continue;
+                        }
+                        return Err(format!(
+                            "Firehose API error after {} retries: {}",
+                            MAX_RETRIES, e
+                        ));
+                    }
+                };
 
                 let failed_count = response.failed_put_count();
                 if failed_count == 0 {
                     total_succeeded += pending.len();
                     pending.clear();
                 } else {
-                    // Extract failed records for retry
+                    // Extract failed records for retry, logging first error for debugging
                     let mut new_pending = Vec::new();
+                    let mut first_error_logged = false;
                     for (resp, record) in response.request_responses().iter().zip(pending.drain(..))
                     {
                         if resp.error_code().is_some() {
+                            // Log first error code/message for debugging
+                            if !first_error_logged {
+                                warn!(
+                                    error_code = resp.error_code().unwrap_or("unknown"),
+                                    error_message = resp.error_message().unwrap_or("none"),
+                                    stream = stream_name,
+                                    "Firehose record failure"
+                                );
+                                first_error_logged = true;
+                            }
                             new_pending.push(record);
                         } else {
                             total_succeeded += 1;

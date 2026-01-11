@@ -1,7 +1,7 @@
 //! AWS Lambda entry point for OTLP ingestion.
 //!
-//! Build with: cargo lambda build --release --arm64 --features lambda
-//! Deploy artifact: target/lambda/lambda/bootstrap.zip
+//! Build with: cargo lambda build --release --arm64 --features lambda --bin lambda
+//! Deploy artifact: target/lambda/lambda/bootstrap
 
 use lambda_http::{run, service_fn, Body, Error, Request, Response};
 use otlp2pipeline::{
@@ -10,7 +10,7 @@ use otlp2pipeline::{
     DecodeFormat, HandleError, HecLogsHandler, LogsHandler, MetricsHandler, TracesHandler,
 };
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -28,12 +28,7 @@ async fn main() -> Result<(), Error> {
     info!("Lambda cold start - initializing Firehose client");
 
     // Load stream configuration from environment
-    let streams = StreamConfig::from_env().map_err(|e| {
-        Error::from(format!(
-            "Missing environment variable for Firehose stream: {}",
-            e
-        ))
-    })?;
+    let streams = StreamConfig::from_env().map_err(Error::from)?;
 
     // Create Firehose sender (reused across invocations)
     let sender = Arc::new(FirehoseSender::new(streams).await);
@@ -77,13 +72,21 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
     );
 
     // Get body as bytes
+    // Body is non-exhaustive, so we must handle unknown variants
     let body = event.into_body();
     let body_bytes = match body {
         Body::Empty => bytes::Bytes::new(),
         Body::Text(s) => bytes::Bytes::from(s),
         Body::Binary(b) => bytes::Bytes::from(b),
-        // Handle potential future variants
-        _ => bytes::Bytes::new(),
+        other => {
+            // Non-exhaustive enum: future variants should be handled explicitly
+            // Log and reject rather than silently dropping data
+            error!(body_type = ?other, path = %path, "unsupported body type");
+            return Ok(Response::builder()
+                .status(400)
+                .body(Body::from("Unsupported body type"))
+                .unwrap());
+        }
     };
 
     // Route to appropriate handler
@@ -112,7 +115,13 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
 
     match result {
         Ok(response) => {
-            let json = serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_string());
+            let json = match serde_json::to_string(&response) {
+                Ok(j) => j,
+                Err(e) => {
+                    error!(error = %e, "failed to serialize response");
+                    r#"{"status":"ok","serialization_error":true}"#.to_string()
+                }
+            };
             Ok(Response::builder()
                 .status(200)
                 .header("content-type", "application/json")
@@ -121,10 +130,22 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
         }
         Err(e) => {
             let (status, message) = match &e {
-                HandleError::Decompress(msg) => (400, format!("Decompression error: {}", msg)),
-                HandleError::Decode(msg) => (400, format!("Decode error: {}", msg)),
-                HandleError::Transform(msg) => (500, format!("Transform error: {}", msg)),
-                HandleError::SendFailed(msg) => (502, format!("Send failed: {}", msg)),
+                HandleError::Decompress(msg) => {
+                    warn!(error = %msg, path = %path, "decompression error");
+                    (400, format!("Decompression error: {}", msg))
+                }
+                HandleError::Decode(msg) => {
+                    warn!(error = %msg, path = %path, "decode error");
+                    (400, format!("Decode error: {}", msg))
+                }
+                HandleError::Transform(msg) => {
+                    error!(error = %msg, path = %path, "transform error");
+                    (500, format!("Transform error: {}", msg))
+                }
+                HandleError::SendFailed(msg) => {
+                    error!(error = %msg, path = %path, "send failed");
+                    (502, format!("Send failed: {}", msg))
+                }
             };
             Ok(Response::builder()
                 .status(status)

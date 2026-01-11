@@ -69,11 +69,11 @@ otlp2pipeline query
 # Explicit provider (skip config): use 'cf' or 'cloudflare' subcommand
 otlp2pipeline cf create --r2-token $R2_TOKEN --output wrangler.toml
 
-# Deploy Lambda (after CloudFormation stack is created)
-otlp2pipeline aws create --lambda-version v0.2.0
+# Generate AWS CloudFormation template
+otlp2pipeline aws create --output otlp.cfn.yaml
 
-# Check Lambda status
-otlp2pipeline aws status  # Shows Function URL
+# Check AWS stack status
+otlp2pipeline aws status
 
 # List known services
 otlp2pipeline services --url https://my-worker.workers.dev

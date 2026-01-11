@@ -656,6 +656,7 @@ Resources:
           import json
           import os
           import tempfile
+          import traceback
           import urllib.request
 
           def handler(event, context):
@@ -680,6 +681,7 @@ Resources:
                   artifact_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip'
                   checksum_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip.sha256'
 
+                  s3 = boto3.client('s3')
                   with tempfile.TemporaryDirectory() as tmpdir:
                       artifact_path = os.path.join(tmpdir, 'bootstrap.zip')
                       checksum_path = os.path.join(tmpdir, 'checksum.txt')
@@ -701,9 +703,15 @@ Resources:
                       if actual != expected:
                           raise ValueError(f'Checksum mismatch: expected {expected}, got {actual}')
 
-                      # Upload to S3
+                      # Upload to S3 and verify
                       s3_key = f'lambda/{version}/bootstrap.zip'
-                      boto3.client('s3').upload_file(artifact_path, bucket, s3_key)
+                      local_size = os.path.getsize(artifact_path)
+                      s3.upload_file(artifact_path, bucket, s3_key)
+
+                      # Verify upload succeeded
+                      head = s3.head_object(Bucket=bucket, Key=s3_key)
+                      if head['ContentLength'] != local_size:
+                          raise ValueError(f'S3 upload verification failed: expected {local_size} bytes, got {head["ContentLength"]}')
 
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, {
                       'S3Bucket': bucket,
@@ -713,6 +721,7 @@ Resources:
 
               except Exception as e:
                   print(f'Error: {e}')
+                  traceback.print_exc()
                   cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
 
   FetchLambdaCode:

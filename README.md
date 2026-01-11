@@ -13,7 +13,7 @@ Cloudflare Pipelines or Amazon Data Firehose streams are used for batching and d
 
 ## Why?
 
-Purpose of this project is to explore the idea of a fully-managed observability backend built around object storage using emerging managed services from Cloudflare and AWS.
+Purpose of this project is to explore the idea of a fully-managed observability backend built around a data lake using emerging managed services from Cloudflare and AWS.
 
 Using new query engines like duckdb, this makes long term analytics of observability data cheap and feasible with any tool—or AI agent—that can query Apache Iceberg data sources (duckdb, pandas, Trino, Athena, etc).
 
@@ -21,22 +21,23 @@ Using new query engines like duckdb, this makes long term analytics of observabi
 
 Install the CLI:
 ```bash
+# requires rust toolchain: `curl https://sh.rustup.rs -sSf | sh`
 cargo install otlp2pipeline
 ```
 
 ### Deploy to Cloudflare
 
-Requires a locally configured `wrangler` CLI connected to your Cloudflare account.
+Requires the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) connected to your Cloudflare account and an [R2 Token]([R2 API Tokens](https://dash.cloudflare.com/?to=/:account/r2/api-tokens).
 
 ```bash
-# 1. Create R2 API token at https://dash.cloudflare.com → R2 → Manage R2 API Tokens
+# 1. Create R2 API token at https://dash.cloudflare.com/?to=/:account/r2/api-token
 #    Permissions: Admin Read & Write
 
 # 2. Initialize and create
 otlp2pipeline init --provider cf --env cftest01
 otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml
 
-# 3. Deploy
+# 3. Deploy worker defined in wrangler.toml
 npx wrangler deploy
 
 # 4. Check status
@@ -57,7 +58,8 @@ otlp2pipeline init --provider aws --env awstest01 --region us-east-1
 # 2. Generate CloudFormation template
 otlp2pipeline create --output template.yaml
 
-# 3. Deploy (S3 Tables, IAM permissions, LakeFormation, CloudFormation, Firehose)
+# 3. Deploy S3 Tables and Firehoses defined in template.yaml
+# The script is needed as some configuration is not supported by Cloudformation (yet)
 ./scripts/aws-deploy.sh template.yaml --env awstest01 --region us-east-1
 
 # 4. Check status
