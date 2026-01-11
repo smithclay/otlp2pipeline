@@ -7,15 +7,14 @@
 
 ## What it does
 
-Receives OpenTelemetry logs, traces, and metrics (plus Splunk HEC logs). Transforms them via [VRL](https://crates.io/crates/vrl) and forwards via pipelines for long-term storage in AWS or Cloudflare R2 tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
+Receives OpenTelemetry logs, traces, and metrics (plus Splunk HEC logs) and forwards via cloud pipelines for storage in AWS or Cloudflare R2 tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
-Cloudflare Pipelines or Amazon Data Firehose streams are used for batching and data delivery and converting the data to parquet format. Catalog maintenence features (compaction, snapshot pruning) are enabled by default for performance.
+Cloudflare Pipelines or Amazon Data Firehose streams are used for batching and converting data to parquet format. Catalog maintenence features (compaction, snapshot pruning, partitioning by day) are enabled by default for performance.
 
 ## Why?
 
-Purpose of this project is to explore the idea of a fully-managed observability backend built around a data lake using emerging managed services from Cloudflare and AWS.
-
-Using new query engines like duckdb, this makes long term analytics of observability data cheap and feasible with any tool—or AI agent—that can query Apache Iceberg data sources (duckdb, pandas, Trino, Athena, etc).
+- Get a cheap and fully-managed Iceberg-compatible observability storage backend with a single command
+- Do meaningful analytics on your metrics, logs, or traces using any any tool—or AI agent—that can connect to Iceberg data sources (duckdb, pandas, Trino, Athena, etc)
 
 ## Quickstart
 
@@ -35,7 +34,7 @@ Requires the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/i
 
 # 2. Initialize and create
 otlp2pipeline init --provider cf --env cftest01
-otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml
+otlp2pipeline create --r2-token $R2_API_TOKEN --auth --output wrangler.toml
 
 # 3. Deploy worker defined in wrangler.toml
 npx wrangler deploy
@@ -49,14 +48,14 @@ otlp2pipeline connect
 
 ### Deploy to AWS
 
-Requires a locally configured `aws` CLI connected to your AWS account.
+Requires the [AWS CLI](https://aws.amazon.com/cli/) configured with appropiate credentials to create resources.
 
 ```bash
 # 1. Initialize (requires AWS CLI configured)
 otlp2pipeline init --provider aws --env awstest01 --region us-east-1
 
-# 2. Deploy (S3 Tables, Lambda, Firehose, Lake Formation)
-otlp2pipeline create
+# 2. Deploy with authentication turned on
+otlp2pipeline create --auth
 
 # 3. Check status
 otlp2pipeline status
@@ -119,8 +118,8 @@ The CLI creates the R2 bucket, streams, sinks, and pipelines for all signal type
 # Preview what would be created
 otlp2pipeline plan
 
-# Create environment
-otlp2pipeline create --r2-token <R2_API_TOKEN> --output wrangler.toml
+# Create environment with authentication enabled (recommended)
+otlp2pipeline create --r2-token <R2_API_TOKEN> --auth --output wrangler.toml
 ```
 
 This creates:
@@ -136,18 +135,25 @@ This creates:
 npx wrangler deploy
 ```
 
-### CLI commands
+### 6. Verify
 
 ```bash
-# Check environment status
-otlp2pipeline status
+curl -X POST http://<WORKER URL>/v1/logs \
+  -H "Content-Type: application/json" \
+  -d '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"hello world"}}]}]}]}'
 
-# Preview what would be created
-otlp2pipeline plan
-
-# Query tables with DuckDB
+# Query tables with DuckDB, by default data is available after ~5 minutes
 otlp2pipeline query
 
+# Send other data sources
+otlp2pipeline connect
+```
+
+### Cloudflare-specific CLI commands
+
+Cloudflare has additional features like live tail log/traces and real-time RED metrics.
+
+```bash
 # List known services
 otlp2pipeline services --url https://your-worker.workers.dev
 
@@ -156,9 +162,6 @@ otlp2pipeline tail my-service logs
 
 # Stream live traces
 otlp2pipeline tail my-service traces
-
-# Delete environment
-otlp2pipeline destroy --force
 ```
 
 ## AWS
@@ -184,14 +187,6 @@ flowchart TB
 
 Install and configure the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html):
 
-```bash
-# Verify installation
-aws --version
-
-# Configure credentials
-aws configure
-```
-
 Ensure your IAM user/role has permissions for:
 - CloudFormation (create/update/delete stacks)
 - S3 Tables (create buckets, tables)
@@ -199,6 +194,11 @@ Ensure your IAM user/role has permissions for:
 - Lambda (create functions)
 - Lake Formation (grant permissions)
 - IAM (create roles)
+
+```bash
+# Configure credentials
+aws configure
+```
 
 ### 2. Install CLI
 
@@ -221,11 +221,8 @@ This auto-detects your AWS account ID and stores configuration locally.
 # Preview what would be created
 otlp2pipeline plan
 
-# Deploy all infrastructure
-otlp2pipeline create
-
-# Or build Lambda locally instead of fetching from GitHub releases
-otlp2pipeline create --local
+# Deploy all infrastructure with authentication (recommended)
+otlp2pipeline create --auth
 ```
 
 This deploys:
@@ -242,11 +239,15 @@ This deploys:
 # Check deployment status
 otlp2pipeline status
 
-# Test with sample data
-./scripts/aws-send-test-record.sh otlp2pipeline-prod us-east-1
+curl -X POST http://<LAMBDA FUNCTION URL>/v1/logs \
+  -H "Content-Type: application/json" \
+  -d '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"hello world"}}]}]}]}'
 
-# Query tables with DuckDB
+# Query tables with DuckDB, by default data is available after ~5 minutes
 otlp2pipeline query
+
+# Send other data sources
+otlp2pipeline connect
 ```
 
 ## Usage
