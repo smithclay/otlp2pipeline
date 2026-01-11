@@ -476,10 +476,29 @@ cmd_status() {
             fi
         fi
 
-        # Partition specs (currently disabled)
+        # Check if tables have partition specs
         echo ""
-        echo "Partition Specs: (disabled - see docs/aws-partition-evolution.md)"
-        echo "    Glue API for partition evolution breaks S3 Tables federation"
+        echo "Table Partitions:"
+        for table in logs traces sum gauge; do
+            local table_info
+            table_info=$(aws glue get-table \
+                --catalog-id "${ACCOUNT_ID}:s3tablescatalog/${BUCKET}" \
+                --database-name "${NAMESPACE}" \
+                --name "$table" \
+                --region "$REGION" 2>/dev/null)
+
+            if [ -n "$table_info" ]; then
+                local partition_keys
+                partition_keys=$(echo "$table_info" | jq -r '.Table.PartitionKeys // [] | length')
+                if [ "$partition_keys" != "0" ]; then
+                    echo -e "  ${CHECK} ${table}: partitioned"
+                else
+                    echo -e "  ${CROSS} ${table}: not partitioned"
+                fi
+            else
+                echo -e "  ${CROSS} ${table}: not found"
+            fi
+        done
 
         # Check Firehose streams
         echo ""
