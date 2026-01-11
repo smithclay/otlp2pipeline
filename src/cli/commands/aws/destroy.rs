@@ -1,94 +1,97 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::io::{self, Write};
-use std::process::Command;
 
-use super::helpers::{
-    load_config, require_aws_cli, resolve_env_with_config, resolve_region, stack_name,
-};
+use super::cli::AwsCli;
+use super::helpers::{load_config, resolve_env_with_config, resolve_region, stack_name};
+use super::schema::TABLES;
 use crate::cli::DestroyArgs;
 
 pub fn execute_destroy(args: DestroyArgs) -> Result<()> {
     let config = load_config()?;
     let env_name = resolve_env_with_config(args.env, &config)?;
     let region = resolve_region(args.region, &config);
-    let stack_name = stack_name(&env_name);
+    let stack = stack_name(&env_name);
 
-    require_aws_cli(&stack_name, &region, "delete-stack")?;
+    let cli = AwsCli::new(&region);
+    let account = cli.sts().get_caller_identity()?;
 
-    eprintln!("==> AWS CloudFormation Stack Deletion");
-    eprintln!("    Stack: {}", stack_name);
-    eprintln!("    Region: {}", region);
+    eprintln!("Destroying otlp2pipeline deployment\n");
+    eprintln!("Account: {}", account.account_id);
+    eprintln!("Region:  {}", region);
+    eprintln!("Stack:   {}", stack);
     eprintln!();
 
     if !args.force {
-        eprintln!("WARNING: This will delete:");
-        eprintln!("  - S3 Table Bucket and all data");
-        eprintln!("  - Firehose delivery stream");
-        eprintln!("  - IAM role and policies");
-        eprintln!("  - CloudWatch log group");
-        eprintln!("  - Error bucket");
+        eprintln!("This will delete:");
+        eprintln!("  - Firehose streams: {}-{{logs,traces,sum,gauge}}", stack);
+        eprintln!("  - CloudFormation stack: {}", stack);
+        eprintln!("  - S3 Table Bucket: {}", stack);
+        eprintln!("  - All data in the bucket");
         eprintln!();
-        eprint!("Are you sure? [y/N] ");
+        eprint!("Are you sure? (yes/no): ");
         io::stderr().flush()?;
 
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
+        if input.trim() != "yes" {
             eprintln!("Aborted.");
             return Ok(());
         }
     }
 
-    eprintln!("==> Deleting stack...");
-    let delete = Command::new("aws")
-        .args([
-            "cloudformation",
-            "delete-stack",
-            "--stack-name",
-            &stack_name,
-            "--region",
-            &region,
-        ])
-        .output()?;
-
-    if !delete.status.success() {
-        let stderr = String::from_utf8_lossy(&delete.stderr);
-        if stderr.contains("does not exist") {
-            eprintln!("    Stack does not exist");
-            return Ok(());
-        } else {
-            bail!("Failed to delete stack: {}", stderr.trim());
-        }
+    // Delete Firehose streams first (they depend on IAM role in stack)
+    eprintln!("\n==> Deleting Firehose streams");
+    let firehose = cli.firehose();
+    for table in TABLES {
+        let stream_name = format!("{}-{}", stack, table);
+        eprintln!("    Deleting stream: {}", stream_name);
+        firehose.delete_delivery_stream(&stream_name)?;
     }
 
-    eprintln!("    Delete initiated");
-    eprintln!();
-    eprintln!("==> Waiting for deletion to complete...");
-    eprintln!("    (This may take a few minutes)");
+    // Delete tables from namespace
+    eprintln!("\n==> Deleting tables from namespace");
+    let bucket_arn = format!(
+        "arn:aws:s3tables:{}:{}:bucket/{}",
+        region, account.account_id, stack
+    );
+    let s3tables = cli.s3tables();
+    for table in TABLES {
+        eprintln!("    Deleting table: {}", table);
+        s3tables.delete_table(&bucket_arn, "default", table)?;
+    }
 
-    let wait = Command::new("aws")
-        .args([
-            "cloudformation",
-            "wait",
-            "stack-delete-complete",
-            "--stack-name",
-            &stack_name,
-            "--region",
-            &region,
-        ])
-        .status()?;
+    // Empty S3 buckets
+    eprintln!("\n==> Emptying S3 buckets");
+    let s3 = cli.s3();
 
-    if wait.success() {
-        eprintln!();
-        eprintln!("Stack deleted successfully.");
-        Ok(())
+    let error_bucket = format!("{}-errors-{}-{}", stack, account.account_id, region);
+    eprintln!("    Emptying error bucket: {}", error_bucket);
+    s3.rm_recursive(&error_bucket)?;
+
+    let artifact_bucket = format!("{}-artifacts-{}", stack, account.account_id);
+    eprintln!("    Emptying artifact bucket: {}", artifact_bucket);
+    s3.rm_recursive(&artifact_bucket)?;
+
+    // Delete CloudFormation stack
+    if cli.cloudformation().describe_stack(&stack)?.is_some() {
+        eprintln!("\n==> Deleting CloudFormation stack: {}", stack);
+        cli.cloudformation().delete_stack(&stack)?;
+        eprintln!("    Waiting for stack deletion...");
+        cli.cloudformation().wait_stack_delete_complete(&stack)?;
+        eprintln!("    Stack deleted");
     } else {
-        eprintln!();
-        eprintln!("Stack deletion may have failed or timed out.");
-        eprintln!(
-            "Check status with: otlp2pipeline aws status --env {}",
-            env_name
-        );
-        bail!("Stack deletion did not complete successfully")
+        eprintln!("\n    Stack does not exist (skipping)");
     }
+
+    eprintln!("\n==========================================");
+    eprintln!("[ok] Destroy complete");
+    eprintln!("==========================================\n");
+    eprintln!("Note: The following global resources were NOT deleted:");
+    eprintln!("  - IAM Role: S3TablesRoleForLakeFormation");
+    eprintln!("  - Glue Catalog: s3tablescatalog");
+    eprintln!("  - LakeFormation configuration");
+    eprintln!();
+    eprintln!("These are shared across stacks. Delete manually if no longer needed.");
+
+    Ok(())
 }

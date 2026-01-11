@@ -1,143 +1,104 @@
-use anyhow::{bail, Result};
-use std::process::Command;
+use anyhow::Result;
 
-use super::helpers::{
-    load_config, require_aws_cli, resolve_env_with_config, resolve_region, stack_name,
-};
+use super::cli::AwsCli;
+use super::context::S3_TABLES_ROLE_NAME;
+use super::helpers::{load_config, resolve_env_with_config, resolve_region, stack_name};
+use super::schema::TABLES;
 use crate::cli::StatusArgs;
 
 pub fn execute_status(args: StatusArgs) -> Result<()> {
     let config = load_config()?;
     let env_name = resolve_env_with_config(args.env, &config)?;
     let region = resolve_region(args.region, &config);
-    let stack_name = stack_name(&env_name);
+    let stack = stack_name(&env_name);
 
-    require_aws_cli(&stack_name, &region, "describe-stacks")?;
+    let cli = AwsCli::new(&region);
+    let account = cli.sts().get_caller_identity()?;
 
-    eprintln!("==> AWS CloudFormation Stack Status");
-    eprintln!("    Stack: {}", stack_name);
-    eprintln!("    Region: {}", region);
+    eprintln!("Checking deployment status...\n");
+    eprintln!("Account: {}", account.account_id);
+    eprintln!("Region:  {}", region);
+    eprintln!("Stack:   {}", stack);
     eprintln!();
 
-    // Get stack status
-    eprintln!("==> Stack Status");
-    let status = Command::new("aws")
-        .args([
-            "cloudformation",
-            "describe-stacks",
-            "--stack-name",
-            &stack_name,
-            "--region",
-            &region,
-            "--query",
-            "Stacks[0].{Status:StackStatus,Created:CreationTime,Updated:LastUpdatedTime}",
-            "--output",
-            "table",
-        ])
-        .output()?;
+    // S3 Tables Setup
+    eprintln!("S3 Tables Setup:");
 
-    if !status.status.success() {
-        let stderr = String::from_utf8_lossy(&status.stderr);
-        if stderr.contains("does not exist") {
-            eprintln!("    Stack does not exist");
-            return Ok(());
-        } else {
-            bail!("Failed to get stack status: {}", stderr.trim());
-        }
-    }
-
-    print!("{}", String::from_utf8_lossy(&status.stdout));
-
-    // Get stack resources
-    eprintln!("\n==> Stack Resources");
-    let resources = Command::new("aws")
-        .args([
-            "cloudformation",
-            "describe-stack-resources",
-            "--stack-name",
-            &stack_name,
-            "--region",
-            &region,
-            "--query",
-            "StackResources[].{Type:ResourceType,Status:ResourceStatus,LogicalId:LogicalResourceId}",
-            "--output",
-            "table",
-        ])
-        .output()?;
-
-    if resources.status.success() {
-        print!("{}", String::from_utf8_lossy(&resources.stdout));
+    // IAM Role
+    if cli.iam().role_exists(S3_TABLES_ROLE_NAME)? {
+        eprintln!("  [ok] IAM Role: {}", S3_TABLES_ROLE_NAME);
     } else {
-        let stderr = String::from_utf8_lossy(&resources.stderr);
-        eprintln!("    Failed to retrieve resources: {}", stderr.trim());
+        eprintln!("  [missing] IAM Role: {} (not found)", S3_TABLES_ROLE_NAME);
     }
 
-    // Query Lambda function details
-    let lambda_name = format!("{}-ingest", stack_name);
-    let lambda_output = Command::new("aws")
-        .args([
-            "lambda",
-            "get-function",
-            "--function-name",
-            &lambda_name,
-            "--region",
-            &region,
-            "--query",
-            "Configuration.{Runtime:Runtime,Memory:MemorySize,Timeout:Timeout,Arch:Architectures[0]}",
-            "--output",
-            "json",
-        ])
-        .output();
+    // LakeFormation resource
+    let resource_arn = format!(
+        "arn:aws:s3tables:{}:{}:bucket/*",
+        region, account.account_id
+    );
+    if cli.lakeformation().describe_resource(&resource_arn)? {
+        eprintln!("  [ok] LakeFormation Resource: registered");
+    } else {
+        eprintln!("  [missing] LakeFormation Resource: not registered");
+    }
 
-    if let Ok(output) = lambda_output {
-        if output.status.success() {
-            eprintln!("\n==> Lambda Function");
-            eprintln!("    Name: {}", lambda_name);
+    // Glue catalog
+    if cli.glue().catalog_exists("s3tablescatalog")? {
+        eprintln!("  [ok] Glue Catalog: s3tablescatalog");
+    } else {
+        eprintln!("  [missing] Glue Catalog: s3tablescatalog (not found)");
+    }
 
-            // Parse and display Lambda details
-            let json_str = String::from_utf8_lossy(&output.stdout);
-            if let Ok(details) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                if let Some(runtime) = details.get("Runtime").and_then(|v| v.as_str()) {
-                    eprintln!("    Runtime: {}", runtime);
+    eprintln!();
+
+    // CloudFormation Stack
+    eprintln!("CloudFormation Stack: {}", stack);
+    let stack_info = cli.cloudformation().describe_stack(&stack)?;
+
+    match stack_info {
+        Some(info) => {
+            eprintln!("  [ok] Status: {}", info.status);
+
+            // Firehose streams
+            eprintln!();
+            eprintln!("Firehose Streams:");
+            let mut all_ready = true;
+            for table in TABLES {
+                let stream_name = format!("{}-{}", stack, table);
+                if cli.firehose().stream_exists(&stream_name)? {
+                    eprintln!("  [ok] {} (AppendOnly: true)", stream_name);
+                } else {
+                    eprintln!("  [missing] {} (not found)", stream_name);
+                    all_ready = false;
                 }
-                if let Some(memory) = details.get("Memory").and_then(|v| v.as_i64()) {
-                    eprintln!("    Memory: {} MB", memory);
+            }
+
+            // Lambda function
+            eprintln!();
+            eprintln!("Lambda Function:");
+            let function_name = format!("{}-ingest", stack);
+            if cli.lambda().function_exists(&function_name)? {
+                eprintln!("  [ok] {}", function_name);
+                if let Some(url) = cli.lambda().get_function_url(&function_name)? {
+                    eprintln!();
+                    eprintln!("OTLP Endpoints:");
+                    eprintln!("  POST {}v1/logs", url);
+                    eprintln!("  POST {}v1/traces", url);
+                    eprintln!("  POST {}v1/metrics", url);
                 }
-                if let Some(timeout) = details.get("Timeout").and_then(|v| v.as_i64()) {
-                    eprintln!("    Timeout: {} seconds", timeout);
-                }
-                if let Some(arch) = details.get("Arch").and_then(|v| v.as_str()) {
-                    eprintln!("    Architecture: {}", arch);
-                }
+            } else {
+                eprintln!("  [missing] {} (not found)", function_name);
+            }
+
+            eprintln!();
+            if all_ready {
+                eprintln!("[ok] Deployment complete! Firehose is ready to receive data.");
+            } else {
+                eprintln!("[warn] Some Firehose streams are missing. Run deploy to create them.");
             }
         }
-    }
-
-    // Query Function URL
-    let url_output = Command::new("aws")
-        .args([
-            "lambda",
-            "get-function-url-config",
-            "--function-name",
-            &lambda_name,
-            "--region",
-            &region,
-            "--query",
-            "FunctionUrl",
-            "--output",
-            "text",
-        ])
-        .output();
-
-    if let Ok(output) = url_output {
-        if output.status.success() {
-            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !url.is_empty() && !url.contains("error") {
-                eprintln!("\n==> OTLP Endpoints");
-                eprintln!("    POST {}v1/logs", url);
-                eprintln!("    POST {}v1/traces", url);
-                eprintln!("    POST {}v1/metrics", url);
-            }
+        None => {
+            eprintln!("  [missing] Stack does not exist");
         }
     }
 
