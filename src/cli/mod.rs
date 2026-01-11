@@ -327,6 +327,10 @@ pub struct PlanArgs {
     /// Environment name (overrides .otlp2pipeline.toml)
     #[arg(long)]
     pub env: Option<String>,
+
+    /// AWS region (overrides .otlp2pipeline.toml)
+    #[arg(long)]
+    pub region: Option<String>,
 }
 
 #[derive(clap::Args)]

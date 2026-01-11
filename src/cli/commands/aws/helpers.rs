@@ -56,9 +56,9 @@ pub fn stack_name(env: &str) -> String {
     format!("otlp2pipeline-{}", naming::normalize(env))
 }
 
-/// Validate that stack name won't exceed S3 bucket name limits
+/// Validate that stack name won't exceed S3 bucket name limits (63 chars max)
 /// Error bucket format: ${STACK}-errors-${ACCOUNT_ID}-${REGION}
-/// With 12-char account ID, stack must allow for 35 additional chars
+/// Fixed overhead: "-errors-" (8) + account_id (12) + "-" (1) = 21 chars + region length
 pub fn validate_name_lengths(stack: &str, region: &str) -> Result<()> {
     let stack_len = stack.len();
     // Error bucket: stack + "-errors-" (8) + account_id (12) + "-" (1) + region

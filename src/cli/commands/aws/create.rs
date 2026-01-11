@@ -121,8 +121,9 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("  Token: {}", token);
         eprintln!("  Header: Authorization: Bearer {}", token);
         eprintln!();
-        eprintln!("  The token is saved to .otlp2pipeline.toml and will be");
-        eprintln!("  included automatically when using 'otlp2pipeline connect'.");
+        eprintln!("  IMPORTANT: Keep this token secure. Do not commit it to version control");
+        eprintln!("  or share it in logs. The token is saved to .otlp2pipeline.toml and will");
+        eprintln!("  be included automatically when using 'otlp2pipeline connect'.");
         eprintln!();
     }
 

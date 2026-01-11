@@ -9,7 +9,7 @@ use crate::cli::PlanArgs;
 pub fn execute_plan(args: PlanArgs) -> Result<()> {
     let config = load_config()?;
     let env_name = resolve_env_name(args.env)?;
-    let region = resolve_region(None, &config);
+    let region = resolve_region(args.region, &config);
     let stack = stack_name(&env_name);
 
     let cli = AwsCli::new(&region);

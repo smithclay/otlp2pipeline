@@ -317,6 +317,9 @@ pub fn build_and_deploy_lambda(cli: &AwsCli, ctx: &DeployContext) -> Result<()> 
 
         // Update environment if auth token is set
         if ctx.auth_token.is_some() {
+            // Wait for code update to complete before updating config
+            eprintln!("    Waiting for function to be ready...");
+            lambda.wait_function_updated(&function_name)?;
             eprintln!("    Updating environment with AUTH_TOKEN");
             let env_vars = build_lambda_env(ctx);
             lambda.update_function_configuration(&function_name, &env_vars)?;
@@ -347,7 +350,12 @@ pub fn build_and_deploy_lambda(cli: &AwsCli, ctx: &DeployContext) -> Result<()> 
         eprintln!("\n    Function URL: {}", url);
     }
 
-    std::fs::remove_file(&zip_path).ok();
+    if let Err(e) = std::fs::remove_file(&zip_path) {
+        eprintln!(
+            "    Warning: Could not remove temp file {}: {}",
+            zip_path, e
+        );
+    }
     eprintln!("\n    Lambda deployed from local build");
     Ok(())
 }

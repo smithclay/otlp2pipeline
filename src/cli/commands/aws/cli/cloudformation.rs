@@ -67,7 +67,13 @@ impl CloudFormationCli<'_> {
         }
 
         let output = cmd.output()?;
-        std::fs::remove_file(&temp_path).ok();
+        if let Err(e) = std::fs::remove_file(&temp_path) {
+            eprintln!(
+                "    Warning: Could not remove temp file {}: {}",
+                temp_path.display(),
+                e
+            );
+        }
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -134,7 +140,7 @@ impl CloudFormationCli<'_> {
     }
 
     pub fn wait_stack_create_complete(&self, stack_name: &str) -> Result<()> {
-        let status = Command::new("aws")
+        let output = Command::new("aws")
             .args([
                 "cloudformation",
                 "wait",
@@ -144,15 +150,22 @@ impl CloudFormationCli<'_> {
                 "--region",
                 self.aws.region(),
             ])
-            .status()?;
-        if !status.success() {
-            bail!("Stack creation did not complete successfully");
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "Stack creation did not complete successfully.\n\
+                 {}\n\n\
+                 Run `aws cloudformation describe-stack-events --stack-name {}` for details",
+                stderr.trim(),
+                stack_name
+            );
         }
         Ok(())
     }
 
     pub fn wait_stack_delete_complete(&self, stack_name: &str) -> Result<()> {
-        let status = Command::new("aws")
+        let output = Command::new("aws")
             .args([
                 "cloudformation",
                 "wait",
@@ -162,9 +175,16 @@ impl CloudFormationCli<'_> {
                 "--region",
                 self.aws.region(),
             ])
-            .status()?;
-        if !status.success() {
-            bail!("Stack deletion did not complete successfully");
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "Stack deletion did not complete successfully.\n\
+                 {}\n\n\
+                 Run `aws cloudformation describe-stack-events --stack-name {}` for details",
+                stderr.trim(),
+                stack_name
+            );
         }
         Ok(())
     }

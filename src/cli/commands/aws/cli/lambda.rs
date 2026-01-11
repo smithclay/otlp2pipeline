@@ -117,6 +117,22 @@ impl LambdaCli<'_> {
         Ok(())
     }
 
+    /// Wait for Lambda function to be ready after code/config update
+    pub fn wait_function_updated(&self, name: &str) -> Result<()> {
+        let mut cmd = Command::new("aws");
+        cmd.args([
+            "lambda",
+            "wait",
+            "function-updated-v2",
+            "--function-name",
+            name,
+            "--region",
+            self.aws.region(),
+        ]);
+        run_idempotent(&mut cmd, &[])?;
+        Ok(())
+    }
+
     pub fn create_function_url(&self, name: &str) -> Result<bool> {
         let mut cmd = Command::new("aws");
         cmd.args([
