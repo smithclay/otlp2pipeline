@@ -11,13 +11,13 @@ mod s3;
 mod s3tables;
 mod sts;
 
-pub use athena::AthenaCli;
+pub use athena::{AthenaCli, QueryState};
 pub use cloudformation::CloudFormationCli;
-pub use firehose::FirehoseCli;
+pub use firehose::{FirehoseCli, FirehoseStreamConfig};
 pub use glue::GlueCli;
 pub use iam::IamCli;
 pub use lakeformation::LakeFormationCli;
-pub use lambda::LambdaCli;
+pub use lambda::{LambdaCli, LambdaConfig};
 pub use s3::S3Cli;
 pub use s3tables::S3TablesCli;
 pub use sts::StsCli;

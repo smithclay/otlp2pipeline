@@ -2,6 +2,7 @@ mod catalog;
 mod cli;
 mod context;
 mod create;
+mod deploy;
 mod destroy;
 mod helpers;
 mod plan;

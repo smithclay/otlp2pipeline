@@ -276,6 +276,10 @@ pub struct CreateArgs {
     /// S3 Table Namespace name (AWS)
     #[arg(long, default_value = "default")]
     pub namespace: String,
+
+    /// Build and deploy Lambda from local repo (AWS)
+    #[arg(long)]
+    pub local: bool,
 }
 
 #[derive(clap::Args)]
