@@ -239,11 +239,11 @@ wait_for_athena_query() {
 }
 
 # Generate Athena CREATE TABLE DDL from schema JSON
-# Usage: generate_athena_ddl <table_name> <bucket> <namespace>
+# Usage: generate_athena_ddl <table_name> <namespace>
+# Note: bucket is set in query execution context, not in the DDL
 generate_athena_ddl() {
     local table="$1"
-    local bucket="$2"
-    local namespace="$3"
+    local namespace="$2"
 
     # Map table name to schema file (traces -> spans.schema.json)
     local schema_file
@@ -272,13 +272,12 @@ generate_athena_ddl() {
         )
     ) | join(", ")' "$schema_file")
 
+    # Use backticks for S3 Tables catalog compatibility
     cat <<EOF
-CREATE TABLE IF NOT EXISTS
-  "s3tablescatalog/${bucket}"."${namespace}"."${table}" (
+CREATE TABLE \`${namespace}\`.${table} (
   ${columns}
 )
 PARTITIONED BY (day(timestamp))
-TBLPROPERTIES ('table_type' = 'iceberg')
 EOF
 }
 
@@ -476,22 +475,25 @@ cmd_status() {
             fi
         fi
 
-        # Check if tables have partition specs
+        # Check if tables have Iceberg partition specs
+        # (Iceberg uses hidden partitions in metadata, not Hive-style PartitionKeys)
         echo ""
         echo "Table Partitions:"
         for table in logs traces sum gauge; do
-            local table_info
-            table_info=$(aws glue get-table \
+            local metadata_url
+            metadata_url=$(aws glue get-table \
                 --catalog-id "${ACCOUNT_ID}:s3tablescatalog/${BUCKET}" \
                 --database-name "${NAMESPACE}" \
                 --name "$table" \
-                --region "$REGION" 2>/dev/null)
+                --region "$REGION" \
+                --query 'Table.Parameters.metadata_location' \
+                --output text 2>/dev/null)
 
-            if [ -n "$table_info" ]; then
-                local partition_keys
-                partition_keys=$(echo "$table_info" | jq -r '.Table.PartitionKeys // [] | length')
-                if [ "$partition_keys" != "0" ]; then
-                    echo -e "  ${CHECK} ${table}: partitioned"
+            if [ -n "$metadata_url" ] && [ "$metadata_url" != "None" ]; then
+                local partition_field
+                partition_field=$(aws s3 cp "$metadata_url" - 2>/dev/null | jq -r '.["partition-specs"][0].fields[0].name // "none"')
+                if [ "$partition_field" != "none" ] && [ -n "$partition_field" ]; then
+                    echo -e "  ${CHECK} ${table}: partitioned (${partition_field})"
                 else
                     echo -e "  ${CROSS} ${table}: not partitioned"
                 fi
@@ -899,26 +901,39 @@ create_tables_via_athena() {
         return 1
     fi
 
+    # Grant CREATE_TABLE permission on the database to the caller
+    # (Required for Athena to create tables in S3 Tables catalog)
+    echo ""
+    echo -e "${ARROW} Granting CREATE_TABLE permission on database '${namespace}'"
+    run_idempotent "Grant database CREATE_TABLE permission" "AlreadyExistsException" \
+        aws lakeformation grant-permissions \
+        --region "${REGION}" \
+        --principal "{\"DataLakePrincipalIdentifier\":\"${CALLER_ARN}\"}" \
+        --resource "{\"Database\":{\"CatalogId\":\"${ACCOUNT_ID}:s3tablescatalog/${bucket_name}\",\"Name\":\"${namespace}\"}}" \
+        --permissions CREATE_TABLE DESCRIBE ALTER DROP \
+        --permissions-with-grant-option CREATE_TABLE DESCRIBE ALTER DROP
+    echo -e "    ${CHECK} Done"
+
     local tables=("logs" "traces" "sum" "gauge")
 
     for table in "${tables[@]}"; do
         echo ""
         echo -e "${ARROW} Creating table: ${table}"
 
-        # Generate DDL
+        # Generate DDL (bucket is set in query context, not DDL)
         local ddl
-        ddl=$(generate_athena_ddl "$table" "$bucket_name" "$namespace")
+        ddl=$(generate_athena_ddl "$table" "$namespace")
 
         if [ $? -ne 0 ]; then
             echo -e "    ${CROSS} Failed to generate DDL"
             return 1
         fi
 
-        # Execute via Athena
+        # Execute via Athena with S3 Tables catalog context
         local query_id
         query_id=$(aws athena start-query-execution \
             --query-string "$ddl" \
-            --query-execution-context "Catalog=s3tablescatalog" \
+            --query-execution-context "Catalog=s3tablescatalog/${bucket_name}" \
             --result-configuration "OutputLocation=s3://${error_bucket}/athena/" \
             --region "$REGION" \
             --output text \
