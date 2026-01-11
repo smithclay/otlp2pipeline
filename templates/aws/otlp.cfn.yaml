@@ -136,11 +136,18 @@ Parameters:
     AllowedValues: [NONE, AWS_IAM]
     Default: NONE
 
+  SkipLambda:
+    Description: Skip Lambda creation (for local builds deployed separately)
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+
 Conditions:
   CreateLogs: !Equals [!Ref EnableLogs, "true"]
   CreateTraces: !Equals [!Ref EnableTraces, "true"]
   CreateSum: !Equals [!Ref EnableSum, "true"]
   CreateGauge: !Equals [!Ref EnableGauge, "true"]
+  CreateLambda: !Equals [!Ref SkipLambda, "false"]
 
 Resources:
   ############################################################
@@ -287,320 +294,6 @@ Resources:
                   - !Sub arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}*
 
   ############################################################
-  # Logs Table
-  ############################################################
-  LogsTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateLogs
-    DependsOn: Namespace
-    Properties:
-      TableName: !Ref LogsTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: observed_timestamp
-              Type: long
-              Required: true
-            - Name: trace_id
-              Type: string
-              Required: false
-            - Name: span_id
-              Type: string
-              Required: false
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: severity_number
-              Type: int
-              Required: true
-            - Name: severity_text
-              Type: string
-              Required: true
-            - Name: body
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: log_attributes
-              Type: string
-              Required: false
-
-  ############################################################
-  # Traces Table
-  ############################################################
-  TracesTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateTraces
-    DependsOn: Namespace
-    Properties:
-      TableName: !Ref TracesTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: end_timestamp
-              Type: long
-              Required: true
-            - Name: duration
-              Type: long
-              Required: true
-            - Name: trace_id
-              Type: string
-              Required: false
-            - Name: span_id
-              Type: string
-              Required: false
-            - Name: parent_span_id
-              Type: string
-              Required: false
-            - Name: trace_state
-              Type: string
-              Required: false
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: span_name
-              Type: string
-              Required: true
-            - Name: span_kind
-              Type: int
-              Required: true
-            - Name: status_code
-              Type: int
-              Required: true
-            - Name: status_message
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: span_attributes
-              Type: string
-              Required: false
-            - Name: events_json
-              Type: string
-              Required: false
-            - Name: links_json
-              Type: string
-              Required: false
-            - Name: dropped_attributes_count
-              Type: int
-              Required: false
-            - Name: dropped_events_count
-              Type: int
-              Required: false
-            - Name: dropped_links_count
-              Type: int
-              Required: false
-            - Name: flags
-              Type: int
-              Required: false
-
-  ############################################################
-  # Sum Metrics Table
-  ############################################################
-  SumTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateSum
-    DependsOn: Namespace
-    Properties:
-      TableName: !Ref SumTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: start_timestamp
-              Type: long
-              Required: false
-            - Name: metric_name
-              Type: string
-              Required: true
-            - Name: metric_description
-              Type: string
-              Required: false
-            - Name: metric_unit
-              Type: string
-              Required: false
-            - Name: value
-              Type: double
-              Required: true
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: metric_attributes
-              Type: string
-              Required: false
-            - Name: flags
-              Type: int
-              Required: false
-            - Name: exemplars_json
-              Type: string
-              Required: false
-            - Name: aggregation_temporality
-              Type: int
-              Required: true
-            - Name: is_monotonic
-              Type: boolean
-              Required: true
-
-  ############################################################
-  # Gauge Metrics Table
-  ############################################################
-  GaugeTable:
-    Type: AWS::S3Tables::Table
-    Condition: CreateGauge
-    DependsOn: Namespace
-    Properties:
-      TableName: !Ref GaugeTableName
-      TableBucketARN: !GetAtt TableBucket.TableBucketARN
-      Namespace: !Ref NamespaceName
-      OpenTableFormat: ICEBERG
-      Compaction:
-        Status: enabled
-        TargetFileSizeMB: !Ref CompactionTargetFileSizeMB
-      SnapshotManagement:
-        Status: enabled
-        MaxSnapshotAgeHours: !Ref SnapshotMaxAgeHours
-        MinSnapshotsToKeep: !Ref SnapshotMinToKeep
-      IcebergMetadata:
-        IcebergSchema:
-          SchemaFieldList:
-            - Name: timestamp
-              Type: timestamp
-              Required: true
-            - Name: start_timestamp
-              Type: long
-              Required: false
-            - Name: metric_name
-              Type: string
-              Required: true
-            - Name: metric_description
-              Type: string
-              Required: false
-            - Name: metric_unit
-              Type: string
-              Required: false
-            - Name: value
-              Type: double
-              Required: true
-            - Name: service_name
-              Type: string
-              Required: true
-            - Name: service_namespace
-              Type: string
-              Required: false
-            - Name: service_instance_id
-              Type: string
-              Required: false
-            - Name: resource_attributes
-              Type: string
-              Required: false
-            - Name: scope_name
-              Type: string
-              Required: false
-            - Name: scope_version
-              Type: string
-              Required: false
-            - Name: scope_attributes
-              Type: string
-              Required: false
-            - Name: metric_attributes
-              Type: string
-              Required: false
-            - Name: flags
-              Type: int
-              Required: false
-            - Name: exemplars_json
-              Type: string
-              Required: false
-
-  ############################################################
   # Lambda: Artifact Bucket and CodeFetcher
   ############################################################
   ArtifactBucket:
@@ -617,6 +310,7 @@ Resources:
 
   CodeFetcherRole:
     Type: AWS::IAM::Role
+    Condition: CreateLambda
     Properties:
       RoleName: !Sub ${AWS::StackName}-CodeFetcher-${AWS::Region}
       AssumeRolePolicyDocument:
@@ -641,6 +335,7 @@ Resources:
 
   CodeFetcherFunction:
     Type: AWS::Lambda::Function
+    Condition: CreateLambda
     Properties:
       FunctionName: !Sub ${AWS::StackName}-code-fetcher
       Runtime: python3.12
@@ -726,6 +421,7 @@ Resources:
 
   FetchLambdaCode:
     Type: Custom::FetchLambdaCode
+    Condition: CreateLambda
     Properties:
       ServiceToken: !GetAtt CodeFetcherFunction.Arn
       GitHubRepo: !Ref GitHubRepo
@@ -737,6 +433,7 @@ Resources:
   ############################################################
   LambdaExecutionRole:
     Type: AWS::IAM::Role
+    # No condition - always create so local builds can use it
     Properties:
       RoleName: !Sub ${AWS::StackName}-Lambda-${AWS::Region}
       AssumeRolePolicyDocument:
@@ -762,6 +459,7 @@ Resources:
 
   OtlpIngestFunction:
     Type: AWS::Lambda::Function
+    Condition: CreateLambda
     DependsOn: FetchLambdaCode
     Properties:
       FunctionName: !Sub ${AWS::StackName}-ingest
@@ -784,12 +482,14 @@ Resources:
 
   FunctionUrl:
     Type: AWS::Lambda::Url
+    Condition: CreateLambda
     Properties:
       AuthType: !Ref FunctionUrlAuth
       TargetFunctionArn: !GetAtt OtlpIngestFunction.Arn
 
   FunctionUrlPermission:
     Type: AWS::Lambda::Permission
+    Condition: CreateLambda
     Properties:
       FunctionName: !Ref OtlpIngestFunction
       Action: lambda:InvokeFunctionUrl
@@ -801,6 +501,7 @@ Resources:
   ############################################################
   LambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
+    Condition: CreateLambda
     Properties:
       AlarmName: !Sub ${AWS::StackName}-lambda-errors
       MetricName: Errors
@@ -856,13 +557,16 @@ Outputs:
     Value: !Ref FirehoseBatchSize
 
   LambdaFunctionArn:
+    Condition: CreateLambda
     Description: ARN of the OTLP ingest Lambda function
     Value: !GetAtt OtlpIngestFunction.Arn
 
   FunctionUrl:
+    Condition: CreateLambda
     Description: Function URL for OTLP ingestion
     Value: !GetAtt FunctionUrl.FunctionUrl
 
   LambdaVersion:
+    Condition: CreateLambda
     Description: Deployed Lambda artifact version
     Value: !GetAtt FetchLambdaCode.Version
