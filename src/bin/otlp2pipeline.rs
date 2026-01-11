@@ -1,8 +1,8 @@
 use anyhow::{bail, Context};
 use clap::Parser;
 use otlp2pipeline::cli::{
-    commands, config, AwsCommands, BucketCommands, CatalogCommands, Cli, CloudflareCommands,
-    Commands, ConnectCommands,
+    commands, config, AwsCatalogCommands, AwsCommands, BucketCommands, CatalogCommands, Cli,
+    CloudflareCommands, Commands, ConnectCommands,
 };
 
 /// Resolved provider from config
@@ -93,6 +93,11 @@ async fn main() -> anyhow::Result<()> {
             AwsCommands::Plan(args) => commands::aws::execute_plan(args)?,
             AwsCommands::Destroy(args) => commands::aws::execute_destroy(args)?,
             AwsCommands::Query(args) => commands::aws::execute_query(args)?,
+            AwsCommands::Catalog(args) => match args.command {
+                AwsCatalogCommands::List(list_args) => {
+                    commands::aws::execute_catalog_list(list_args)?
+                }
+            },
         },
 
         Commands::Services(args) => commands::execute_services(args).await?,
