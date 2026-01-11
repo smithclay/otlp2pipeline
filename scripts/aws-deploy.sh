@@ -1067,14 +1067,14 @@ cmd_deploy() {
     # S3 Tables setup (always run for idempotency)
     setup_s3_tables
 
-    # Deploy CloudFormation stack (tables, IAM role, logging)
+    # Deploy CloudFormation stack (bucket, namespace, IAM role, logging)
     deploy_cfn
 
-    # Grant LakeFormation permissions
-    grant_lakeformation_permissions
-
-    # Create tables via Athena DDL (with day(timestamp) partition)
+    # Create tables via Athena DDL (with partition specs)
     create_tables_via_athena
+
+    # Grant LakeFormation permissions (after tables exist)
+    grant_lakeformation_permissions
 
     # Create Firehose streams via API (AppendOnly mode)
     create_firehose_streams
