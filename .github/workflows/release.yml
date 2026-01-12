@@ -35,7 +35,7 @@ jobs:
           sudo mv binaryen-version_118/bin/wasm-opt /usr/local/bin/
       - name: Optimize WASM
         run: |
-          wasm-opt -Os --enable-bulk-memory -o build/index_bg.wasm.opt build/index_bg.wasm
+          wasm-opt -Os --all-features -o build/index_bg.wasm.opt build/index_bg.wasm
           mv build/index_bg.wasm.opt build/index_bg.wasm
       - name: Check WASM bundle size
         run: |
@@ -70,17 +70,11 @@ jobs:
         run: pip3 install cargo-lambda
       - name: Build Lambda (ARM64)
         run: cargo lambda build --release --arm64 --features lambda --bin lambda
-      - name: Rename artifact
+      - name: Package Lambda
         run: |
-          # Find the bootstrap.zip wherever cargo-lambda put it
-          BOOTSTRAP_ZIP=$(find target/lambda -name 'bootstrap.zip' -type f | head -1)
-          if [ -z "$BOOTSTRAP_ZIP" ]; then
-            echo "::error::bootstrap.zip not found in target/lambda"
-            find target/lambda -type f
-            exit 1
-          fi
-          echo "Found: $BOOTSTRAP_ZIP"
-          mv "$BOOTSTRAP_ZIP" otlp2pipeline-lambda-arm64.zip
+          # cargo-lambda produces a bootstrap binary, we need to zip it
+          cd target/lambda/lambda
+          zip ../../../otlp2pipeline-lambda-arm64.zip bootstrap
       - name: Generate checksum
         run: sha256sum otlp2pipeline-lambda-arm64.zip | cut -d' ' -f1 > otlp2pipeline-lambda-arm64.zip.sha256
       - name: Upload Lambda artifact
