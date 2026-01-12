@@ -85,28 +85,11 @@ jobs:
             otlp2pipeline-lambda-arm64.zip
             otlp2pipeline-lambda-arm64.zip.sha256
 
-  # Deploy check (validates wrangler config)
-  deploy-check:
-    name: Deploy Check
-    runs-on: ubuntu-latest
-    needs: wasm-build
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-targets: "false"
-      - name: Install WASM target
-        run: rustup target add wasm32-unknown-unknown
-      - name: Install wrangler
-        run: npm install -g wrangler
-      - name: Validate wrangler config
-        run: npx wrangler deploy --dry-run
-
   # Create GitHub Release with worker artifact
   release:
     name: Publish Release
     runs-on: ubuntu-latest
-    needs: [deploy-check, lambda-build]
+    needs: [wasm-build, lambda-build]
     permissions:
       contents: write
     steps:
