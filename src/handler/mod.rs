@@ -44,10 +44,35 @@ pub struct HandleResponse {
     pub records: HashMap<String, usize>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub errors: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<SkippedMetricsWarning>,
     #[serde(skip)]
     pub service_names: Vec<String>,
     #[serde(skip)]
     pub metric_names: Vec<(String, String)>,
+}
+
+/// Warning info for skipped metrics, surfaced to users in the response
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SkippedMetricsWarning {
+    pub message: &'static str,
+    pub skipped_total: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub histograms: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub exponential_histograms: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub summaries: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub nan_values: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub infinity_values: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub missing_values: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl HandleResponse {
@@ -56,6 +81,7 @@ impl HandleResponse {
             status: "ok",
             records: HashMap::new(),
             errors: HashMap::new(),
+            warnings: None,
             service_names: Vec::new(),
             metric_names: Vec::new(),
         }
@@ -74,6 +100,7 @@ impl HandleResponse {
             status,
             records: result.succeeded,
             errors: result.failed,
+            warnings: None,
             service_names: Vec::new(),
             metric_names: Vec::new(),
         }
@@ -88,6 +115,17 @@ impl HandleResponse {
         self.metric_names = metric_names;
         self
     }
+
+    pub fn with_warnings(mut self, warnings: Option<SkippedMetricsWarning>) -> Self {
+        self.warnings = warnings;
+        self
+    }
+}
+
+/// Result of transforming a signal payload
+pub struct TransformResult {
+    pub grouped: HashMap<String, Vec<JsonValue>>,
+    pub skipped: Option<SkippedMetricsWarning>,
 }
 
 /// Trait for signal-specific decode and transform logic
@@ -96,10 +134,7 @@ pub trait SignalHandler {
     const SIGNAL: Signal;
 
     /// Decode and transform a payload into table-grouped JSON records.
-    fn transform(
-        body: Bytes,
-        format: InputFormat,
-    ) -> Result<HashMap<String, Vec<JsonValue>>, otlp2records::Error>;
+    fn transform(body: Bytes, format: InputFormat) -> Result<TransformResult, otlp2records::Error>;
 }
 
 /// Extract unique service names from grouped records
@@ -213,7 +248,7 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
 
     let body = decompress_if_gzipped(body, is_gzipped)?;
 
-    let grouped = H::transform(body, format).map_err(|e| match e {
+    let transform_result = H::transform(body, format).map_err(|e| match e {
         otlp2records::Error::Decode(err) => {
             error!(error = %err, "failed to decode payload");
             HandleError::Decode(err.to_string())
@@ -224,9 +259,12 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
         }
     })?;
 
+    let grouped = transform_result.grouped;
+    let skipped = transform_result.skipped;
+
     if grouped.is_empty() {
         debug!("no records to send");
-        return Ok(HandleResponse::empty());
+        return Ok(HandleResponse::empty().with_warnings(skipped));
     }
 
     let table_counts: Vec<_> = grouped.iter().map(|(k, v)| (k.as_str(), v.len())).collect();
@@ -254,7 +292,7 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
     Span::current().record("records", total_records);
     Span::current().record("tables", &table_names);
 
-    Ok(HandleResponse::from_result(result))
+    Ok(HandleResponse::from_result(result).with_warnings(skipped))
 }
 
 /// Handle signal with optional aggregator dual-write and livetail.
@@ -304,7 +342,7 @@ where
     let body = decompress_if_gzipped(body, is_gzipped)?;
 
     // Transform
-    let grouped = H::transform(body, format).map_err(|e| match e {
+    let transform_result = H::transform(body, format).map_err(|e| match e {
         otlp2records::Error::Decode(err) => {
             error!(error = %err, "failed to decode payload");
             HandleError::Decode(err.to_string())
@@ -315,9 +353,12 @@ where
         }
     })?;
 
+    let grouped = transform_result.grouped;
+    let skipped = transform_result.skipped;
+
     if grouped.is_empty() {
         debug!("no records to send");
-        return Ok(HandleResponse::empty());
+        return Ok(HandleResponse::empty().with_warnings(skipped));
     }
 
     let table_counts: Vec<_> = grouped.iter().map(|(k, v)| (k.as_str(), v.len())).collect();
@@ -444,5 +485,6 @@ where
 
     Ok(HandleResponse::from_result(pipeline_result)
         .with_service_names(service_names)
-        .with_metric_names(metric_names))
+        .with_metric_names(metric_names)
+        .with_warnings(skipped))
 }

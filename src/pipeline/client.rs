@@ -60,22 +60,23 @@ pub struct PipelineClient {
 }
 
 impl PipelineClient {
-    /// Create a new client with the given endpoints and auth token
-    pub fn new(endpoints: HashMap<Signal, String>, token: String) -> Self {
+    /// Create a new client with the given endpoints and auth token.
+    /// Returns an error if the HTTP client fails to build (e.g., TLS configuration issues).
+    pub fn new(endpoints: HashMap<Signal, String>, token: String) -> Result<Self, String> {
         #[cfg(not(target_arch = "wasm32"))]
         let client = Client::builder()
             .timeout(SEND_TIMEOUT)
             .build()
-            .expect("failed to build HTTP client");
+            .map_err(|e| format!("failed to build HTTP client: {}", e))?;
         #[cfg(target_arch = "wasm32")]
         let client = Client::builder()
             .build()
-            .expect("failed to build HTTP client");
-        Self {
+            .map_err(|e| format!("failed to build HTTP client: {}", e))?;
+        Ok(Self {
             client,
             endpoints,
             token,
-        }
+        })
     }
 
     /// Build from Cloudflare Worker environment
@@ -97,7 +98,7 @@ impl PipelineClient {
             endpoint_count = endpoints.len(),
             "PipelineClient initialized"
         );
-        Ok(Self::new(endpoints, token))
+        Self::new(endpoints, token).map_err(|e| worker::Error::RustError(e))
     }
 
     /// Send records to a pipeline endpoint, automatically chunking if needed to stay under size limit
@@ -431,7 +432,8 @@ mod tests {
 
     #[tokio::test]
     async fn missing_endpoint_reports_failure() {
-        let client = PipelineClient::new(HashMap::new(), "token".to_string());
+        let client = PipelineClient::new(HashMap::new(), "token".to_string())
+            .expect("failed to create client");
         let mut grouped = HashMap::new();
         grouped.insert("logs".to_string(), vec![JsonValue::from("test")]);
 

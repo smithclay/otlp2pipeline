@@ -4,6 +4,8 @@
 use futures::stream::{self, StreamExt};
 use serde_json::Value;
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")]
+use tracing::debug;
 use tracing::warn;
 
 /// Result of sending to aggregator DOs
@@ -72,6 +74,7 @@ impl AggregatorSender for WasmAggregatorSender {
     ) -> AggregatorSendResult {
         if !self.enabled {
             // Aggregator disabled - return success without sending
+            debug!("aggregator disabled via AGGREGATOR_ENABLED=false, skipping write");
             let succeeded: HashMap<String, usize> = grouped
                 .into_iter()
                 .filter(|(table, _)| table == "logs" || table == "traces")
@@ -204,18 +207,31 @@ impl AggregatorSender for NativeAggregatorSender {
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub fn get_service_name(record: &Value) -> String {
     if let Some(name) = record.get("service_name").and_then(|v| v.as_str()) {
-        // Validate: alphanumeric, hyphens, underscores, dots only
-        // Max length 128 to prevent abuse
-        if !name.is_empty()
-            && name.len() <= 128
-            && name
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
-        {
-            return name.to_string();
+        if name.is_empty() {
+            warn!("Record has empty service_name, routing to 'unknown'");
+            return "unknown".to_string();
         }
+        if name.len() > 128 {
+            warn!(
+                service_name = %name,
+                len = name.len(),
+                "service_name exceeds 128 chars, routing to 'unknown'"
+            );
+            return "unknown".to_string();
+        }
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
+            warn!(
+                service_name = %name,
+                "service_name contains invalid chars, routing to 'unknown'"
+            );
+            return "unknown".to_string();
+        }
+        return name.to_string();
     }
-    warn!("Record missing or invalid service_name, routing to 'unknown'");
+    warn!("Record missing service_name, routing to 'unknown'");
     "unknown".to_string()
 }
 

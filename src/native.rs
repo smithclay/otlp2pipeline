@@ -37,12 +37,18 @@ pub fn build_router(pipeline_url: String) -> Router {
     endpoints.insert(Signal::Gauge, pipeline_url.clone());
     endpoints.insert(Signal::Sum, pipeline_url);
 
-    let client = Arc::new(PipelineClient::new(endpoints, "test-token".to_string()));
+    let client = Arc::new(
+        PipelineClient::new(endpoints, "test-token".to_string())
+            .expect("failed to create pipeline client"),
+    );
     build_router_with_client(client)
 }
 
 pub fn build_router_multi(endpoints: std::collections::HashMap<Signal, String>) -> Router {
-    let client = Arc::new(PipelineClient::new(endpoints, "test-token".to_string()));
+    let client = Arc::new(
+        PipelineClient::new(endpoints, "test-token".to_string())
+            .expect("failed to create pipeline client"),
+    );
     build_router_with_client(client)
 }
 

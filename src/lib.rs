@@ -32,7 +32,7 @@ pub mod lambda;
 // Re-export for tests
 pub use handler::{
     handle_signal, HandleError, HandleResponse, LogsHandler, MetricsHandler, SignalHandler,
-    TracesHandler,
+    SkippedMetricsWarning, TracesHandler,
 };
 pub use pipeline::{PipelineSender, SendResult};
 

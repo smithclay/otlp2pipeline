@@ -31,7 +31,13 @@ static AUTH_TOKEN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::ne
 
 /// Initialize auth token from environment (call once at cold start)
 fn init_auth_token() {
-    AUTH_TOKEN.get_or_init(|| std::env::var("AUTH_TOKEN").ok().filter(|t| !t.is_empty()));
+    let token =
+        AUTH_TOKEN.get_or_init(|| std::env::var("AUTH_TOKEN").ok().filter(|t| !t.is_empty()));
+    if token.is_some() {
+        info!("AUTH_TOKEN configured - authentication enabled");
+    } else {
+        warn!("AUTH_TOKEN not set - authentication disabled, endpoints are unprotected");
+    }
 }
 
 /// Validate bearer token if AUTH_TOKEN env var is set.
