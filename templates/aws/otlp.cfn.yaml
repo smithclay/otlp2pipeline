@@ -1,0 +1,576 @@
+AWSTemplateFormatVersion: "2010-09-09"
+#
+# otlp2pipeline - AWS S3 Tables for OTLP telemetry
+#
+# Creates S3 Tables (Iceberg format) for OTLP log and trace data.
+# Firehose streams are created separately via API to enable AppendOnly mode.
+#
+# Before running the template, make sure "Integration with AWS analytics services" is enabled on the S3 Tables UI.
+#
+Description: >
+  Creates an S3 Table Bucket, Namespace, and Iceberg Tables for OTLP logs and traces,
+  along with IAM role and logging resources for Firehose delivery streams.
+
+Parameters:
+  EnableLogs:
+    Description: Create logs table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableTraces:
+    Description: Create traces (spans) table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableSum:
+    Description: Create sum metrics table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  EnableGauge:
+    Description: Create gauge metrics table
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  TableBucketName:
+    Description: Name of the S3 Table Bucket
+    Type: String
+    Default: otlp2pipeline
+
+  NamespaceName:
+    Description: Name of the S3 Table Namespace
+    Type: String
+    Default: default
+
+  LogsTableName:
+    Description: Name of the logs table
+    Type: String
+    Default: logs
+
+  TracesTableName:
+    Description: Name of the traces table
+    Type: String
+    Default: traces
+
+  SumTableName:
+    Description: Name of the sum metrics table
+    Type: String
+    Default: sum
+
+  GaugeTableName:
+    Description: Name of the gauge metrics table
+    Type: String
+    Default: gauge
+
+  CompactionTargetFileSizeMB:
+    Description: Target file size for Iceberg compaction (MB)
+    Type: Number
+    MinValue: 32
+    MaxValue: 512
+    Default: 64
+
+  SnapshotMaxAgeHours:
+    Description: Maximum age of snapshots before cleanup (hours)
+    Type: Number
+    MinValue: 1
+    MaxValue: 168
+    Default: 24
+
+  SnapshotMinToKeep:
+    Description: Minimum number of snapshots to retain
+    Type: Number
+    MinValue: 1
+    MaxValue: 100
+    Default: 8
+
+  FirehoseErrorPrefix:
+    Description: Prefix in error bucket (must include trailing slash)
+    Type: String
+    Default: firehose_errors/
+
+  FirehoseBatchTime:
+    Description: Firehose buffering interval (seconds)
+    Type: Number
+    MinValue: 60
+    MaxValue: 900
+    Default: 300
+
+  FirehoseBatchSize:
+    Description: Firehose buffering size (MB)
+    Type: Number
+    MinValue: 1
+    MaxValue: 128
+    Default: 32
+
+  LambdaVersion:
+    Description: GitHub release tag for Lambda artifact (e.g., v0.2.0 or latest)
+    Type: String
+    Default: latest
+
+  GitHubRepo:
+    Description: GitHub repository (owner/repo format)
+    Type: String
+    Default: your-org/otlp2pipeline
+
+  LambdaMemoryMB:
+    Description: Lambda memory size in MB
+    Type: Number
+    MinValue: 128
+    MaxValue: 10240
+    Default: 512
+
+  LambdaTimeoutSeconds:
+    Description: Lambda timeout in seconds
+    Type: Number
+    MinValue: 1
+    MaxValue: 900
+    Default: 30
+
+  FunctionUrlAuth:
+    Description: >
+      Function URL authentication type.
+      WARNING: NONE creates a publicly accessible endpoint that anyone on the internet can invoke.
+      This may lead to data injection, cost overruns, or abuse. Consider using AWS_IAM for production,
+      or set the AUTH_TOKEN environment variable on the Lambda to require bearer token authentication.
+    Type: String
+    AllowedValues: [NONE, AWS_IAM]
+    Default: NONE
+
+  SkipLambda:
+    Description: Skip Lambda creation (for local builds deployed separately)
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+
+Conditions:
+  CreateLogs: !Equals [!Ref EnableLogs, "true"]
+  CreateTraces: !Equals [!Ref EnableTraces, "true"]
+  CreateSum: !Equals [!Ref EnableSum, "true"]
+  CreateGauge: !Equals [!Ref EnableGauge, "true"]
+  CreateLambda: !Equals [!Ref SkipLambda, "false"]
+
+Resources:
+  ############################################################
+  # S3 Tables resources (shared)
+  ############################################################
+  FirehoseErrorBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-errors-${AWS::AccountId}-${AWS::Region}
+
+  TableBucket:
+    Type: AWS::S3Tables::TableBucket
+    Properties:
+      TableBucketName: !Ref TableBucketName
+      EncryptionConfiguration:
+        SSEAlgorithm: AES256
+      UnreferencedFileRemoval:
+        Status: Enabled
+        UnreferencedDays: 1
+        NoncurrentDays: 1
+
+  Namespace:
+    Type: AWS::S3Tables::Namespace
+    Properties:
+      Namespace: !Ref NamespaceName
+      TableBucketARN: !GetAtt TableBucket.TableBucketARN
+
+  ############################################################
+  # Logging (shared log group, per-signal streams)
+  ############################################################
+  FirehoseLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/kinesisfirehose/${AWS::StackName}
+      RetentionInDays: 1
+
+  LogsDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateLogs
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Logs_Destination_Errors
+
+  TracesDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateTraces
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Traces_Destination_Errors
+
+  SumDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateSum
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Sum_Destination_Errors
+
+  GaugeDestLogStream:
+    Type: AWS::Logs::LogStream
+    Condition: CreateGauge
+    Properties:
+      LogGroupName: !Ref FirehoseLogGroup
+      LogStreamName: Gauge_Destination_Errors
+
+  ############################################################
+  # Firehose IAM Role (shared)
+  ############################################################
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-DeliveryStreamRole-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: GlueAndLakeFormation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetDatabase
+                  - glue:GetCatalog
+                  - glue:UpdateTable
+                Resource:
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/*
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*/*
+
+              - Effect: Allow
+                Action:
+                  - lakeformation:GetDataAccess
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - s3tables:GetTableData
+                  - s3tables:PutTableData
+                  - s3tables:GetTableMetadataLocation
+                  - s3tables:UpdateTableMetadataLocation
+                  - s3tables:GetTable
+                  - s3tables:GetNamespace
+                  - s3tables:GetTableBucket
+                Resource: "*"
+
+        - PolicyName: LoggingAndErrors
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:Describe*
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*
+
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                Resource:
+                  - !Sub arn:aws:s3:::${FirehoseErrorBucket}
+
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}*
+
+  ############################################################
+  # Lambda: Artifact Bucket and CodeFetcher
+  ############################################################
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-artifacts-${AWS::AccountId}
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 7
+
+  CodeFetcherRole:
+    Type: AWS::IAM::Role
+    Condition: CreateLambda
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-CodeFetcher-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Upload
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub arn:aws:s3:::${ArtifactBucket}/*
+
+  CodeFetcherFunction:
+    Type: AWS::Lambda::Function
+    Condition: CreateLambda
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-code-fetcher
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CodeFetcherRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import hashlib
+          import json
+          import os
+          import tempfile
+          import traceback
+          import urllib.request
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+
+                  props = event['ResourceProperties']
+                  repo = props['GitHubRepo']
+                  version = props['Version']
+                  bucket = props['ArtifactBucket']
+
+                  # Resolve 'latest' to actual tag
+                  if version == 'latest':
+                      url = f'https://api.github.com/repos/{repo}/releases/latest'
+                      with urllib.request.urlopen(url) as resp:
+                          version = json.loads(resp.read())['tag_name']
+
+                  # Download artifact and checksum
+                  base_url = f'https://github.com/{repo}/releases/download/{version}'
+                  artifact_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip'
+                  checksum_url = f'{base_url}/otlp2pipeline-lambda-arm64.zip.sha256'
+
+                  s3 = boto3.client('s3')
+                  with tempfile.TemporaryDirectory() as tmpdir:
+                      artifact_path = os.path.join(tmpdir, 'bootstrap.zip')
+                      checksum_path = os.path.join(tmpdir, 'checksum.txt')
+
+                      # Download files
+                      urllib.request.urlretrieve(artifact_url, artifact_path)
+                      urllib.request.urlretrieve(checksum_url, checksum_path)
+
+                      # Verify checksum
+                      with open(checksum_path, 'r') as f:
+                          expected = f.read().strip()
+
+                      sha256 = hashlib.sha256()
+                      with open(artifact_path, 'rb') as f:
+                          for chunk in iter(lambda: f.read(8192), b''):
+                              sha256.update(chunk)
+                      actual = sha256.hexdigest()
+
+                      if actual != expected:
+                          raise ValueError(f'Checksum mismatch: expected {expected}, got {actual}')
+
+                      # Upload to S3 and verify
+                      s3_key = f'lambda/{version}/bootstrap.zip'
+                      local_size = os.path.getsize(artifact_path)
+                      s3.upload_file(artifact_path, bucket, s3_key)
+
+                      # Verify upload succeeded
+                      head = s3.head_object(Bucket=bucket, Key=s3_key)
+                      if head['ContentLength'] != local_size:
+                          raise ValueError(f'S3 upload verification failed: expected {local_size} bytes, got {head["ContentLength"]}')
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                      'S3Bucket': bucket,
+                      'S3Key': s3_key,
+                      'Version': version
+                  })
+
+              except Exception as e:
+                  print(f'Error: {e}')
+                  traceback.print_exc()
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  FetchLambdaCode:
+    Type: Custom::FetchLambdaCode
+    Condition: CreateLambda
+    Properties:
+      ServiceToken: !GetAtt CodeFetcherFunction.Arn
+      GitHubRepo: !Ref GitHubRepo
+      Version: !Ref LambdaVersion
+      ArtifactBucket: !Ref ArtifactBucket
+
+  ############################################################
+  # Lambda: OTLP Ingest Function
+  ############################################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    # No condition - always create so local builds can use it
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-Lambda-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: FirehoseWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource:
+                  - !Sub arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${AWS::StackName}-*
+
+  OtlpIngestFunction:
+    Type: AWS::Lambda::Function
+    Condition: CreateLambda
+    DependsOn: FetchLambdaCode
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-ingest
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      Handler: bootstrap
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemoryMB
+      Timeout: !Ref LambdaTimeoutSeconds
+      Code:
+        S3Bucket: !GetAtt FetchLambdaCode.S3Bucket
+        S3Key: !GetAtt FetchLambdaCode.S3Key
+      Environment:
+        Variables:
+          RUST_LOG: info
+          PIPELINE_LOGS: !Sub ${AWS::StackName}-logs
+          PIPELINE_TRACES: !Sub ${AWS::StackName}-traces
+          PIPELINE_SUM: !Sub ${AWS::StackName}-sum
+          PIPELINE_GAUGE: !Sub ${AWS::StackName}-gauge
+
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Condition: CreateLambda
+    Properties:
+      AuthType: !Ref FunctionUrlAuth
+      TargetFunctionArn: !GetAtt OtlpIngestFunction.Arn
+
+  FunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Condition: CreateLambda
+    Properties:
+      FunctionName: !Ref OtlpIngestFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: !Ref FunctionUrlAuth
+
+  ############################################################
+  # CloudWatch Alarm for Lambda Errors
+  ############################################################
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateLambda
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-lambda-errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref OtlpIngestFunction
+
+Outputs:
+  TableBucketARN:
+    Description: ARN of the S3 Table Bucket
+    Value: !GetAtt TableBucket.TableBucketARN
+
+  TableBucketName:
+    Description: Name of the S3 Table Bucket
+    Value: !Ref TableBucketName
+
+  NamespaceName:
+    Description: Name of the S3 Table Namespace
+    Value: !Ref NamespaceName
+
+  FirehoseRoleARN:
+    Description: ARN of the Firehose IAM Role (used by deploy script to create Firehose streams)
+    Value: !GetAtt FirehoseRole.Arn
+
+  FirehoseRoleName:
+    Description: Name of the Firehose IAM Role
+    Value: !Ref FirehoseRole
+
+  FirehoseLogGroupName:
+    Description: Name of the CloudWatch Log Group for Firehose errors
+    Value: !Ref FirehoseLogGroup
+
+  FirehoseErrorBucketName:
+    Description: Name of the S3 bucket for Firehose errors
+    Value: !Ref FirehoseErrorBucket
+
+  FirehoseErrorPrefix:
+    Description: Prefix for Firehose error objects
+    Value: !Ref FirehoseErrorPrefix
+
+  FirehoseBatchTime:
+    Description: Firehose buffering interval (seconds)
+    Value: !Ref FirehoseBatchTime
+
+  FirehoseBatchSize:
+    Description: Firehose buffering size (MB)
+    Value: !Ref FirehoseBatchSize
+
+  LambdaFunctionArn:
+    Condition: CreateLambda
+    Description: ARN of the OTLP ingest Lambda function
+    Value: !GetAtt OtlpIngestFunction.Arn
+
+  FunctionUrl:
+    Condition: CreateLambda
+    Description: Function URL for OTLP ingestion
+    Value: !GetAtt FunctionUrl.FunctionUrl
+
+  LambdaVersion:
+    Condition: CreateLambda
+    Description: Deployed Lambda artifact version
+    Value: !GetAtt FetchLambdaCode.Version

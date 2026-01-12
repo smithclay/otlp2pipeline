@@ -1,0 +1,81 @@
+[package]
+name = "otlp2pipeline"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "otlp2pipeline"
+path = "src/bin/otlp2pipeline.rs"
+
+[[bin]]
+name = "lambda"
+path = "src/bin/lambda.rs"
+required-features = ["lambda"]
+
+[features]
+default = []
+lambda = ["dep:lambda_http", "dep:aws-sdk-firehose", "dep:aws-config", "dep:rand"]
+
+[dependencies]
+worker = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+async-trait = "0.1"
+base64 = { version = "0.21", default-features = false, features = ["alloc"] }
+urlencoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+otlp2records = { git = "https://github.com/smithclay/otlp2records", rev = "755f736647705fcc52bde96d5e058ad4da52f99e" }
+
+# Lambda dependencies (optional, gated by lambda feature)
+# Using rustls for cross-compilation support (avoids OpenSSL linking issues)
+lambda_http = { version = "1.0.2", optional = true }
+aws-sdk-firehose = { version = "1.67", optional = true, default-features = false, features = ["rustls"] }
+aws-config = { version = "1.6", optional = true, default-features = false, features = ["rustls", "rt-tokio"] }
+rand = { version = "0.8", optional = true }
+
+# Tracing
+tracing = "0.1"
+
+# WASM tracing dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tracing-subscriber = { version = "0.3", default-features = false, features = ["json", "fmt", "registry", "time", "ansi"] }
+tracing-web = "0.1"
+time = { version = "0.3", features = ["formatting", "wasm-bindgen"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+js-sys = "0.3"
+
+# Native-only dependencies (CLI + tests)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "5"
+toml = "0.8"
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+rand = "0.8"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+tempfile = "3"
+opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic-messages", "logs", "trace", "metrics", "with-serde"] }
+prost = "0.14"
+
+[build-dependencies]
+otlp2records = { git = "https://github.com/smithclay/otlp2records", rev = "755f736647705fcc52bde96d5e058ad4da52f99e" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

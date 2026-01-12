@@ -1,0 +1,13 @@
+/target
+/build
+/node_modules
+.wrangler
+.dev.vars
+docs/plans
+wrangler.toml
+.uv-cache
+
+frontend/.ladle
+build/
+.otlp2pipeline.toml
+template.yaml

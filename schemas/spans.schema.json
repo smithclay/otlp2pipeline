@@ -1,0 +1,29 @@
+{
+  "fields": [
+    { "name": "timestamp", "type": "timestamp", "required": true },
+    { "name": "end_timestamp", "type": "int64", "required": true },
+    { "name": "duration", "type": "int64", "required": true },
+    { "name": "trace_id", "type": "string", "required": false },
+    { "name": "span_id", "type": "string", "required": false },
+    { "name": "parent_span_id", "type": "string", "required": false },
+    { "name": "trace_state", "type": "string", "required": false },
+    { "name": "service_name", "type": "string", "required": true },
+    { "name": "service_namespace", "type": "string", "required": false },
+    { "name": "service_instance_id", "type": "string", "required": false },
+    { "name": "span_name", "type": "string", "required": true },
+    { "name": "span_kind", "type": "int32", "required": true },
+    { "name": "status_code", "type": "int32", "required": true },
+    { "name": "status_message", "type": "string", "required": false },
+    { "name": "resource_attributes", "type": "json", "required": false },
+    { "name": "scope_name", "type": "string", "required": false },
+    { "name": "scope_version", "type": "string", "required": false },
+    { "name": "scope_attributes", "type": "json", "required": false },
+    { "name": "span_attributes", "type": "json", "required": false },
+    { "name": "events_json", "type": "json", "required": false },
+    { "name": "links_json", "type": "json", "required": false },
+    { "name": "dropped_attributes_count", "type": "int32", "required": false },
+    { "name": "dropped_events_count", "type": "int32", "required": false },
+    { "name": "dropped_links_count", "type": "int32", "required": false },
+    { "name": "flags", "type": "int32", "required": false }
+  ]
+}
