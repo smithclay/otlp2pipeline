@@ -24,21 +24,13 @@ worker = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bytes = "1"
-once_cell = "1"
-ordered-float = "4"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-chrono-tz = "0.10"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 async-trait = "0.1"
-opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic-messages", "logs", "trace", "metrics", "with-serde"] }
-prost = "0.14"
 base64 = { version = "0.21", default-features = false, features = ["alloc"] }
-const-hex = "1.17"
 urlencoding = "2"
-# Using compiler+value only (no stdlib) because stdlib pulls in zstd which requires WASM C toolchain
-# We'll implement a minimal set of custom WASM-compatible functions
-vrl = { version = "0.29", default-features = false, features = ["compiler", "value"] }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+otlp2records = { path = "../otlp2records" }
 
 # Lambda dependencies (optional, gated by lambda feature)
 # Using rustls for cross-compilation support (avoids OpenSSL linking issues)
@@ -76,9 +68,11 @@ rand = "0.8"
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
+opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic-messages", "logs", "trace", "metrics", "with-serde"] }
+prost = "0.14"
 
 [build-dependencies]
-vrl = { version = "0.29", default-features = false, features = ["compiler"] }
+otlp2records = { path = "../otlp2records" }
 
 [profile.release]
 opt-level = "z"

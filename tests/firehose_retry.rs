@@ -4,19 +4,13 @@
 #![cfg(feature = "lambda")]
 
 use otlp2pipeline::lambda::firehose::StreamConfig;
-use vrl::value::Value;
+use serde_json::Value;
 
 /// Test that records are chunked at 500-record Firehose limit.
 #[test]
 fn test_chunk_at_500_records() {
     // Create 501 records - should produce 2 chunks
-    let records: Vec<Value> = (0..501)
-        .map(|i| {
-            let mut obj = vrl::value::ObjectMap::new();
-            obj.insert("id".into(), Value::Integer(i));
-            Value::Object(obj)
-        })
-        .collect();
+    let records: Vec<Value> = (0..501).map(|i| serde_json::json!({ "id": i })).collect();
 
     let chunks: Vec<_> = records.chunks(500).collect();
     assert_eq!(chunks.len(), 2);

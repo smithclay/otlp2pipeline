@@ -2,32 +2,22 @@
 use crate::livetail::LiveTailSender;
 use bytes::Bytes;
 use flate2::read::GzDecoder;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use std::collections::HashSet;
 use std::io::Read;
 use tracing::{debug, error, info, warn, Span};
-use vrl::value::Value;
 
-use crate::decode::DecodeFormat;
 use crate::pipeline::PipelineSender;
 use crate::signal::Signal;
-use crate::transform::{VrlError, VrlTransformer};
+use crate::InputFormat;
 
 mod signal_handlers;
 
-pub use signal_handlers::{HecLogsHandler, LogsHandler, MetricsHandler, TracesHandler};
+pub use signal_handlers::{LogsHandler, MetricsHandler, TracesHandler};
 
 const MAX_DECOMPRESSED_SIZE: usize = 10 * 1024 * 1024;
-
-#[derive(Debug)]
-pub struct DecodeError(pub String);
-
-impl std::fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 #[derive(Debug)]
 pub enum HandleError {
@@ -105,35 +95,22 @@ pub trait SignalHandler {
     /// Which signal type this handler processes
     const SIGNAL: Signal;
 
-    /// Decode raw bytes into VRL values
-    fn decode(body: Bytes, format: DecodeFormat) -> Result<Vec<Value>, DecodeError>;
-
-    /// Get the VRL program for transformation
-    fn vrl_program() -> &'static vrl::compiler::Program;
-
-    /// Transform a batch of values. Default uses vrl_program().
-    /// Override for handlers needing multiple programs (e.g., metrics partitioning).
-    fn transform_batch(
-        transformer: &mut VrlTransformer,
-        values: Vec<Value>,
-    ) -> Result<HashMap<String, Vec<Value>>, VrlError> {
-        transformer.transform_batch(Self::vrl_program(), values)
-    }
+    /// Decode and transform a payload into table-grouped JSON records.
+    fn transform(
+        body: Bytes,
+        format: InputFormat,
+    ) -> Result<HashMap<String, Vec<JsonValue>>, otlp2records::Error>;
 }
 
 /// Extract unique service names from grouped records
 #[cfg(target_arch = "wasm32")]
-fn extract_service_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<String> {
+fn extract_service_names(grouped: &HashMap<String, Vec<JsonValue>>) -> Vec<String> {
     let mut service_names = HashSet::new();
 
     for values in grouped.values() {
         for value in values {
-            if let Some(obj) = value.as_object() {
-                if let Some(service_name) = obj.get("service_name") {
-                    if let Some(name) = service_name.as_str() {
-                        service_names.insert(name.to_string());
-                    }
-                }
+            if let Some(service_name) = value.get("service_name").and_then(|v| v.as_str()) {
+                service_names.insert(service_name.to_string());
             }
         }
     }
@@ -144,7 +121,7 @@ fn extract_service_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<String> {
 /// Extract unique (metric_name, metric_type) pairs from grouped records.
 /// Uses _table field as the metric type since _metric_type is cleared by VRL.
 #[cfg(target_arch = "wasm32")]
-fn extract_metric_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<(String, String)> {
+fn extract_metric_names(grouped: &HashMap<String, Vec<JsonValue>>) -> Vec<(String, String)> {
     let mut metric_names = HashSet::new();
 
     // Only process metric tables (gauge, sum, histogram, exp_histogram, summary)
@@ -156,11 +133,9 @@ fn extract_metric_names(grouped: &HashMap<String, Vec<Value>>) -> Vec<(String, S
         }
 
         for value in values {
-            if let Some(obj) = value.as_object() {
-                if let Some(name) = obj.get("metric_name").and_then(|v| v.as_str()) {
-                    if !name.is_empty() {
-                        metric_names.insert((name.to_string(), table.clone()));
-                    }
+            if let Some(name) = value.get("metric_name").and_then(|v| v.as_str()) {
+                if !name.is_empty() {
+                    metric_names.insert((name.to_string(), table.clone()));
                 }
             }
         }
@@ -226,7 +201,7 @@ pub(crate) fn decompress_if_gzipped(body: Bytes, is_gzipped: bool) -> Result<Byt
 pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
     body: Bytes,
     is_gzipped: bool,
-    format: DecodeFormat,
+    format: InputFormat,
     sender: &S,
 ) -> Result<HandleResponse, HandleError> {
     debug!(
@@ -238,21 +213,15 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
 
     let body = decompress_if_gzipped(body, is_gzipped)?;
 
-    let values = H::decode(body, format).map_err(|e| {
-        error!(error = %e, "failed to decode payload");
-        HandleError::Decode(e.0)
-    })?;
-
-    if values.is_empty() {
-        debug!("no records to transform");
-        return Ok(HandleResponse::empty());
-    }
-
-    debug!(record_count = values.len(), "transforming records");
-    let mut transformer = VrlTransformer::new();
-    let grouped = H::transform_batch(&mut transformer, values).map_err(|e| {
-        error!(error = %e, "VRL transform failed");
-        HandleError::Transform(e.to_string())
+    let grouped = H::transform(body, format).map_err(|e| match e {
+        otlp2records::Error::Decode(err) => {
+            error!(error = %err, "failed to decode payload");
+            HandleError::Decode(err.to_string())
+        }
+        err => {
+            error!(error = %err, "transform failed");
+            HandleError::Transform(err.to_string())
+        }
     })?;
 
     if grouped.is_empty() {
@@ -311,7 +280,7 @@ pub async fn handle_signal<H: SignalHandler, S: PipelineSender>(
 pub async fn handle_signal_with_cache<H, S, C, L>(
     body: Bytes,
     is_gzipped: bool,
-    format: DecodeFormat,
+    format: InputFormat,
     sender: &S,
     cache: Option<&C>,
     livetail: Option<&L>,
@@ -334,23 +303,16 @@ where
     // Decompress
     let body = decompress_if_gzipped(body, is_gzipped)?;
 
-    // Decode
-    let values = H::decode(body, format).map_err(|e| {
-        error!(error = %e, "failed to decode payload");
-        HandleError::Decode(e.0)
-    })?;
-
-    if values.is_empty() {
-        debug!("no records to transform");
-        return Ok(HandleResponse::empty());
-    }
-
     // Transform
-    debug!(record_count = values.len(), "transforming records");
-    let mut transformer = VrlTransformer::new();
-    let grouped = H::transform_batch(&mut transformer, values).map_err(|e| {
-        error!(error = %e, "VRL transform failed");
-        HandleError::Transform(e.to_string())
+    let grouped = H::transform(body, format).map_err(|e| match e {
+        otlp2records::Error::Decode(err) => {
+            error!(error = %err, "failed to decode payload");
+            HandleError::Decode(err.to_string())
+        }
+        err => {
+            error!(error = %err, "transform failed");
+            HandleError::Transform(err.to_string())
+        }
     })?;
 
     if grouped.is_empty() {

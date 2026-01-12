@@ -1,6 +1,6 @@
 // src/pipeline/sender.rs
+use serde_json::Value;
 use std::collections::HashMap;
-use vrl::value::Value;
 
 /// Result of sending to multiple pipelines
 #[derive(Debug, Default)]

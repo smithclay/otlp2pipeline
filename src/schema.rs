@@ -1,12 +1,12 @@
 //! Schema definitions for pipeline output validation.
 //!
-//! These schemas mirror the @schema comments in vrl/*.vrl files.
-//! When updating VRL schemas, update these definitions too.
+//! These schemas mirror the @schema definitions from otlp2records.
+//! Keep them in sync; tests validate parity with otlp2records schema defs.
 
 use serde_json::Value as JsonValue;
 
 /// Field type for schema validation
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldType {
     Timestamp, // number (milliseconds)
     Int32,
@@ -121,10 +121,10 @@ fn truncate_json(json: &JsonValue, max_len: usize) -> String {
 }
 
 // ============================================================================
-// Schema Definitions - keep in sync with vrl/*.vrl @schema comments
+// Schema Definitions - keep in sync with otlp2records schema definitions
 // ============================================================================
 
-/// Gauge metrics schema (vrl/otlp_gauge.vrl)
+/// Gauge metrics schema (otlp2records schema: gauge)
 pub static GAUGE_SCHEMA: Schema = Schema {
     name: "gauge",
     required_fields: &[
@@ -147,7 +147,7 @@ pub static GAUGE_SCHEMA: Schema = Schema {
     ],
 };
 
-/// Sum metrics schema (vrl/otlp_sum.vrl)
+/// Sum metrics schema (otlp2records schema: sum)
 pub static SUM_SCHEMA: Schema = Schema {
     name: "sum",
     required_fields: &[
@@ -178,7 +178,7 @@ pub static SUM_SCHEMA: Schema = Schema {
     ],
 };
 
-/// Logs schema (vrl/otlp_logs.vrl, vrl/hec_logs.vrl)
+/// Logs schema (otlp2records schema: logs)
 pub static LOGS_SCHEMA: Schema = Schema {
     name: "logs",
     required_fields: &[
@@ -205,7 +205,7 @@ pub static LOGS_SCHEMA: Schema = Schema {
     ],
 };
 
-/// Traces/spans schema (vrl/otlp_traces.vrl)
+/// Traces/spans schema (otlp2records schema: spans)
 pub static TRACES_SCHEMA: Schema = Schema {
     name: "traces",
     required_fields: &[
@@ -220,14 +220,6 @@ pub static TRACES_SCHEMA: Schema = Schema {
         RequiredField {
             name: "duration",
             field_type: FieldType::Int64,
-        },
-        RequiredField {
-            name: "trace_id",
-            field_type: FieldType::String,
-        },
-        RequiredField {
-            name: "span_id",
-            field_type: FieldType::String,
         },
         RequiredField {
             name: "service_name",
@@ -263,6 +255,7 @@ pub fn get_schema(table: &str) -> Option<&'static Schema> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::HashMap;
 
     #[test]
     fn gauge_schema_validates_complete_record() {
@@ -346,5 +339,64 @@ mod tests {
         assert!(get_schema("logs").is_some());
         assert!(get_schema("traces").is_some());
         assert!(get_schema("unknown").is_none());
+    }
+
+    fn field_type_from_otlp2records(name: &str) -> Option<FieldType> {
+        match name {
+            "timestamp" => Some(FieldType::Timestamp),
+            "int32" => Some(FieldType::Int32),
+            "int64" => Some(FieldType::Int64),
+            "float64" => Some(FieldType::Float64),
+            "string" => Some(FieldType::String),
+            "bool" => Some(FieldType::Bool),
+            "json" => Some(FieldType::Json),
+            _ => None,
+        }
+    }
+
+    fn required_fields_map(schema: &Schema) -> HashMap<&'static str, FieldType> {
+        schema
+            .required_fields
+            .iter()
+            .map(|field| (field.name, field.field_type))
+            .collect()
+    }
+
+    #[test]
+    fn schema_defs_match_otlp2records() {
+        let otlp_schemas: HashMap<_, _> = otlp2records::schema_defs()
+            .iter()
+            .map(|schema| (schema.name, schema))
+            .collect();
+
+        let local_schemas = [&GAUGE_SCHEMA, &SUM_SCHEMA, &LOGS_SCHEMA, &TRACES_SCHEMA];
+
+        for local in local_schemas {
+            let otlp_name = match local.name {
+                "traces" => "spans",
+                other => other,
+            };
+            let otlp_schema = otlp_schemas
+                .get(otlp_name)
+                .unwrap_or_else(|| panic!("missing otlp2records schema for {}", otlp_name));
+            let local_fields = required_fields_map(local);
+            let mut otlp_required = HashMap::new();
+
+            for field in otlp_schema.fields {
+                if field.required {
+                    let field_type =
+                        field_type_from_otlp2records(field.field_type).unwrap_or_else(|| {
+                            panic!("unknown otlp2records field type {}", field.field_type)
+                        });
+                    otlp_required.insert(field.name, field_type);
+                }
+            }
+
+            assert_eq!(
+                local_fields, otlp_required,
+                "required fields mismatch for schema {}",
+                local.name
+            );
+        }
     }
 }

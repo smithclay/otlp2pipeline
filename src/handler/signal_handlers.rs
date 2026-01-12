@@ -1,15 +1,13 @@
 use bytes::Bytes;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use vrl::value::Value;
+use tracing::warn;
 
-use crate::decode::{hec, otlp, DecodeFormat};
 use crate::signal::Signal;
-use crate::transform::runtime::{
-    HEC_LOGS_PROGRAM, OTLP_GAUGE_PROGRAM, OTLP_LOGS_PROGRAM, OTLP_SUM_PROGRAM, OTLP_TRACES_PROGRAM,
-};
-use crate::transform::{VrlError, VrlTransformer};
+use crate::InputFormat;
+use otlp2records::{transform_logs_json, transform_metrics_json, transform_traces_json};
 
-use super::{DecodeError, SignalHandler};
+use super::SignalHandler;
 
 /// Handler for OTLP logs
 pub struct LogsHandler;
@@ -17,12 +15,16 @@ pub struct LogsHandler;
 impl SignalHandler for LogsHandler {
     const SIGNAL: Signal = Signal::Logs;
 
-    fn decode(body: Bytes, format: DecodeFormat) -> Result<Vec<Value>, DecodeError> {
-        otlp::decode_logs(body, format).map_err(|e| DecodeError(e.to_string()))
-    }
-
-    fn vrl_program() -> &'static vrl::compiler::Program {
-        &OTLP_LOGS_PROGRAM
+    fn transform(
+        body: Bytes,
+        format: InputFormat,
+    ) -> Result<HashMap<String, Vec<JsonValue>>, otlp2records::Error> {
+        let transformed = transform_logs_json(&body, format)?;
+        let mut grouped = HashMap::new();
+        if !transformed.is_empty() {
+            grouped.insert(Signal::Logs.table_name().to_string(), transformed);
+        }
+        Ok(grouped)
     }
 }
 
@@ -32,27 +34,16 @@ pub struct TracesHandler;
 impl SignalHandler for TracesHandler {
     const SIGNAL: Signal = Signal::Traces;
 
-    fn decode(body: Bytes, format: DecodeFormat) -> Result<Vec<Value>, DecodeError> {
-        otlp::decode_traces(body, format).map_err(|e| DecodeError(e.to_string()))
-    }
-
-    fn vrl_program() -> &'static vrl::compiler::Program {
-        &OTLP_TRACES_PROGRAM
-    }
-}
-
-/// Handler for Splunk HEC logs
-pub struct HecLogsHandler;
-
-impl SignalHandler for HecLogsHandler {
-    const SIGNAL: Signal = Signal::Logs;
-
-    fn decode(body: Bytes, _format: DecodeFormat) -> Result<Vec<Value>, DecodeError> {
-        hec::decode_hec_logs(body).map_err(|e| DecodeError(e.to_string()))
-    }
-
-    fn vrl_program() -> &'static vrl::compiler::Program {
-        &HEC_LOGS_PROGRAM
+    fn transform(
+        body: Bytes,
+        format: InputFormat,
+    ) -> Result<HashMap<String, Vec<JsonValue>>, otlp2records::Error> {
+        let transformed = transform_traces_json(&body, format)?;
+        let mut grouped = HashMap::new();
+        if !transformed.is_empty() {
+            grouped.insert(Signal::Traces.table_name().to_string(), transformed);
+        }
+        Ok(grouped)
     }
 }
 
@@ -60,58 +51,44 @@ impl SignalHandler for HecLogsHandler {
 pub struct MetricsHandler;
 
 impl MetricsHandler {
-    fn partition_by_type(values: Vec<Value>) -> (Vec<Value>, Vec<Value>) {
-        let mut gauges = Vec::new();
-        let mut sums = Vec::new();
-
-        for value in values {
-            if let Value::Object(ref map) = value {
-                if let Some(Value::Bytes(b)) = map.get("_metric_type") {
-                    match b.as_ref() {
-                        b"gauge" => gauges.push(value),
-                        b"sum" => sums.push(value),
-                        _ => {}
-                    }
-                }
-            }
+    fn insert_if_not_empty(
+        grouped: &mut HashMap<String, Vec<JsonValue>>,
+        table: &str,
+        values: Vec<JsonValue>,
+    ) {
+        if !values.is_empty() {
+            grouped.insert(table.to_string(), values);
         }
-
-        (gauges, sums)
     }
 }
 
 impl SignalHandler for MetricsHandler {
     const SIGNAL: Signal = Signal::Gauge;
 
-    fn decode(body: Bytes, format: DecodeFormat) -> Result<Vec<Value>, DecodeError> {
-        otlp::decode_metrics(body, format).map_err(|e| DecodeError(e.to_string()))
-    }
-
-    fn vrl_program() -> &'static vrl::compiler::Program {
-        &OTLP_GAUGE_PROGRAM
-    }
-
-    fn transform_batch(
-        transformer: &mut VrlTransformer,
-        values: Vec<Value>,
-    ) -> Result<HashMap<String, Vec<Value>>, VrlError> {
-        let (gauges, sums) = Self::partition_by_type(values);
-        let mut grouped: HashMap<String, Vec<Value>> = HashMap::new();
-
-        if !gauges.is_empty() {
-            let gauge_grouped = transformer.transform_batch(&OTLP_GAUGE_PROGRAM, gauges)?;
-            for (table, records) in gauge_grouped {
-                grouped.entry(table).or_default().extend(records);
-            }
+    fn transform(
+        body: Bytes,
+        format: InputFormat,
+    ) -> Result<HashMap<String, Vec<JsonValue>>, otlp2records::Error> {
+        let metric_values = transform_metrics_json(&body, format)?;
+        if metric_values.skipped.has_skipped() {
+            warn!(
+                skipped_total = metric_values.skipped.total(),
+                histograms = metric_values.skipped.histograms,
+                exponential_histograms = metric_values.skipped.exponential_histograms,
+                summaries = metric_values.skipped.summaries,
+                nan_values = metric_values.skipped.nan_values,
+                infinity_values = metric_values.skipped.infinity_values,
+                missing_values = metric_values.skipped.missing_values,
+                "skipped unsupported or invalid metrics"
+            );
         }
-
-        if !sums.is_empty() {
-            let sum_grouped = transformer.transform_batch(&OTLP_SUM_PROGRAM, sums)?;
-            for (table, records) in sum_grouped {
-                grouped.entry(table).or_default().extend(records);
-            }
-        }
-
+        let mut grouped = HashMap::new();
+        Self::insert_if_not_empty(
+            &mut grouped,
+            Signal::Gauge.table_name(),
+            metric_values.gauge,
+        );
+        Self::insert_if_not_empty(&mut grouped, Signal::Sum.table_name(), metric_values.sum);
         Ok(grouped)
     }
 }

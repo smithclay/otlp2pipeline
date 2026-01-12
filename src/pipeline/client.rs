@@ -1,4 +1,3 @@
-use crate::convert::vrl_value_to_json;
 use crate::pipeline::retry::{with_retry, IsRetryable, RetryConfig};
 use crate::pipeline::sender::{PipelineSender, SendResult};
 use crate::schema::get_schema;
@@ -13,7 +12,6 @@ use std::time::Duration;
 #[cfg(target_arch = "wasm32")]
 use tracing::info;
 use tracing::{debug, error, warn};
-use vrl::value::Value;
 
 #[cfg(not(target_arch = "wasm32"))]
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -115,7 +113,7 @@ impl PipelineClient {
         &self,
         table: &str,
         endpoint: &str,
-        records: Vec<Value>,
+        records: Vec<JsonValue>,
     ) -> Result<usize, SendError> {
         let total_records = records.len();
         debug!(endpoint, total_records, "sending batch to pipeline");
@@ -194,7 +192,7 @@ impl PipelineClient {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 impl PipelineSender for PipelineClient {
-    async fn send_all(&self, grouped: HashMap<String, Vec<Value>>) -> SendResult {
+    async fn send_all(&self, grouped: HashMap<String, Vec<JsonValue>>) -> SendResult {
         let mut send_result = SendResult::default();
         let mut futures = Vec::new();
 
@@ -252,7 +250,7 @@ fn validate_record_schema(json: &JsonValue, table: &str, idx: usize) -> Result<(
 
 /// Build NDJSON batches, splitting into multiple batches if total size exceeds max_size
 fn build_ndjson_batches(
-    records: &[Value],
+    records: &[JsonValue],
     max_size: usize,
     table: &str,
 ) -> Result<Vec<Bytes>, SendError> {
@@ -261,18 +259,11 @@ fn build_ndjson_batches(
     let mut first_in_batch = true;
 
     for (idx, record) in records.iter().enumerate() {
-        let json_value = vrl_value_to_json(record).ok_or_else(|| {
-            SendError::Serialize(format!(
-                "record {} contains unsupported value (non-finite float or non-UTF8 bytes)",
-                idx
-            ))
-        })?;
-
         // Validate record against schema before serialization
-        validate_record_schema(&json_value, table, idx)?;
+        validate_record_schema(record, table, idx)?;
 
         let json_bytes =
-            serde_json::to_vec(&json_value).map_err(|e| SendError::Serialize(e.to_string()))?;
+            serde_json::to_vec(record).map_err(|e| SendError::Serialize(e.to_string()))?;
 
         // Calculate size this record would add (including newline separator)
         let record_size = if first_in_batch {
@@ -312,9 +303,9 @@ mod tests {
     #[test]
     fn build_ndjson_batches_single_batch() {
         let records = vec![
-            Value::from("record1"),
-            Value::from("record2"),
-            Value::from("record3"),
+            JsonValue::from("record1"),
+            JsonValue::from("record2"),
+            JsonValue::from("record3"),
         ];
 
         // Use "_test" to skip schema validation (no schema defined for this table)
@@ -332,9 +323,9 @@ mod tests {
     #[test]
     fn build_ndjson_batches_splits_on_size() {
         let records = vec![
-            Value::from("aaaaaaaaaa"), // ~12 bytes with quotes
-            Value::from("bbbbbbbbbb"),
-            Value::from("cccccccccc"),
+            JsonValue::from("aaaaaaaaaa"), // ~12 bytes with quotes
+            JsonValue::from("bbbbbbbbbb"),
+            JsonValue::from("cccccccccc"),
         ];
 
         // Force split with a small max size, use "_test" to skip schema validation
@@ -355,7 +346,9 @@ mod tests {
     #[test]
     fn build_ndjson_batches_always_includes_one_record() {
         // Even if a single record exceeds max size, it should still be included
-        let records = vec![Value::from("this_is_a_very_long_record_that_exceeds_max")];
+        let records = vec![JsonValue::from(
+            "this_is_a_very_long_record_that_exceeds_max",
+        )];
 
         // Use "_test" to skip schema validation
         let batches = build_ndjson_batches(&records, 10, "_test").unwrap();
@@ -440,7 +433,7 @@ mod tests {
     async fn missing_endpoint_reports_failure() {
         let client = PipelineClient::new(HashMap::new(), "token".to_string());
         let mut grouped = HashMap::new();
-        grouped.insert("logs".to_string(), vec![Value::from("test")]);
+        grouped.insert("logs".to_string(), vec![JsonValue::from("test")]);
 
         let result = client.send_all(grouped).await;
 

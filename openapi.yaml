@@ -139,39 +139,6 @@ paths:
               schema:
                 type: string
 
-  /services/collector/event:
-    post:
-      summary: Ingest Splunk HEC logs
-      operationId: ingestHecLogs
-      tags: [Ingestion]
-      description: |
-        Accepts Splunk HTTP Event Collector format (JSON or NDJSON).
-        Converts to OTLP log format internally. Dual-written to Pipeline
-        and aggregated like standard OTLP logs.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              oneOf:
-                - $ref: '#/components/schemas/HecEvent'
-                - type: array
-                  items:
-                    $ref: '#/components/schemas/HecEvent'
-      responses:
-        '200':
-          description: Logs ingested successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HandleResponse'
-        '400':
-          description: Invalid request
-          content:
-            text/plain:
-              schema:
-                type: string
-
   /v1/services:
     get:
       summary: List all registered services
@@ -427,37 +394,11 @@ components:
       externalDocs:
         url: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/metrics/v1/metrics_service.proto
 
-    HecEvent:
-      type: object
-      description: Splunk HTTP Event Collector event
-      properties:
-        event:
-          description: The event data (required)
-        time:
-          type: number
-          format: double
-          description: Event timestamp as Unix epoch seconds
-        host:
-          type: string
-          description: Hostname
-        source:
-          type: string
-          description: Event source
-        sourcetype:
-          type: string
-          description: Event source type
-        fields:
-          type: object
-          additionalProperties: true
-          description: Additional indexed fields
-      required:
-        - event
-
 tags:
   - name: Health
     description: Service health endpoints
   - name: Ingestion
-    description: Telemetry data ingestion (OTLP and HEC)
+    description: Telemetry data ingestion (OTLP)
   - name: Registry
     description: Service discovery and registration
   - name: Stats

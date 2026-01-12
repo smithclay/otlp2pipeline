@@ -1,31 +1,43 @@
-use anyhow::{Context, Result};
-use serde::Deserialize;
+use anyhow::{bail, Result};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct Schema {
     pub fields: Vec<SchemaField>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct SchemaField {
     pub name: String,
-    #[serde(rename = "type")]
     pub field_type: String,
 }
 
 impl Schema {
-    /// Load schema from JSON file on disk
+    /// Load schema from otlp2records definitions
     pub fn load(table: &str) -> Result<Self> {
-        let schema_file = match table {
-            "traces" => "schemas/spans.schema.json",
-            other => &format!("schemas/{}.schema.json", other),
+        let schema_name = match table {
+            "traces" => "spans",
+            other => other,
         };
 
-        let content = std::fs::read_to_string(schema_file)
-            .with_context(|| format!("Failed to read schema file: {}", schema_file))?;
+        let schema_def = match otlp2records::schema_def(schema_name) {
+            Some(schema) => schema,
+            None => bail!("missing otlp2records schema: {}", schema_name),
+        };
 
-        serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse schema file: {}", schema_file))
+        let fields: Vec<SchemaField> = schema_def
+            .fields
+            .iter()
+            .map(|field| SchemaField {
+                name: field.name.to_string(),
+                field_type: field.field_type.to_string(),
+            })
+            .collect();
+
+        if fields.is_empty() {
+            bail!("otlp2records schema {} has no fields", schema_name);
+        }
+
+        Ok(Self { fields })
     }
 
     /// Generate Athena DDL column definitions

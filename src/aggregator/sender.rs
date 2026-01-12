@@ -1,12 +1,10 @@
 //! AggregatorSender trait and implementations.
 
 #[cfg(target_arch = "wasm32")]
-use crate::convert::vrl_value_to_json_lossy;
-#[cfg(target_arch = "wasm32")]
 use futures::stream::{self, StreamExt};
+use serde_json::Value;
 use std::collections::HashMap;
 use tracing::warn;
-use vrl::value::{KeyString, Value};
 
 /// Result of sending to aggregator DOs
 #[derive(Debug, Default)]
@@ -124,12 +122,8 @@ impl WasmAggregatorSender {
         let id = namespace.id_from_name(do_name)?;
         let stub = id.get_stub()?;
 
-        // Convert VRL Values to JSON for serialization
-        let json_records: Vec<serde_json::Value> =
-            records.iter().map(vrl_value_to_json_lossy).collect();
-
-        let body = serde_json::to_string(&json_records)
-            .map_err(|e| worker::Error::RustError(e.to_string()))?;
+        let body =
+            serde_json::to_string(&records).map_err(|e| worker::Error::RustError(e.to_string()))?;
 
         // Extract signal from do_name (format: "service:signal")
         let signal = do_name.rsplit(':').next().unwrap_or("logs");
@@ -209,19 +203,16 @@ impl AggregatorSender for NativeAggregatorSender {
 /// conflicts with the `{service}:{signal}` DO naming scheme.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub fn get_service_name(record: &Value) -> String {
-    if let Value::Object(ref map) = record {
-        let key: KeyString = "service_name".into();
-        if let Some(Value::Bytes(b)) = map.get(&key) {
-            let s = std::str::from_utf8(b).unwrap_or("");
-            // Validate: alphanumeric, hyphens, underscores, dots only
-            // Max length 128 to prevent abuse
-            if !s.is_empty()
-                && s.len() <= 128
-                && s.chars()
-                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
-            {
-                return s.to_string();
-            }
+    if let Some(name) = record.get("service_name").and_then(|v| v.as_str()) {
+        // Validate: alphanumeric, hyphens, underscores, dots only
+        // Max length 128 to prevent abuse
+        if !name.is_empty()
+            && name.len() <= 128
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
+            return name.to_string();
         }
     }
     warn!("Record missing or invalid service_name, routing to 'unknown'");
@@ -237,113 +228,73 @@ pub fn build_do_name(service_name: &str, table_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vrl::value::Value;
+    use serde_json::json;
 
     #[test]
     fn test_get_service_name_valid() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from("payment-service"))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": "payment-service"});
         assert_eq!(get_service_name(&record), "payment-service");
     }
 
     #[test]
     fn test_get_service_name_missing_returns_unknown() {
-        let record = Value::Object(Default::default());
+        let record = json!({});
         assert_eq!(get_service_name(&record), "unknown");
     }
 
     #[test]
     fn test_get_service_name_empty_returns_unknown() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from(""))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": ""});
         assert_eq!(get_service_name(&record), "unknown");
     }
 
     #[test]
     fn test_get_service_name_with_underscores_and_dots() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from("payment_service.prod"))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": "payment_service.prod"});
         assert_eq!(get_service_name(&record), "payment_service.prod");
     }
 
     #[test]
     fn test_get_service_name_with_numbers() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from("service123"))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": "service123"});
         assert_eq!(get_service_name(&record), "service123");
     }
 
     #[test]
     fn test_get_service_name_with_colon_returns_unknown() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from("payment:service"))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": "payment:service"});
         assert_eq!(get_service_name(&record), "unknown");
     }
 
     #[test]
     fn test_get_service_name_with_slash_returns_unknown() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from("payment/service"))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": "payment/service"});
         assert_eq!(get_service_name(&record), "unknown");
     }
 
     #[test]
     fn test_get_service_name_with_special_chars_returns_unknown() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from("payment@service#1"))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": "payment@service#1"});
         assert_eq!(get_service_name(&record), "unknown");
     }
 
     #[test]
     fn test_get_service_name_with_spaces_returns_unknown() {
-        let record = Value::Object(
-            [("service_name".into(), Value::from("payment service"))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": "payment service"});
         assert_eq!(get_service_name(&record), "unknown");
     }
 
     #[test]
     fn test_get_service_name_exceeds_max_length_returns_unknown() {
         let long_name = "a".repeat(129);
-        let record = Value::Object(
-            [("service_name".into(), Value::from(long_name.as_str()))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": long_name});
         assert_eq!(get_service_name(&record), "unknown");
     }
 
     #[test]
     fn test_get_service_name_exactly_max_length() {
         let max_name = "a".repeat(128);
-        let record = Value::Object(
-            [("service_name".into(), Value::from(max_name.as_str()))]
-                .into_iter()
-                .collect(),
-        );
+        let record = json!({"service_name": max_name.clone()});
         assert_eq!(get_service_name(&record), max_name);
     }
 
@@ -359,18 +310,9 @@ mod tests {
     async fn test_native_sender_only_processes_logs_and_traces() {
         let sender = NativeAggregatorSender::new();
         let mut grouped = HashMap::new();
-        grouped.insert(
-            "logs".to_string(),
-            vec![Value::Object(Default::default()); 5],
-        );
-        grouped.insert(
-            "traces".to_string(),
-            vec![Value::Object(Default::default()); 3],
-        );
-        grouped.insert(
-            "gauge".to_string(),
-            vec![Value::Object(Default::default()); 10],
-        );
+        grouped.insert("logs".to_string(), vec![json!({}); 5]);
+        grouped.insert("traces".to_string(), vec![json!({}); 3]);
+        grouped.insert("gauge".to_string(), vec![json!({}); 10]);
 
         let result = sender.send_to_aggregator(grouped).await;
 

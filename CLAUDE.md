@@ -159,36 +159,15 @@ Each telemetry signal type (logs, traces) implements `SignalHandler` in `src/han
 - Handler provides decode function and VRL program reference
 - Generic `handle_signal<H>` processes any handler type
 
-### OTLP Decoding (`src/decode/otlp/`)
+### OTLP Decoding + Transform
 
-Parallel structure for each signal:
-- `logs.rs` / `traces.rs`: Format routing (protobuf vs JSON)
-- `logs_proto.rs` / `traces_proto.rs`: Protobuf via `opentelemetry-proto` crate
-- `logs_json.rs` / `traces_json.rs`: JSON via serde
-- `common.rs`: Shared utilities (DecodeError, JSON structs, timestamp conversion)
-- `record_builder/`: Builder pattern for record construction (split into log, span, metric builders)
-
-### VRL Transformation (`src/transform/`)
-
-VRL scripts in `vrl/*.vrl` are compiled at build time (`build.rs`):
-- `otlp_logs.vrl`: Flatten log records (15 fields)
-- `otlp_traces.vrl`: Flatten span records (24 fields)
-
-Custom VRL functions in `src/transform/functions/` (minimal set for WASM compatibility):
-- `core.rs`: stdlib replacements (to_int, to_string, encode_json, get, is_empty, etc.)
-- `helpers.rs`: OTLP-specific helpers (string_or_null, nanos_to_millis, json_or_null, etc.)
-
-Scripts assign `._table` to route records to the correct pipeline.
+Core decode + VRL transform live in `otlp2records`. This crate only orchestrates:
+- HTTP handling, gzip detection, and routing by signal
+- Sending transformed JSON records to pipelines, aggregator, and livetail
 
 ### Schema Unification (`build.rs`)
 
-VRL `# @schema` comments are the **single source of truth** for Cloudflare Pipeline schemas. The build script:
-
-- Parses schema annotations from VRL files
-- Generates `schemas/*.schema.json` for Cloudflare Pipeline configuration
-- Embeds VRL source as compile-time constants (`$OUT_DIR/compiled_vrl.rs`)
-
-Schema field types: `timestamp`, `int64`, `int32`, `float64`, `bool`, `string`, `json`
+Schema definitions come from `otlp2records` and are emitted to `schemas/*.schema.json` at build time for Cloudflare Pipeline configuration.
 
 ### Aggregator (`src/aggregator/`)
 

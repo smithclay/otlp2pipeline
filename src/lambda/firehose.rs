@@ -3,9 +3,9 @@
 use aws_sdk_firehose::{
     error::ProvideErrorMetadata, operation::RequestId, types::Record, Client as AwsClient,
 };
+use serde_json::Value;
 use std::collections::HashMap;
 use tracing::{debug, error, warn};
-use vrl::value::Value;
 
 use crate::pipeline::retry::RetryConfig;
 use crate::pipeline::{PipelineSender, SendResult};

@@ -10,15 +10,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use crate::decode::DecodeFormat;
 use crate::handler::{
-    handle_signal, HandleResponse, HecLogsHandler, LogsHandler, MetricsHandler, SignalHandler,
-    TracesHandler,
+    handle_signal, HandleResponse, LogsHandler, MetricsHandler, SignalHandler, TracesHandler,
 };
 use crate::parse_content_metadata;
 use crate::pipeline::PipelineClient;
 use crate::signal::Signal;
 use crate::Bytes;
+use crate::InputFormat;
 
 /// Initialize tracing subscriber for native (non-WASM) builds.
 /// Uses RUST_LOG env var for filtering (defaults to info).
@@ -52,7 +51,6 @@ fn build_router_with_client(client: Arc<PipelineClient>) -> Router {
         .route("/v1/logs", post(handle_logs_axum))
         .route("/v1/traces", post(handle_traces_axum))
         .route("/v1/metrics", post(handle_metrics_axum))
-        .route("/services/collector/event", post(handle_hec_logs_axum))
         .route("/health", get(|| async { "ok" }))
         .with_state(client)
 }
@@ -61,10 +59,8 @@ async fn handle_axum_signal<H: SignalHandler>(
     headers: HeaderMap,
     body: AxumBytes,
     client: &PipelineClient,
-    override_format: Option<DecodeFormat>,
 ) -> Result<Json<HandleResponse>, (StatusCode, String)> {
     let (is_gzipped, decode_format) = parse_axum_headers(&headers);
-    let decode_format = override_format.unwrap_or(decode_format);
 
     handle_signal::<H, _>(
         Bytes::from(body.to_vec()),
@@ -82,7 +78,7 @@ async fn handle_logs_axum(
     headers: HeaderMap,
     body: AxumBytes,
 ) -> Result<Json<HandleResponse>, (StatusCode, String)> {
-    handle_axum_signal::<LogsHandler>(headers, body, client.as_ref(), None).await
+    handle_axum_signal::<LogsHandler>(headers, body, client.as_ref()).await
 }
 
 async fn handle_traces_axum(
@@ -90,7 +86,7 @@ async fn handle_traces_axum(
     headers: HeaderMap,
     body: AxumBytes,
 ) -> Result<Json<HandleResponse>, (StatusCode, String)> {
-    handle_axum_signal::<TracesHandler>(headers, body, client.as_ref(), None).await
+    handle_axum_signal::<TracesHandler>(headers, body, client.as_ref()).await
 }
 
 async fn handle_metrics_axum(
@@ -98,20 +94,10 @@ async fn handle_metrics_axum(
     headers: HeaderMap,
     body: AxumBytes,
 ) -> Result<Json<HandleResponse>, (StatusCode, String)> {
-    handle_axum_signal::<MetricsHandler>(headers, body, client.as_ref(), None).await
+    handle_axum_signal::<MetricsHandler>(headers, body, client.as_ref()).await
 }
 
-async fn handle_hec_logs_axum(
-    State(client): State<Arc<PipelineClient>>,
-    headers: HeaderMap,
-    body: AxumBytes,
-) -> Result<Json<HandleResponse>, (StatusCode, String)> {
-    // HEC is always JSON, ignore content-type
-    handle_axum_signal::<HecLogsHandler>(headers, body, client.as_ref(), Some(DecodeFormat::Json))
-        .await
-}
-
-fn parse_axum_headers(headers: &HeaderMap) -> (bool, DecodeFormat) {
+fn parse_axum_headers(headers: &HeaderMap) -> (bool, InputFormat) {
     parse_content_metadata(|name| {
         headers
             .get(name)

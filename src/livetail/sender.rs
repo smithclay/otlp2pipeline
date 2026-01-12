@@ -1,7 +1,7 @@
 //! LiveTailSender trait and implementations.
 
+use serde_json::Value;
 use std::collections::HashMap;
-use vrl::value::Value;
 
 /// Result of sending to livetail DOs.
 #[derive(Debug, Default)]
@@ -94,8 +94,6 @@ mod tests {
 #[cfg(target_arch = "wasm32")]
 use crate::aggregator::{build_do_name, get_service_name};
 #[cfg(target_arch = "wasm32")]
-use crate::convert::vrl_value_to_json_lossy;
-#[cfg(target_arch = "wasm32")]
 use crate::livetail::cache;
 #[cfg(target_arch = "wasm32")]
 use futures::stream::{self, StreamExt};
@@ -145,12 +143,8 @@ impl WasmLiveTailSender {
         let id = namespace.id_from_name(do_name)?;
         let stub = id.get_stub()?;
 
-        // Convert VRL Values to JSON for serialization
-        let json_records: Vec<serde_json::Value> =
-            records.iter().map(vrl_value_to_json_lossy).collect();
-
-        let body = serde_json::to_string(&json_records)
-            .map_err(|e| worker::Error::RustError(e.to_string()))?;
+        let body =
+            serde_json::to_string(&records).map_err(|e| worker::Error::RustError(e.to_string()))?;
 
         let mut request = worker::Request::new_with_init(
             "http://do/ingest",

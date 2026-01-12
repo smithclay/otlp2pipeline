@@ -7,7 +7,7 @@
 
 ## What it does
 
-Receives OpenTelemetry logs, traces, and metrics (plus Splunk HEC logs) and forwards via cloud pipelines for storage in AWS or Cloudflare R2 tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
+Receives OpenTelemetry logs, traces, and metrics and forwards via cloud pipelines for storage in AWS or Cloudflare R2 tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
 Cloudflare Pipelines or Amazon Data Firehose streams are used for batching and converting data to parquet format. Catalog maintenence features (compaction, snapshot pruning, partitioning by day) are enabled by default for performance.
 
@@ -72,7 +72,6 @@ otlp2pipeline connect
 flowchart TB
     subgraph Ingest["Ingest + Store"]
         OTLP[OTLP] --> W[Worker]
-        HEC[Splunk HEC] --> W
         W --> P[Pipelines]
         W --> DOs[(Durable Objects)]
         P --> R2[(R2 Data Catalog)]
@@ -172,7 +171,6 @@ otlp2pipeline tail my-service traces
 flowchart TB
     subgraph Ingest["Ingest + Store"]
         OTLP[OTLP] --> L[Lambda]
-        HEC[Splunk HEC] --> L
         L --> F[Data Firehose]
         F --> S3[(S3 Tables / Iceberg)]
     end
@@ -257,9 +255,9 @@ otlp2pipeline connect
 
 ## Schema
 
-See the `vrl/` directory, the schema written to R2 data catalog is defined inline the VRL transformation scripts.
+Schema definitions are sourced from `otlp2records` and written to the R2 data catalog at build time.
 
-If you'd like to change how data is stored in Iceberg, just modify the appropriate VRL files, recompile, and redeploy to a new Cloudflare Pipeline.
+If you'd like to change how data is stored in Iceberg, modify the VRL files in `../otlp2records/vrl/`, recompile, and redeploy to a new Cloudflare Pipeline.
 
 ## Performance
 
@@ -274,7 +272,6 @@ This worker does **not** implement application-level authentication.
 ### Input Validation
 
 - Maximum payload size: 10 MB (after decompression)
-- Maximum events per HEC request: 10,000
 - Invalid JSON or timestamps are rejected with 400 errors
 - Service names: alphanumeric, hyphens, underscores, dots only (max 128 chars)
 - Service registry limit: 10,000 unique services (returns 507 if exceeded)

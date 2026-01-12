@@ -6,7 +6,6 @@ use tracing_subscriber::prelude::*;
 use tracing_web::{performance_layer, MakeWebConsoleWriter};
 use worker::*;
 
-use crate::decode::DecodeFormat;
 use crate::handler;
 use crate::livetail::WasmLiveTailSender;
 use crate::parse_content_metadata;
@@ -14,7 +13,7 @@ use crate::pipeline::PipelineClient;
 use crate::registry::{RegistrySender, WasmRegistrySender};
 use crate::signal::Signal;
 use crate::stats::{handle_all_services_stats, handle_stats_query};
-use crate::transform::init_programs;
+use crate::InputFormat;
 
 /// Add CORS headers to a response.
 /// Creates a new response to handle immutable headers from Durable Objects.
@@ -101,7 +100,8 @@ fn init() {
         .init();
 
     // Pre-compile VRL programs to avoid cold-start latency
-    init_programs();
+    #[cfg(target_arch = "wasm32")]
+    otlp2records::transform::init_programs();
 }
 
 #[event(fetch)]
@@ -125,7 +125,6 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> Result<Response> {
         (Method::Post, "/v1/logs") => handle_logs_worker(req, env, ctx).await,
         (Method::Post, "/v1/traces") => handle_traces_worker(req, env, ctx).await,
         (Method::Post, "/v1/metrics") => handle_metrics_worker(req, env, ctx).await,
-        (Method::Post, "/services/collector/event") => handle_hec_logs_worker(req, env, ctx).await,
         (Method::Get, "/health") => Response::ok("ok"),
         (Method::Get, "/v1/config") => handle_config(env),
         (Method::Get, "/v1/services") => handle_services_list(env).await,
@@ -157,11 +156,9 @@ async fn handle_signal_worker<H: handler::SignalHandler>(
     mut req: Request,
     env: Env,
     ctx: Context,
-    override_format: Option<DecodeFormat>,
 ) -> Result<Response> {
     let body_bytes = req.bytes().await?;
     let (is_gzipped, decode_format) = parse_worker_headers(&req);
-    let decode_format = override_format.unwrap_or(decode_format);
     let client = PipelineClient::from_worker_env(&env)?;
 
     // Initialize aggregator sender for dual-write
@@ -205,23 +202,18 @@ async fn handle_signal_worker<H: handler::SignalHandler>(
 }
 
 async fn handle_metrics_worker(req: Request, env: Env, ctx: Context) -> Result<Response> {
-    handle_signal_worker::<handler::MetricsHandler>(req, env, ctx, None).await
+    handle_signal_worker::<handler::MetricsHandler>(req, env, ctx).await
 }
 
 async fn handle_logs_worker(req: Request, env: Env, ctx: Context) -> Result<Response> {
-    handle_signal_worker::<handler::LogsHandler>(req, env, ctx, None).await
+    handle_signal_worker::<handler::LogsHandler>(req, env, ctx).await
 }
 
 async fn handle_traces_worker(req: Request, env: Env, ctx: Context) -> Result<Response> {
-    handle_signal_worker::<handler::TracesHandler>(req, env, ctx, None).await
+    handle_signal_worker::<handler::TracesHandler>(req, env, ctx).await
 }
 
-async fn handle_hec_logs_worker(req: Request, env: Env, ctx: Context) -> Result<Response> {
-    // HEC is always JSON, ignore content-type
-    handle_signal_worker::<handler::HecLogsHandler>(req, env, ctx, Some(DecodeFormat::Json)).await
-}
-
-fn parse_worker_headers(req: &Request) -> (bool, DecodeFormat) {
+fn parse_worker_headers(req: &Request) -> (bool, InputFormat) {
     parse_content_metadata(|name| {
         req.headers()
             .get(name)

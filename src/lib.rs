@@ -4,19 +4,16 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub use bytes::Bytes;
 
-// Re-export DecodeFormat for external use
-pub use decode::DecodeFormat;
+// Re-export InputFormat for external use
+pub use otlp2records::decode::InputFormat;
 
 pub mod aggregator;
-mod convert;
-mod decode;
 mod handler;
 pub mod livetail;
 mod pipeline;
 pub mod registry;
 mod schema;
 mod signal;
-mod transform;
 
 pub use signal::Signal;
 
@@ -34,16 +31,16 @@ pub mod lambda;
 
 // Re-export for tests
 pub use handler::{
-    handle_signal, HandleError, HandleResponse, HecLogsHandler, LogsHandler, MetricsHandler,
-    SignalHandler, TracesHandler,
+    handle_signal, HandleError, HandleResponse, LogsHandler, MetricsHandler, SignalHandler,
+    TracesHandler,
 };
 pub use pipeline::{PipelineSender, SendResult};
 
-fn parse_content_metadata(mut header: impl FnMut(&str) -> Option<String>) -> (bool, DecodeFormat) {
+fn parse_content_metadata(mut header: impl FnMut(&str) -> Option<String>) -> (bool, InputFormat) {
     let is_gzipped = header("content-encoding")
         .map(|v| v.eq_ignore_ascii_case("gzip"))
         .unwrap_or(false);
-    let decode_format = DecodeFormat::from_content_type(header("content-type").as_deref());
+    let decode_format = InputFormat::from_content_type(header("content-type").as_deref());
     (is_gzipped, decode_format)
 }
 

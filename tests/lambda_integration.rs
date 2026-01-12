@@ -5,10 +5,10 @@
 
 use bytes::Bytes;
 use otlp2pipeline::{
-    handle_signal, DecodeFormat, LogsHandler, PipelineSender, SendResult, TracesHandler,
+    handle_signal, InputFormat, LogsHandler, PipelineSender, SendResult, TracesHandler,
 };
+use serde_json::Value;
 use std::collections::HashMap;
-use vrl::value::Value;
 
 /// Mock PipelineSender for testing.
 struct MockSender {
@@ -63,7 +63,7 @@ async fn test_logs_handler_json() {
     let result = handle_signal::<LogsHandler, _>(
         Bytes::from(json_payload),
         false,
-        DecodeFormat::Json,
+        InputFormat::Json,
         &sender,
     )
     .await;
@@ -103,7 +103,7 @@ async fn test_traces_handler_json() {
     let result = handle_signal::<TracesHandler, _>(
         Bytes::from(json_payload),
         false,
-        DecodeFormat::Json,
+        InputFormat::Json,
         &sender,
     )
     .await;

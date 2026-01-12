@@ -7,7 +7,7 @@ use lambda_http::{run, service_fn, Body, Error, Request, Response};
 use otlp2pipeline::{
     handle_signal,
     lambda::firehose::{FirehoseSender, StreamConfig},
-    DecodeFormat, HandleError, HecLogsHandler, LogsHandler, MetricsHandler, TracesHandler,
+    HandleError, InputFormat, LogsHandler, MetricsHandler, TracesHandler,
 };
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -139,7 +139,7 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
         .map(|v| v.eq_ignore_ascii_case("gzip"))
         .unwrap_or(false);
 
-    let format = DecodeFormat::from_content_type(
+    let format = InputFormat::from_content_type(
         event
             .headers()
             .get("content-type")
@@ -174,11 +174,6 @@ async fn handler(event: Request, sender: Arc<FirehoseSender>) -> Result<Response
         }
         "/v1/metrics" => {
             handle_signal::<MetricsHandler, _>(body_bytes, is_gzipped, format, &*sender).await
-        }
-        "/services/collector" | "/services/collector/event" => {
-            // Splunk HEC is always JSON, ignore content-type
-            handle_signal::<HecLogsHandler, _>(body_bytes, is_gzipped, DecodeFormat::Json, &*sender)
-                .await
         }
         _ => {
             return Ok(Response::builder()
