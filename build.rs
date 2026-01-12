@@ -27,7 +27,7 @@ fn write_cloudflare_schemas() {
     }
 
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../otlp2records/vrl/");
+    println!("cargo:rerun-if-changed=Cargo.toml");
 }
 
 fn generate_cloudflare_schema(schema: &otlp2records::SchemaDef) -> String {

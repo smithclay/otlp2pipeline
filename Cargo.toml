@@ -30,7 +30,7 @@ async-trait = "0.1"
 base64 = { version = "0.21", default-features = false, features = ["alloc"] }
 urlencoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
-otlp2records = { path = "../otlp2records" }
+otlp2records = { git = "https://github.com/smithclay/otlp2records", rev = "755f736647705fcc52bde96d5e058ad4da52f99e" }
 
 # Lambda dependencies (optional, gated by lambda feature)
 # Using rustls for cross-compilation support (avoids OpenSSL linking issues)
@@ -72,7 +72,7 @@ opentelemetry-proto = { version = "0.31", default-features = false, features = [
 prost = "0.14"
 
 [build-dependencies]
-otlp2records = { path = "../otlp2records" }
+otlp2records = { git = "https://github.com/smithclay/otlp2records", rev = "755f736647705fcc52bde96d5e058ad4da52f99e" }
 
 [profile.release]
 opt-level = "z"

@@ -257,7 +257,7 @@ otlp2pipeline connect
 
 Schema definitions are sourced from `otlp2records` and written to the R2 data catalog at build time.
 
-If you'd like to change how data is stored in Iceberg, modify the VRL files in `../otlp2records/vrl/`, recompile, and redeploy to a new Cloudflare Pipeline.
+If you'd like to change how data is stored in Iceberg, modify the VRL files in the `otlp2records` repo, recompile, and redeploy to a new Cloudflare Pipeline.
 
 ## Performance
 
