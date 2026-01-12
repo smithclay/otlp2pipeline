@@ -36,7 +36,12 @@ Requires the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/i
 otlp2pipeline init --provider cf --env cftest01
 otlp2pipeline create --r2-token $R2_API_TOKEN --auth --output wrangler.toml
 
-# 3. Deploy worker defined in wrangler.toml
+# 3a. Set token for worker to write to pipeline
+# Go to https://dash.cloudflare.com/?to=/:account/api-tokens
+# Create key with "Workers Pipelines: Edit" permissions
+npx wrangler secret put PIPELINE_AUTH_TOKEN
+
+# 3b. Deploy worker defined in wrangler.toml
 npx wrangler deploy
 
 # 4. Check status
@@ -131,6 +136,10 @@ This creates:
 ### 5. Deploy
 
 ```bash
+# Go to https://dash.cloudflare.com/?to=/:account/api-tokens
+# Create key with "Workers Pipelines: Edit" permissions
+npx wrangler secret put PIPELINE_AUTH_TOKEN
+
 npx wrangler deploy
 ```
 
