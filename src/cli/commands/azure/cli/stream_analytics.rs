@@ -268,7 +268,11 @@ impl StreamAnalyticsCli {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to create output '{}': {}", config.output_name, stderr);
+            anyhow::bail!(
+                "Failed to create output '{}': {}",
+                config.output_name,
+                stderr
+            );
         }
 
         Ok(())
@@ -334,7 +338,10 @@ fn extract_key(connection_string: &str, prefix: &str) -> Result<String> {
         .find(|part| part.starts_with(prefix))
         .and_then(|part| part.strip_prefix(prefix))
         .map(|s| s.to_string())
-        .context(format!("Failed to extract {} from connection string", prefix))
+        .context(format!(
+            "Failed to extract {} from connection string",
+            prefix
+        ))
 }
 
 /// Extract account key from storage connection string

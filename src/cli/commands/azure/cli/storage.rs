@@ -12,7 +12,7 @@ impl StorageCli {
     /// Check if storage account exists
     pub fn account_exists(&self, name: &str, rg: &str) -> Result<bool> {
         let result = Command::new("az")
-            .args(&[
+            .args([
                 "storage",
                 "account",
                 "show",
@@ -30,7 +30,7 @@ impl StorageCli {
     /// Check if container exists
     pub fn container_exists(&self, container: &str, account: &str) -> Result<bool> {
         let result = Command::new("az")
-            .args(&[
+            .args([
                 "storage",
                 "container",
                 "show",
@@ -50,7 +50,7 @@ impl StorageCli {
     /// Get storage account connection string
     pub fn get_connection_string(&self, account: &str, rg: &str) -> Result<String> {
         let output = Command::new("az")
-            .args(&[
+            .args([
                 "storage",
                 "account",
                 "show-connection-string",

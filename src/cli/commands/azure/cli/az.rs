@@ -37,18 +37,17 @@ impl AzureCli {
         ResourceCli::new(&self.region)
     }
 
-    // TODO: uncomment in Task 3
-    // pub fn storage(&self) -> StorageCli {
-    //     StorageCli::new()
-    // }
+    pub fn storage(&self) -> StorageCli {
+        StorageCli::new()
+    }
 
-    // pub fn eventhub(&self) -> EventHubCli {
-    //     EventHubCli::new()
-    // }
+    pub fn eventhub(&self) -> EventHubCli {
+        EventHubCli::new()
+    }
 
-    // pub fn stream_analytics(&self) -> StreamAnalyticsCli {
-    //     StreamAnalyticsCli::new(&self.region)
-    // }
+    pub fn stream_analytics(&self) -> StreamAnalyticsCli {
+        StreamAnalyticsCli::new(&self.region)
+    }
 }
 
 /// Account operations (subscription info)
@@ -66,6 +65,4 @@ impl AccountCli {
     }
 }
 
-use super::ResourceCli;
-// TODO: uncomment in Task 3
-// use super::{EventHubCli, StorageCli, StreamAnalyticsCli};
+use super::{EventHubCli, ResourceCli, StorageCli, StreamAnalyticsCli};

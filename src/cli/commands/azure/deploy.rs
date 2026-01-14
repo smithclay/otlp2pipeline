@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use super::cli::{AzureCli, EventHubInputConfig, ParquetOutputConfig};
 use super::context::DeployContext;
@@ -103,11 +103,15 @@ pub fn create_stream_analytics_job(cli: &AzureCli, ctx: &DeployContext) -> Resul
     // Configure input
     eprintln!("    Configuring Event Hub input...");
     let input_config = EventHubInputConfig {
-        namespace: ctx.eventhub_namespace.clone(),
-        hub: ctx.eventhub_name.clone(),
-        connection_string: eventhub_conn,
+        eventhub_namespace: ctx.eventhub_namespace.clone(),
+        eventhub_name: ctx.eventhub_name.clone(),
+        eventhub_connection_string: eventhub_conn,
     };
-    sa.create_input(&ctx.stream_analytics_job, &ctx.resource_group, &input_config)?;
+    sa.create_input(
+        &ctx.stream_analytics_job,
+        &ctx.resource_group,
+        &input_config,
+    )?;
 
     // Configure outputs (4 Parquet outputs)
     eprintln!("    Configuring Parquet outputs...");
@@ -121,16 +125,25 @@ pub fn create_stream_analytics_job(cli: &AzureCli, ctx: &DeployContext) -> Resul
     for (name, container) in output_names {
         eprintln!("      Creating output: {} → {}/", name, container);
         let output_config = ParquetOutputConfig {
+            output_name: format!("{}output", name),
             container: container.to_string(),
             storage_account: ctx.storage_account.clone(),
-            connection_string: storage_conn.clone(),
+            storage_connection_string: storage_conn.clone(),
         };
-        sa.create_output(&ctx.stream_analytics_job, &ctx.resource_group, name, &output_config)?;
+        sa.create_output(
+            &ctx.stream_analytics_job,
+            &ctx.resource_group,
+            &output_config,
+        )?;
     }
 
     // Set query
     eprintln!("    Setting Stream Analytics query...");
-    sa.set_query(&ctx.stream_analytics_job, &ctx.resource_group, STREAM_ANALYTICS_QUERY)?;
+    sa.set_query(
+        &ctx.stream_analytics_job,
+        &ctx.resource_group,
+        STREAM_ANALYTICS_QUERY,
+    )?;
 
     eprintln!("    ✓ Stream Analytics job configured");
     Ok(())

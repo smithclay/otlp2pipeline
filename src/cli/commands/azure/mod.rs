@@ -2,7 +2,7 @@
 mod cli;
 mod context;
 mod create;
-pub mod deploy;  // public for create.rs to use deploy functions
+pub mod deploy; // public for create.rs to use deploy functions
 mod destroy;
 mod helpers;
 mod plan;
