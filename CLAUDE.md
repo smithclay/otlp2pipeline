@@ -46,6 +46,7 @@ cargo install --path .
 # Initialize project config (creates .otlp2pipeline.toml)
 otlp2pipeline init --provider cf --env prod
 otlp2pipeline init --provider cf --env prod --worker-url https://my-worker.workers.dev
+otlp2pipeline init --provider azure --env prod --region westus
 
 # After init, commands auto-route via config (no 'cf' prefix needed)
 # Create environment (bucket, streams, sinks, pipelines)
@@ -83,6 +84,18 @@ otlp2pipeline aws status --env prod --region us-east-1
 
 # AWS teardown
 otlp2pipeline aws destroy --env prod --region us-east-1 --force
+
+# Azure deployment (full orchestration)
+otlp2pipeline azure create --env prod --region westus
+
+# Azure dry-run (show what would be created)
+otlp2pipeline azure plan --env prod
+
+# Check Azure status
+otlp2pipeline azure status --env prod
+
+# Azure teardown
+otlp2pipeline azure destroy --env prod --force
 
 # List known services
 otlp2pipeline services --url https://my-worker.workers.dev
