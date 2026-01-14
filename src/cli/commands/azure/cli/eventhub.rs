@@ -12,7 +12,7 @@ impl EventHubCli {
     /// Check if Event Hub namespace exists
     pub fn namespace_exists(&self, namespace: &str, rg: &str) -> Result<bool> {
         let result = Command::new("az")
-            .args(&[
+            .args([
                 "eventhubs",
                 "namespace",
                 "show",
@@ -30,7 +30,7 @@ impl EventHubCli {
     /// Check if Event Hub exists
     pub fn hub_exists(&self, namespace: &str, hub: &str, rg: &str) -> Result<bool> {
         let result = Command::new("az")
-            .args(&[
+            .args([
                 "eventhubs",
                 "eventhub",
                 "show",
@@ -50,7 +50,7 @@ impl EventHubCli {
     /// Get Event Hub connection string
     pub fn get_connection_string(&self, namespace: &str, rg: &str) -> Result<String> {
         let output = Command::new("az")
-            .args(&[
+            .args([
                 "eventhubs",
                 "namespace",
                 "authorization-rule",
