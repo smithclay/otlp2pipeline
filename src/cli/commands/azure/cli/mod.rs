@@ -2,10 +2,11 @@
 mod az;
 mod eventhub;
 mod resource;
-// mod storage;           // TODO: uncomment in Task 3
-// mod stream_analytics;  // TODO: uncomment in Task 3
+mod storage;
+mod stream_analytics;
 
 pub use az::AzureCli;
+pub use eventhub::EventHubCli;
 pub use resource::ResourceCli;
-// pub use storage::StorageCli;
-// pub use stream_analytics::StreamAnalyticsCli;
+pub use storage::StorageCli;
+pub use stream_analytics::{EventHubInputConfig, ParquetOutputConfig, StreamAnalyticsCli};
