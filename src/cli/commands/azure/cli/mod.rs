@@ -1,12 +1,12 @@
 // src/cli/commands/azure/cli/mod.rs
 mod az;
-mod eventhub;
+// mod eventhub;          // TODO: uncomment in Task 3
 mod resource;
-mod storage;
-mod stream_analytics;
+// mod storage;           // TODO: uncomment in Task 3
+// mod stream_analytics;  // TODO: uncomment in Task 3
 
-pub use az::{AccountCli, AzureCli};
-pub use eventhub::EventHubCli;
+pub use az::AzureCli;
+// pub use eventhub::EventHubCli;
 pub use resource::ResourceCli;
-pub use storage::StorageCli;
-pub use stream_analytics::StreamAnalyticsCli;
+// pub use storage::StorageCli;
+// pub use stream_analytics::StreamAnalyticsCli;

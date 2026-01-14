@@ -16,7 +16,7 @@ impl ResourceCli {
     /// Check if resource group exists
     pub fn group_exists(&self, name: &str) -> Result<bool> {
         let result = Command::new("az")
-            .args(&["group", "show", "--name", name])
+            .args(["group", "show", "--name", name])
             .output()
             .context("Failed to check resource group")?;
 
@@ -26,7 +26,7 @@ impl ResourceCli {
     /// Create resource group
     pub fn create_group(&self, name: &str) -> Result<()> {
         let output = Command::new("az")
-            .args(&[
+            .args([
                 "group",
                 "create",
                 "--name",
@@ -47,10 +47,13 @@ impl ResourceCli {
 
     /// Delete resource group
     pub fn delete_group(&self, name: &str) -> Result<()> {
-        eprintln!("    Deleting resource group: {} (this may take several minutes)", name);
+        eprintln!(
+            "    Deleting resource group: {} (this may take several minutes)",
+            name
+        );
 
         let output = Command::new("az")
-            .args(&["group", "delete", "--name", name, "--yes", "--no-wait"])
+            .args(["group", "delete", "--name", name, "--yes", "--no-wait"])
             .output()
             .context("Failed to delete resource group")?;
 
@@ -63,7 +66,12 @@ impl ResourceCli {
     }
 
     /// Deploy Bicep template
-    pub fn deploy_bicep(&self, rg: &str, template_path: &str, params: &[(&str, &str)]) -> Result<()> {
+    pub fn deploy_bicep(
+        &self,
+        rg: &str,
+        template_path: &str,
+        params: &[(&str, &str)],
+    ) -> Result<()> {
         let mut args = vec![
             "deployment",
             "group",
@@ -75,10 +83,8 @@ impl ResourceCli {
         ];
 
         // Add parameters
-        let param_strings: Vec<String> = params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect();
+        let param_strings: Vec<String> =
+            params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
 
         if !param_strings.is_empty() {
             args.push("--parameters");

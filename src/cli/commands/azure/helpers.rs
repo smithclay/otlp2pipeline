@@ -107,8 +107,7 @@ pub const CONTAINERS: &[&str] = &["logs", "traces", "metrics-gauge", "metrics-su
 
 /// Validate name lengths before deployment
 pub fn validate_name_lengths(env: &str, _region: &str) -> Result<()> {
-    let storage = storage_account_name(env)
-        .context("Storage account name validation failed")?;
+    let _storage = storage_account_name(env).context("Storage account name validation failed")?;
 
     let resource_group = resource_group_name(env);
     if resource_group.len() > 90 {
