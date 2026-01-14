@@ -27,7 +27,12 @@ impl StreamAnalyticsCli {
                 rg,
             ])
             .output()
-            .context("Failed to check Stream Analytics job")?;
+            .with_context(|| {
+                format!(
+                    "Failed to check if Stream Analytics job '{}' exists in resource group '{}'",
+                    job, rg
+                )
+            })?;
 
         Ok(result.status.success())
     }
@@ -49,11 +54,16 @@ impl StreamAnalyticsCli {
                 "tsv",
             ])
             .output()
-            .context("Failed to get Stream Analytics job state")?;
+            .with_context(|| {
+                format!(
+                    "Failed to get state for Stream Analytics job '{}' in resource group '{}'",
+                    job, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to get job state: {}", stderr);
+            anyhow::bail!("Failed to get state for job '{}': {}", job, stderr.trim());
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -74,19 +84,24 @@ impl StreamAnalyticsCli {
                 &self.region,
                 "--output-error-policy",
                 "Drop",
-                "--events-outoforder-policy",
+                "--out-of-order-policy",
                 "Adjust",
-                "--events-outoforder-max-delay",
+                "--order-max-delay",
                 "10",
-                "--events-late-arrival-max-delay",
+                "--arrival-max-delay",
                 "5",
             ])
             .output()
-            .context("Failed to create Stream Analytics job")?;
+            .with_context(|| {
+                format!(
+                    "Failed to create Stream Analytics job '{}' in resource group '{}'",
+                    job, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to create job: {}", stderr);
+            anyhow::bail!("Failed to create job '{}': {}", job, stderr.trim());
         }
 
         Ok(())
@@ -107,11 +122,16 @@ impl StreamAnalyticsCli {
                 "JobStartTime",
             ])
             .output()
-            .context("Failed to start Stream Analytics job")?;
+            .with_context(|| {
+                format!(
+                    "Failed to start Stream Analytics job '{}' in resource group '{}'",
+                    job, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to start job: {}", stderr);
+            anyhow::bail!("Failed to start job '{}': {}", job, stderr.trim());
         }
 
         Ok(())
@@ -130,11 +150,16 @@ impl StreamAnalyticsCli {
                 rg,
             ])
             .output()
-            .context("Failed to stop Stream Analytics job")?;
+            .with_context(|| {
+                format!(
+                    "Failed to stop Stream Analytics job '{}' in resource group '{}'",
+                    job, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to stop job: {}", stderr);
+            anyhow::bail!("Failed to stop job '{}': {}", job, stderr.trim());
         }
 
         Ok(())
@@ -154,11 +179,16 @@ impl StreamAnalyticsCli {
                 "--yes",
             ])
             .output()
-            .context("Failed to delete Stream Analytics job")?;
+            .with_context(|| {
+                format!(
+                    "Failed to delete Stream Analytics job '{}' in resource group '{}'",
+                    job, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to delete job: {}", stderr);
+            anyhow::bail!("Failed to delete job '{}': {}", job, stderr.trim());
         }
 
         Ok(())
@@ -169,24 +199,21 @@ impl StreamAnalyticsCli {
         let eventhub_key = extract_key(&config.eventhub_connection_string, "SharedAccessKey=")?;
 
         let input_json = json!({
-            "name": "eventhubinput",
-            "properties": {
-                "type": "Stream",
-                "datasource": {
-                    "type": "Microsoft.ServiceBus/EventHub",
-                    "properties": {
-                        "serviceBusNamespace": config.eventhub_namespace,
-                        "eventHubName": config.eventhub_name,
-                        "sharedAccessPolicyName": "RootManageSharedAccessKey",
-                        "sharedAccessPolicyKey": eventhub_key,
-                        "consumerGroupName": "$Default"
-                    }
-                },
-                "serialization": {
-                    "type": "Json",
-                    "properties": {
-                        "encoding": "UTF8"
-                    }
+            "type": "Stream",
+            "datasource": {
+                "type": "Microsoft.ServiceBus/EventHub",
+                "properties": {
+                    "serviceBusNamespace": config.eventhub_namespace,
+                    "eventHubName": config.eventhub_name,
+                    "sharedAccessPolicyName": "RootManageSharedAccessKey",
+                    "sharedAccessPolicyKey": eventhub_key,
+                    "consumerGroupName": "$Default"
+                }
+            },
+            "serialization": {
+                "type": "Json",
+                "properties": {
+                    "encoding": "UTF8"
                 }
             }
         });
@@ -222,32 +249,30 @@ impl StreamAnalyticsCli {
     pub fn create_output(&self, job: &str, rg: &str, config: &ParquetOutputConfig) -> Result<()> {
         let account_key = extract_account_key(&config.storage_connection_string)?;
 
-        let output_json = json!({
-            "name": config.output_name,
+        let datasource_json = json!({
+            "type": "Microsoft.Storage/Blob",
             "properties": {
-                "datasource": {
-                    "type": "Microsoft.Storage/Blob",
-                    "properties": {
-                        "storageAccounts": [{
-                            "accountName": config.storage_account,
-                            "accountKey": account_key
-                        }],
-                        "container": config.container,
-                        "pathPattern": "{date}/{time}",
-                        "dateFormat": "yyyy/MM/dd",
-                        "timeFormat": "HH"
-                    }
-                },
-                "serialization": {
-                    "type": "Parquet",
-                    "properties": {}
-                },
+                "storageAccounts": [{
+                    "accountName": config.storage_account,
+                    "accountKey": account_key
+                }],
+                "container": config.container,
+                "pathPattern": "{date}/{time}",
+                "dateFormat": "yyyy/MM/dd",
+                "timeFormat": "HH"
+            }
+        });
+
+        let serialization_json = json!({
+            "type": "Parquet",
+            "properties": {
                 "timeWindow": "00:05:00",
                 "sizeWindow": 2000
             }
         });
 
-        let output_str = serde_json::to_string(&output_json)?;
+        let datasource_str = serde_json::to_string(&datasource_json)?;
+        let serialization_str = serde_json::to_string(&serialization_json)?;
 
         let output = Command::new("az")
             .args([
@@ -261,10 +286,17 @@ impl StreamAnalyticsCli {
                 "--name",
                 &config.output_name,
                 "--datasource",
-                &output_str,
+                &datasource_str,
+                "--serialization",
+                &serialization_str,
             ])
             .output()
-            .context("Failed to create Stream Analytics output")?;
+            .with_context(|| {
+                format!(
+                    "Failed to create Stream Analytics output '{}' for job '{}'",
+                    config.output_name, job
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

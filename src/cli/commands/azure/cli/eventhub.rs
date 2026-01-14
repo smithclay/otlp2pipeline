@@ -22,7 +22,12 @@ impl EventHubCli {
                 rg,
             ])
             .output()
-            .context("Failed to check Event Hub namespace")?;
+            .with_context(|| {
+                format!(
+                    "Failed to check if Event Hub namespace '{}' exists in resource group '{}'",
+                    namespace, rg
+                )
+            })?;
 
         Ok(result.status.success())
     }
@@ -42,7 +47,12 @@ impl EventHubCli {
                 rg,
             ])
             .output()
-            .context("Failed to check Event Hub")?;
+            .with_context(|| {
+                format!(
+                    "Failed to check if Event Hub '{}' exists in namespace '{}' (resource group '{}')",
+                    hub, namespace, rg
+                )
+            })?;
 
         Ok(result.status.success())
     }
@@ -68,11 +78,20 @@ impl EventHubCli {
                 "tsv",
             ])
             .output()
-            .context("Failed to get Event Hub connection string")?;
+            .with_context(|| {
+                format!(
+                    "Failed to get connection string for Event Hub namespace '{}' in resource group '{}'",
+                    namespace, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to get connection string: {}", stderr);
+            anyhow::bail!(
+                "Failed to get connection string for Event Hub namespace '{}': {}",
+                namespace,
+                stderr.trim()
+            );
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())

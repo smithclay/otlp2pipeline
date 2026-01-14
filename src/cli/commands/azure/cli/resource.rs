@@ -18,7 +18,7 @@ impl ResourceCli {
         let result = Command::new("az")
             .args(["group", "show", "--name", name])
             .output()
-            .context("Failed to check resource group")?;
+            .with_context(|| format!("Failed to check if resource group '{}' exists", name))?;
 
         Ok(result.status.success())
     }
@@ -35,11 +35,20 @@ impl ResourceCli {
                 &self.region,
             ])
             .output()
-            .context("Failed to create resource group")?;
+            .with_context(|| {
+                format!(
+                    "Failed to create resource group '{}' in region '{}'",
+                    name, self.region
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to create resource group: {}", stderr);
+            anyhow::bail!(
+                "Failed to create resource group '{}': {}",
+                name,
+                stderr.trim()
+            );
         }
 
         Ok(())
@@ -55,11 +64,15 @@ impl ResourceCli {
         let output = Command::new("az")
             .args(["group", "delete", "--name", name, "--yes", "--no-wait"])
             .output()
-            .context("Failed to delete resource group")?;
+            .with_context(|| format!("Failed to delete resource group '{}'", name))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to delete resource group: {}", stderr);
+            anyhow::bail!(
+                "Failed to delete resource group '{}': {}",
+                name,
+                stderr.trim()
+            );
         }
 
         Ok(())
@@ -93,14 +106,17 @@ impl ResourceCli {
             }
         }
 
-        let output = Command::new("az")
-            .args(&args)
-            .output()
-            .context("Failed to deploy Bicep template")?;
+        let output = Command::new("az").args(&args).output().with_context(|| {
+            format!("Failed to deploy Bicep template to resource group '{}'", rg)
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Bicep deployment failed: {}", stderr);
+            anyhow::bail!(
+                "Bicep deployment failed for resource group '{}': {}",
+                rg,
+                stderr.trim()
+            );
         }
 
         Ok(())

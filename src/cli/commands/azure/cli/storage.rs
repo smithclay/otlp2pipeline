@@ -22,7 +22,12 @@ impl StorageCli {
                 rg,
             ])
             .output()
-            .context("Failed to check storage account")?;
+            .with_context(|| {
+                format!(
+                    "Failed to check if storage account '{}' exists in resource group '{}'",
+                    name, rg
+                )
+            })?;
 
         Ok(result.status.success())
     }
@@ -42,7 +47,12 @@ impl StorageCli {
                 "login",
             ])
             .output()
-            .context("Failed to check container")?;
+            .with_context(|| {
+                format!(
+                    "Failed to check if container '{}' exists in storage account '{}'",
+                    container, account
+                )
+            })?;
 
         Ok(result.status.success())
     }
@@ -64,11 +74,20 @@ impl StorageCli {
                 "tsv",
             ])
             .output()
-            .context("Failed to get storage connection string")?;
+            .with_context(|| {
+                format!(
+                    "Failed to get connection string for storage account '{}' in resource group '{}'",
+                    account, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to get connection string: {}", stderr);
+            anyhow::bail!(
+                "Failed to get connection string for storage account '{}': {}",
+                account,
+                stderr.trim()
+            );
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())

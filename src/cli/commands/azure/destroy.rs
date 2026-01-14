@@ -52,9 +52,15 @@ pub fn execute_destroy(args: DestroyArgs) -> Result<()> {
         .job_exists(&ctx.stream_analytics_job, &ctx.resource_group)?
     {
         eprintln!("    Stopping job: {}", ctx.stream_analytics_job);
-        let _ = cli
+        if let Err(e) = cli
             .stream_analytics()
-            .stop_job(&ctx.stream_analytics_job, &ctx.resource_group);
+            .stop_job(&ctx.stream_analytics_job, &ctx.resource_group)
+        {
+            eprintln!(
+                "    Warning: Failed to stop job (it may already be stopped): {}",
+                e
+            );
+        }
 
         eprintln!("    Deleting job: {}", ctx.stream_analytics_job);
         cli.stream_analytics()
