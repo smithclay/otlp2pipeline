@@ -1,8 +1,8 @@
 use anyhow::{bail, Context};
 use clap::Parser;
 use otlp2pipeline::cli::{
-    commands, config, AwsCatalogCommands, AwsCommands, BucketCommands, CatalogCommands, Cli,
-    CloudflareCommands, Commands, ConnectCommands,
+    commands, config, AwsCatalogCommands, AwsCommands, AzureCommands, BucketCommands,
+    CatalogCommands, Cli, CloudflareCommands, Commands, ConnectCommands,
 };
 
 /// Resolved provider from config
@@ -48,37 +48,27 @@ async fn main() -> anyhow::Result<()> {
         Commands::Create(args) => match require_provider()? {
             Provider::Cloudflare => commands::execute_create(args).await?,
             Provider::Aws => commands::aws::execute_create(args)?,
-            Provider::Azure => bail!(
-                "Azure commands not yet implemented. Use 'otlp2pipeline azure' when available."
-            ),
+            Provider::Azure => commands::azure::execute_create(args)?,
         },
         Commands::Destroy(args) => match require_provider()? {
             Provider::Cloudflare => commands::execute_destroy(args).await?,
             Provider::Aws => commands::aws::execute_destroy(args)?,
-            Provider::Azure => bail!(
-                "Azure commands not yet implemented. Use 'otlp2pipeline azure' when available."
-            ),
+            Provider::Azure => commands::azure::execute_destroy(args)?,
         },
         Commands::Status(args) => match require_provider()? {
             Provider::Cloudflare => commands::execute_status(args).await?,
             Provider::Aws => commands::aws::execute_status(args)?,
-            Provider::Azure => bail!(
-                "Azure commands not yet implemented. Use 'otlp2pipeline azure' when available."
-            ),
+            Provider::Azure => commands::azure::execute_status(args)?,
         },
         Commands::Plan(args) => match require_provider()? {
             Provider::Cloudflare => commands::execute_plan(args).await?,
             Provider::Aws => commands::aws::execute_plan(args)?,
-            Provider::Azure => bail!(
-                "Azure commands not yet implemented. Use 'otlp2pipeline azure' when available."
-            ),
+            Provider::Azure => commands::azure::execute_plan(args)?,
         },
         Commands::Query(args) => match require_provider()? {
             Provider::Cloudflare => commands::execute_query(args).await?,
             Provider::Aws => commands::aws::execute_query(args)?,
-            Provider::Azure => bail!(
-                "Azure commands not yet implemented. Use 'otlp2pipeline azure' when available."
-            ),
+            Provider::Azure => bail!("Query command not yet implemented for Azure provider"),
         },
 
         // Explicit Cloudflare provider subcommand
@@ -117,10 +107,13 @@ async fn main() -> anyhow::Result<()> {
             },
         },
 
-        // Explicit Azure provider subcommand (not yet implemented)
-        Commands::Azure(_azure_args) => {
-            bail!("Azure commands not yet implemented")
-        }
+        // Explicit Azure provider subcommand
+        Commands::Azure(azure_args) => match azure_args.command {
+            AzureCommands::Create(args) => commands::azure::execute_create(args)?,
+            AzureCommands::Status(args) => commands::azure::execute_status(args)?,
+            AzureCommands::Destroy(args) => commands::azure::execute_destroy(args)?,
+            AzureCommands::Plan(args) => commands::azure::execute_plan(args)?,
+        },
 
         Commands::Services(args) => commands::execute_services(args).await?,
         Commands::Tail(args) => commands::execute_tail(args).await?,
