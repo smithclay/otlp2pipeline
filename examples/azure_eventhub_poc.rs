@@ -33,8 +33,9 @@ pub struct EventEnvelope {
 }
 
 impl EventEnvelope {
-    /// Create a logs envelope with sample data
+    /// Create a logs envelope with sample data (full otlp2records schema)
     fn sample_log(service_name: &str, message: &str) -> Self {
+        let now = chrono::Utc::now().timestamp_millis();
         Self {
             signal_type: "logs".to_string(),
             table: "logs".to_string(),
@@ -42,19 +43,36 @@ impl EventEnvelope {
             service_name: Some(service_name.to_string()),
             env: Some("poc".to_string()),
             payload: serde_json::json!({
-                "timestamp": chrono::Utc::now().timestamp_millis(),
+                // Required fields
+                "timestamp": now,
+                "observed_timestamp": now,
                 "service_name": service_name,
-                "body": message,
                 "severity_number": 9,
                 "severity_text": "INFO",
-                "trace_id": "abc123",
-                "span_id": "def456",
+                // Optional fields
+                "trace_id": "0123456789abcdef0123456789abcdef",
+                "span_id": "0123456789abcdef",
+                "service_namespace": "poc",
+                "service_instance_id": format!("{}-instance-1", service_name),
+                "body": message,
+                "resource_attributes": {
+                    "host.name": "localhost",
+                    "deployment.environment": "poc"
+                },
+                "scope_name": "azure_eventhub_poc",
+                "scope_version": "0.1.0",
+                "scope_attributes": {},
+                "log_attributes": {
+                    "custom.field": "example"
+                }
             }),
         }
     }
 
-    /// Create a traces envelope with sample data
+    /// Create a traces envelope with sample data (full otlp2records schema)
     fn sample_trace(service_name: &str, operation: &str) -> Self {
+        let now = chrono::Utc::now().timestamp_millis();
+        let duration_us = 125_000; // 125ms
         Self {
             signal_type: "traces".to_string(),
             table: "traces".to_string(),
@@ -62,20 +80,46 @@ impl EventEnvelope {
             service_name: Some(service_name.to_string()),
             env: Some("poc".to_string()),
             payload: serde_json::json!({
-                "timestamp": chrono::Utc::now().timestamp_millis(),
+                // Required fields
+                "timestamp": now,
+                "end_timestamp": now + 125,
+                "duration": duration_us,
                 "service_name": service_name,
                 "span_name": operation,
-                "trace_id": "trace123",
-                "span_id": "span456",
-                "parent_span_id": null,
-                "duration_ms": 125,
-                "status_code": 1,
+                "span_kind": 1, // INTERNAL
+                "status_code": 1, // OK
+                // Optional fields
+                "trace_id": "0123456789abcdef0123456789abcdef",
+                "span_id": "0123456789abcdef",
+                "parent_span_id": "fedcba9876543210",
+                "trace_state": "",
+                "service_namespace": "poc",
+                "service_instance_id": format!("{}-instance-1", service_name),
+                "status_message": "",
+                "resource_attributes": {
+                    "host.name": "localhost",
+                    "deployment.environment": "poc"
+                },
+                "scope_name": "azure_eventhub_poc",
+                "scope_version": "0.1.0",
+                "scope_attributes": {},
+                "span_attributes": {
+                    "http.method": "GET",
+                    "http.status_code": 200
+                },
+                "events_json": [],
+                "links_json": [],
+                "dropped_attributes_count": 0,
+                "dropped_events_count": 0,
+                "dropped_links_count": 0,
+                "flags": 0
             }),
         }
     }
 
-    /// Create a metrics (gauge) envelope with sample data
+    /// Create a metrics (gauge) envelope with sample data (full otlp2records schema)
     fn sample_gauge(service_name: &str, metric_name: &str, value: f64) -> Self {
+        let now = chrono::Utc::now().timestamp_millis();
         Self {
             signal_type: "metrics_gauge".to_string(),
             table: "gauge".to_string(),
@@ -83,11 +127,66 @@ impl EventEnvelope {
             service_name: Some(service_name.to_string()),
             env: Some("poc".to_string()),
             payload: serde_json::json!({
-                "timestamp": chrono::Utc::now().timestamp_millis(),
-                "service_name": service_name,
+                // Required fields
+                "timestamp": now,
                 "metric_name": metric_name,
                 "value": value,
-                "unit": "bytes",
+                "service_name": service_name,
+                // Optional fields
+                "start_timestamp": now - 60000,
+                "metric_description": format!("Gauge metric: {}", metric_name),
+                "metric_unit": "bytes",
+                "service_namespace": "poc",
+                "service_instance_id": format!("{}-instance-1", service_name),
+                "resource_attributes": {
+                    "host.name": "localhost"
+                },
+                "scope_name": "azure_eventhub_poc",
+                "scope_version": "0.1.0",
+                "scope_attributes": {},
+                "metric_attributes": {
+                    "environment": "poc"
+                },
+                "flags": 0,
+                "exemplars_json": []
+            }),
+        }
+    }
+
+    /// Create a metrics (sum) envelope with sample data
+    fn sample_sum(service_name: &str, metric_name: &str, value: f64) -> Self {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self {
+            signal_type: "metrics_sum".to_string(),
+            table: "sum".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            service_name: Some(service_name.to_string()),
+            env: Some("poc".to_string()),
+            payload: serde_json::json!({
+                // Required fields
+                "timestamp": now,
+                "metric_name": metric_name,
+                "value": value,
+                "service_name": service_name,
+                "aggregation_temporality": 2, // DELTA
+                "is_monotonic": true,
+                // Optional fields
+                "start_timestamp": now - 60000,
+                "metric_description": format!("Sum metric: {}", metric_name),
+                "metric_unit": "count",
+                "service_namespace": "poc",
+                "service_instance_id": format!("{}-instance-1", service_name),
+                "resource_attributes": {
+                    "host.name": "localhost"
+                },
+                "scope_name": "azure_eventhub_poc",
+                "scope_version": "0.1.0",
+                "scope_attributes": {},
+                "metric_attributes": {
+                    "environment": "poc"
+                },
+                "flags": 0,
+                "exemplars_json": []
             }),
         }
     }
@@ -182,6 +281,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         EventEnvelope::sample_log("web-server", "User login successful"),
         EventEnvelope::sample_trace("web-server", "authenticate_user"),
         EventEnvelope::sample_gauge("web-server", "memory_usage_bytes", 1024000.0),
+        EventEnvelope::sample_sum("web-server", "requests_total", 150.0),
         EventEnvelope::sample_log("database", "Query executed"),
         EventEnvelope::sample_trace("database", "execute_query"),
     ];
@@ -202,8 +302,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // Test 4: Large batch to test chunking
-    println!("📤 Test 4: Sending large batch (50 events)");
-    let large_batch: Vec<EventEnvelope> = (0..50)
+    println!("📤 Test 4: Sending large batch (60 events)");
+    let large_batch: Vec<EventEnvelope> = (0..60)
         .map(|i| {
             let signal_type = match i % 4 {
                 0 => "logs",
@@ -217,7 +317,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "metrics_gauge" => {
                     EventEnvelope::sample_gauge("load-test", "test_metric", i as f64)
                 }
-                _ => EventEnvelope::sample_gauge("load-test", "counter", i as f64),
+                _ => EventEnvelope::sample_sum("load-test", "counter", i as f64),
             }
         })
         .collect();
@@ -229,7 +329,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .map_err(|e| format!("Failed to send batch event {}: {:?}", i, e))?;
 
-        if (i + 1) % 10 == 0 {
+        if (i + 1) % 15 == 0 {
             println!("   ✓ Sent {} events...", i + 1);
         }
     }
@@ -251,15 +351,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Summary:");
     println!("  ✓ Single event send");
     println!("  ✓ Batch event send");
-    println!("  ✓ Mixed signal types");
-    println!("  ✓ Large batch (50 events)");
+    println!("  ✓ Mixed signal types (logs, traces, gauge, sum)");
+    println!("  ✓ Large batch (60 events)");
     println!("  ✓ Schema validation");
     println!();
     println!("Next steps:");
-    println!("  1. Wait 5 minutes for Capture to flush (or send enough data to hit 300MB)");
-    println!("  2. Check Azure Data Lake Storage for Parquet/Avro files");
-    println!("  3. Download and inspect captured data");
-    println!("  4. Verify event structure is preserved");
+    println!("  1. Wait 5 minutes for Stream Analytics to flush batches");
+    println!("  2. Check ADLS Gen2 containers for Parquet files");
+    println!("  3. Download and inspect Parquet data");
+    println!("  4. Verify signal_type routing worked");
 
     // Close the producer client
     producer.close().await?;
