@@ -246,49 +246,62 @@ impl StreamAnalyticsCli {
     }
 
     /// Create Parquet output for a specific container
+    /// Uses Azure REST API directly to avoid CLI extension bugs with type conversion
     pub fn create_output(&self, job: &str, rg: &str, config: &ParquetOutputConfig) -> Result<()> {
         let account_key = extract_account_key(&config.storage_connection_string)?;
 
-        let datasource_json = json!({
-            "type": "Microsoft.Storage/Blob",
-            "properties": {
-                "storageAccounts": [{
-                    "accountName": config.storage_account,
-                    "accountKey": account_key
-                }],
-                "container": config.container,
-                "pathPattern": "{date}/{time}",
-                "dateFormat": "yyyy/MM/dd",
-                "timeFormat": "HH"
-            }
-        });
+        // Get subscription ID
+        let subscription_id = Command::new("az")
+            .args(["account", "show", "--query", "id", "-o", "tsv"])
+            .output()
+            .context("Failed to get subscription ID")?;
+        let subscription_id = String::from_utf8_lossy(&subscription_id.stdout)
+            .trim()
+            .to_string();
 
-        let serialization_json = json!({
-            "type": "Parquet",
+        // Create output properties per Azure REST API spec
+        let output_body = json!({
             "properties": {
+                "datasource": {
+                    "type": "Microsoft.Storage/Blob",
+                    "properties": {
+                        "storageAccounts": [{
+                            "accountName": config.storage_account,
+                            "accountKey": account_key
+                        }],
+                        "container": config.container,
+                        "pathPattern": "{date}/{time}",
+                        "dateFormat": "yyyy/MM/dd",
+                        "timeFormat": "HH"
+                    }
+                },
+                "serialization": {
+                    "type": "Parquet",
+                    "properties": {}
+                },
                 "timeWindow": "00:05:00",
                 "sizeWindow": 2000
             }
         });
 
-        let datasource_str = serde_json::to_string(&datasource_json)?;
-        let serialization_str = serde_json::to_string(&serialization_json)?;
+        // Write to temp file
+        let temp_dir = std::env::temp_dir();
+        let body_path = temp_dir.join(format!(
+            "stream-analytics-output-{}.json",
+            &config.output_name
+        ));
+        std::fs::write(&body_path, serde_json::to_string(&output_body)?)?;
 
+        let body_arg = format!("@{}", body_path.display());
+        let url = format!(
+            "/subscriptions/{}/resourceGroups/{}/providers/Microsoft.StreamAnalytics/streamingjobs/{}/outputs/{}?api-version=2020-03-01",
+            subscription_id, rg, job, &config.output_name
+        );
+
+        // Use az rest to call Azure REST API directly
         let output = Command::new("az")
             .args([
-                "stream-analytics",
-                "output",
-                "create",
-                "--job-name",
-                job,
-                "--resource-group",
-                rg,
-                "--name",
-                &config.output_name,
-                "--datasource",
-                &datasource_str,
-                "--serialization",
-                &serialization_str,
+                "rest", "--method", "put", "--url", &url, "--body", &body_arg,
             ])
             .output()
             .with_context(|| {
@@ -297,6 +310,11 @@ impl StreamAnalyticsCli {
                     config.output_name, job
                 )
             })?;
+
+        // Clean up temp file
+        if let Err(e) = std::fs::remove_file(&body_path) {
+            eprintln!("    Warning: Failed to clean up temp file: {}", e);
+        }
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -312,16 +330,6 @@ impl StreamAnalyticsCli {
 
     /// Set Stream Analytics transformation query
     pub fn set_query(&self, job: &str, rg: &str, query: &str) -> Result<()> {
-        let transformation_json = json!({
-            "name": "Transformation",
-            "properties": {
-                "streamingUnits": 1,
-                "query": query
-            }
-        });
-
-        let transformation_str = serde_json::to_string(&transformation_json)?;
-
         let output = Command::new("az")
             .args([
                 "stream-analytics",
@@ -333,15 +341,22 @@ impl StreamAnalyticsCli {
                 rg,
                 "--name",
                 "Transformation",
-                "--transformation",
-                &transformation_str,
+                "--saql",
+                query,
+                "--streaming-units",
+                "1",
             ])
             .output()
-            .context("Failed to set Stream Analytics query")?;
+            .with_context(|| {
+                format!(
+                    "Failed to set query for Stream Analytics job '{}' in resource group '{}'",
+                    job, rg
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to set query: {}", stderr);
+            anyhow::bail!("Failed to set query: {}", stderr.trim());
         }
 
         Ok(())
