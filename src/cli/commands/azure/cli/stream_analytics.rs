@@ -251,13 +251,45 @@ impl StreamAnalyticsCli {
         let account_key = extract_account_key(&config.storage_connection_string)?;
 
         // Get subscription ID
-        let subscription_id = Command::new("az")
+        let subscription_output = Command::new("az")
             .args(["account", "show", "--query", "id", "-o", "tsv"])
             .output()
-            .context("Failed to get subscription ID")?;
-        let subscription_id = String::from_utf8_lossy(&subscription_id.stdout)
+            .context(
+                "Failed to get subscription ID. \
+                 Ensure Azure CLI is installed and you're logged in with 'az login'.",
+            )?;
+
+        if !subscription_output.status.success() {
+            let stderr = String::from_utf8_lossy(&subscription_output.stderr);
+            anyhow::bail!(
+                "Failed to retrieve subscription ID: {}. \
+                 Please run 'az login' to authenticate.",
+                stderr.trim()
+            );
+        }
+
+        let subscription_id = String::from_utf8(subscription_output.stdout)
+            .context("Azure CLI returned invalid UTF-8 for subscription ID")?
             .trim()
             .to_string();
+
+        if subscription_id.is_empty() {
+            anyhow::bail!(
+                "No Azure subscription found. \
+                 Please run 'az login' and select a subscription with 'az account set -s <subscription-id>'."
+            );
+        }
+
+        // Optional: Validate UUID format
+        if !subscription_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            anyhow::bail!(
+                "Invalid subscription ID format: '{}'. Expected a UUID format.",
+                subscription_id
+            );
+        }
 
         // Create output properties per Azure REST API spec
         let output_body = json!({
