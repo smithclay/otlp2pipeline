@@ -95,6 +95,27 @@ pub fn execute_status(args: StatusArgs) -> Result<()> {
         eprintln!("  [missing] Job: {}", ctx.stream_analytics_job);
     }
 
+    // Check Function App
+    eprintln!();
+    eprintln!("Function App:");
+    if cli
+        .functionapp()
+        .exists(&ctx.function_app_name, &ctx.resource_group)?
+    {
+        let state = cli
+            .functionapp()
+            .get_state(&ctx.function_app_name, &ctx.resource_group)?;
+        let url = cli
+            .functionapp()
+            .get_url(&ctx.function_app_name, &ctx.resource_group)?;
+        eprintln!("  [ok] {}", ctx.function_app_name);
+        eprintln!("  [ok] State: {}", state);
+        eprintln!("  [ok] URL: {}", url);
+        eprintln!("  [ok] Image: {}", ctx.container_image);
+    } else {
+        eprintln!("  [missing] {}", ctx.function_app_name);
+    }
+
     eprintln!();
     eprintln!("[ok] Status check complete");
 
