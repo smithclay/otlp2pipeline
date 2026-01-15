@@ -247,12 +247,12 @@ pub fn create_stream_analytics_job(cli: &AzureCli, ctx: &DeployContext) -> Resul
 
     for (name, container) in output_names {
         eprintln!("      Creating output: {} → {}/", name, container);
-        let output_config = ParquetOutputConfig {
-            output_name: format!("{}output", name),
-            container: container.to_string(),
-            storage_account: ctx.storage_account.clone(),
-            storage_connection_string: storage_conn.clone(),
-        };
+        let output_config = ParquetOutputConfig::new(
+            format!("{}output", name),
+            ctx.storage_account.clone(),
+            container.to_string(),
+            storage_conn.clone(),
+        )?;
         sa.create_output(
             &ctx.stream_analytics_job,
             &ctx.resource_group,

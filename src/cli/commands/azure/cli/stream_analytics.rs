@@ -279,7 +279,7 @@ impl StreamAnalyticsCli {
     /// Create Parquet output for a specific container
     /// Uses Azure REST API directly to avoid CLI extension bugs with type conversion
     pub fn create_output(&self, job: &str, rg: &str, config: &ParquetOutputConfig) -> Result<()> {
-        let account_key = extract_key(&config.storage_connection_string, "AccountKey=")?;
+        let account_key = extract_key(config.connection_string(), "AccountKey=")?;
 
         // Get subscription ID
         let subscription_output = Command::new("az")
@@ -330,10 +330,10 @@ impl StreamAnalyticsCli {
                     "type": "Microsoft.Storage/Blob",
                     "properties": {
                         "storageAccounts": [{
-                            "accountName": config.storage_account,
+                            "accountName": config.storage_account(),
                             "accountKey": account_key
                         }],
-                        "container": config.container,
+                        "container": config.container(),
                         "pathPattern": "{date}/{time}",
                         "dateFormat": "yyyy/MM/dd",
                         "timeFormat": "HH"
@@ -352,14 +352,14 @@ impl StreamAnalyticsCli {
         let temp_dir = std::env::temp_dir();
         let body_path = temp_dir.join(format!(
             "stream-analytics-output-{}.json",
-            &config.output_name
+            config.output_name()
         ));
         std::fs::write(&body_path, serde_json::to_string(&output_body)?)?;
 
         let body_arg = format!("@{}", body_path.display());
         let url = format!(
             "/subscriptions/{}/resourceGroups/{}/providers/Microsoft.StreamAnalytics/streamingjobs/{}/outputs/{}?api-version=2020-03-01",
-            subscription_id, rg, job, &config.output_name
+            subscription_id, rg, job, config.output_name()
         );
 
         // Use az rest to call Azure REST API directly
@@ -371,7 +371,8 @@ impl StreamAnalyticsCli {
             .with_context(|| {
                 format!(
                     "Failed to create Stream Analytics output '{}' for job '{}'",
-                    config.output_name, job
+                    config.output_name(),
+                    job
                 )
             })?;
 
@@ -480,10 +481,62 @@ impl EventHubInputConfig {
 
 /// Parquet output configuration
 pub struct ParquetOutputConfig {
-    pub output_name: String,
-    pub storage_account: String,
-    pub container: String,
-    pub storage_connection_string: String,
+    output_name: String,
+    storage_account: String,
+    container: String,
+    storage_connection_string: String,
+}
+
+impl ParquetOutputConfig {
+    /// Create a new ParquetOutputConfig with validation
+    pub fn new(
+        output_name: String,
+        storage_account: String,
+        container: String,
+        storage_connection_string: String,
+    ) -> Result<Self> {
+        // Validate connection string contains AccountKey
+        extract_key(&storage_connection_string, "AccountKey=")
+            .context("Invalid storage connection string: missing AccountKey")?;
+
+        // Validate output name is non-empty
+        if output_name.trim().is_empty() {
+            anyhow::bail!("Output name cannot be empty");
+        }
+
+        // Validate storage account name
+        if storage_account.trim().is_empty() {
+            anyhow::bail!("Storage account name cannot be empty");
+        }
+
+        // Validate container name is non-empty
+        if container.trim().is_empty() {
+            anyhow::bail!("Container name cannot be empty");
+        }
+
+        Ok(Self {
+            output_name,
+            storage_account,
+            container,
+            storage_connection_string,
+        })
+    }
+
+    pub fn output_name(&self) -> &str {
+        &self.output_name
+    }
+
+    pub fn storage_account(&self) -> &str {
+        &self.storage_account
+    }
+
+    pub fn container(&self) -> &str {
+        &self.container
+    }
+
+    pub fn connection_string(&self) -> &str {
+        &self.storage_connection_string
+    }
 }
 
 /// Extract key from connection string by prefix (e.g., "SharedAccessKey=", "AccountKey=")
