@@ -4,7 +4,14 @@ use std::fs;
 use super::cli::{AzureCli, EventHubInputConfig, ParquetOutputConfig};
 use super::context::DeployContext;
 
-/// Bicep template for Azure infrastructure (embedded to avoid path dependencies)
+/// Bicep template for Azure infrastructure (embedded to avoid runtime path dependencies)
+///
+/// IMPORTANT: This template is duplicated from templates/azure/otlp.bicep
+/// The external file serves as the canonical reference and can be used for standalone deployments.
+/// When modifying infrastructure, update BOTH this embedded copy AND the external file.
+///
+/// Why embedded: Allows the CLI binary to work from any directory without needing to locate
+/// the templates directory at runtime.
 const BICEP_TEMPLATE: &str = r#"// templates/azure/otlp.bicep
 // Deploys: Storage Account (ADLS Gen2), Containers, Event Hub Namespace + Hub
 

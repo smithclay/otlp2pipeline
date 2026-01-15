@@ -84,7 +84,38 @@ otlp2pipeline aws status --env prod --region us-east-1
 
 # AWS teardown
 otlp2pipeline aws destroy --env prod --region us-east-1 --force
+```
 
+### Azure Prerequisites
+
+Azure deployment requires the Azure CLI to be installed and authenticated:
+
+```bash
+# Install Azure CLI (if not already installed)
+# macOS:
+brew install azure-cli
+
+# Linux:
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+# Windows:
+# Download from https://aka.ms/installazurecliwindows
+
+# Authenticate
+az login
+
+# Verify authentication and view subscription
+az account show
+
+# (Optional) Set a specific subscription if you have multiple
+az account set --subscription <subscription-id-or-name>
+```
+
+For installation details, see: https://learn.microsoft.com/cli/azure/install-azure-cli
+
+### Azure Commands
+
+```bash
 # Azure deployment (full orchestration)
 otlp2pipeline azure create --env prod --region westus
 
