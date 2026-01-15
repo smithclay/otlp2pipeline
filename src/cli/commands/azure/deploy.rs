@@ -175,9 +175,16 @@ pub fn deploy_bicep_template(cli: &AzureCli, ctx: &DeployContext) -> Result<()> 
         ],
     );
 
-    // Clean up temp file
+    // Clean up temporary Bicep template
     if let Err(e) = fs::remove_file(&template_path) {
-        eprintln!("    Warning: Failed to clean up temp file: {}", e);
+        eprintln!(
+            "    Warning: Failed to clean up temporary Bicep template at {}: {}",
+            template_path.display(),
+            e
+        );
+        eprintln!(
+            "    This file contains infrastructure configuration. Consider removing it manually."
+        );
     }
 
     result?;
