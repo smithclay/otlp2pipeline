@@ -1,4 +1,5 @@
 pub mod aws;
+pub mod azure;
 pub mod cloudflare;
 mod connect;
 mod init;

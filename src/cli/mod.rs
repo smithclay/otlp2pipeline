@@ -39,6 +39,9 @@ pub enum Commands {
     /// AWS infrastructure commands (explicit provider)
     Aws(AwsArgs),
 
+    /// Azure infrastructure commands (explicit provider)
+    Azure(AzureArgs),
+
     // Provider-agnostic commands
     /// List known services
     Services(ServicesArgs),
@@ -50,7 +53,7 @@ pub enum Commands {
 
 #[derive(clap::Args)]
 pub struct InitArgs {
-    /// Cloud provider (cloudflare, cf, aws)
+    /// Cloud provider (cloudflare, cf, aws, azure)
     #[arg(long, short)]
     pub provider: String,
 
@@ -115,6 +118,24 @@ pub enum AwsCommands {
     Query(QueryArgs),
     /// Manage S3 Tables catalog
     Catalog(AwsCatalogArgs),
+}
+
+#[derive(clap::Args)]
+pub struct AzureArgs {
+    #[command(subcommand)]
+    pub command: AzureCommands,
+}
+
+#[derive(Subcommand)]
+pub enum AzureCommands {
+    /// Create Azure infrastructure (Event Hub + Stream Analytics)
+    Create(CreateArgs),
+    /// Show Azure deployment status
+    Status(StatusArgs),
+    /// Delete Azure infrastructure
+    Destroy(DestroyArgs),
+    /// Show what would be created
+    Plan(PlanArgs),
 }
 
 #[derive(clap::Args)]
