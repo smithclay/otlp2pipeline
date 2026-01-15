@@ -20,10 +20,16 @@ name = "lambda"
 path = "src/bin/lambda.rs"
 required-features = ["lambda"]
 
+[[bin]]
+name = "azure_function"
+path = "src/bin/azure_function.rs"
+required-features = ["azure-function"]
+
 [features]
 default = []
 lambda = ["dep:lambda_http", "dep:aws-sdk-firehose", "dep:aws-config", "dep:rand"]
 azure = ["dep:azeventhubs"]
+azure-function = ["dep:azeventhubs", "dep:rand"]
 
 [dependencies]
 worker = "0.7"
