@@ -3,7 +3,20 @@
 [![Crates.io](https://img.shields.io/crates/v/otlp2pipeline.svg)](https://crates.io/crates/otlp2pipeline)
 [![License](https://img.shields.io/crates/l/otlp2pipeline.svg)](https://github.com/smithclay/otlp2pipeline/blob/main/LICENSE)
 
-> Stream OpenTelemetry metrics, logs or traces to Cloudflare R2 Data Catalog or Amazon S3 Tables (Apache Iceberg).
+> Stream OpenTelemetry metrics, logs or traces to Cloudflare R2 Data Catalog (Apache Iceberg), Amazon S3 Tables (Apache Iceberg), or Azure ADLS Gen2 (Parquet).
+
+## Table of Contents
+
+- [What it does](#what-it-does)
+- [Why?](#why)
+- [Quickstart](#quickstart)
+- [Cloudflare](#cloudflare)
+- [AWS](#aws)
+- [Azure](#azure)
+- [Usage](#usage)
+- [Schema](#schema)
+- [Performance](#performance)
+- [Security](#security)
 
 ## What it does
 
@@ -67,6 +80,27 @@ otlp2pipeline status
 
 # 4. Stream telemetry from an OTel Collector, Claude Code, or Codex
 otlp2pipeline connect
+```
+
+### Deploy to Azure
+
+Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) installed and authenticated.
+
+```bash
+# 1. Authenticate with Azure CLI
+az login
+
+# 2. Initialize (requires Azure CLI configured)
+otlp2pipeline init --provider azure --env azuretest01 --region westus
+
+# 3. Deploy infrastructure
+otlp2pipeline create
+
+# 4. Check status
+otlp2pipeline status
+
+# 5. Send test events to Event Hub
+cargo run --example azure_eventhub_poc --features azure
 ```
 
 ## Cloudflare
@@ -256,6 +290,101 @@ otlp2pipeline query
 # Send other data sources
 otlp2pipeline connect
 ```
+
+## Azure
+
+### Stream Analytics Architecture
+
+```mermaid
+flowchart TB
+    subgraph Ingest["Ingest + Store"]
+        OTLP[OTLP] --> EH[Event Hub]
+        EH --> SA[Stream Analytics]
+        SA --> ADLS[(ADLS Gen2 / Parquet)]
+    end
+
+    subgraph Query["Query"]
+        DuckDB[🦆 DuckDB] -->|batch| ADLS
+        Synapse[Synapse / Spark] -->|batch| ADLS
+    end
+```
+
+### 1. Install Azure CLI
+
+Install and configure the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli):
+
+```bash
+# macOS
+brew install azure-cli
+
+# Linux
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+# Windows
+# Download from https://aka.ms/installazurecliwindows
+
+# Authenticate
+az login
+
+# Verify authentication and view subscription
+az account show
+
+# (Optional) Set a specific subscription if you have multiple
+az account set --subscription <subscription-id-or-name>
+```
+
+Ensure your Azure account has permissions for:
+- Event Hubs (create namespaces and event hubs)
+- Stream Analytics (create jobs, inputs, outputs)
+- Storage Accounts (create ADLS Gen2 accounts and containers)
+- Resource Groups (create/manage resources)
+
+### 2. Install CLI
+
+```bash
+cargo install otlp2pipeline
+```
+
+### 3. Initialize project
+
+```bash
+# Initialize config file (.otlp2pipeline.toml)
+otlp2pipeline init --provider azure --env prod --region westus
+```
+
+This stores configuration locally for your Azure subscription.
+
+### 4. Deploy
+
+```bash
+# Preview what would be created
+otlp2pipeline plan
+
+# Deploy all infrastructure with authentication (recommended)
+otlp2pipeline create --auth
+```
+
+This deploys:
+- Event Hub namespace and event hub for OTLP ingestion
+- Stream Analytics job with routing query (routes by signal type)
+- ADLS Gen2 storage account with containers for logs, traces, and metrics
+- Parquet outputs with 5-minute batching windows
+- Resource group containing all resources
+
+### 5. Verify
+
+```bash
+# Check deployment status
+otlp2pipeline status
+
+# Send test events to Event Hub using the PoC example
+cargo run --example azure_eventhub_poc --features azure
+
+# Query tables with DuckDB, by default data is available after ~5 minutes
+otlp2pipeline query
+```
+
+Note: The Azure integration currently requires sending data directly to Event Hub. An HTTP ingestion endpoint (Azure Function) is planned for a future release.
 
 ## Usage
 
