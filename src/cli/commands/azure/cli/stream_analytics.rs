@@ -14,7 +14,6 @@ impl StreamAnalyticsCli {
         }
     }
 
-    /// Check if Stream Analytics job exists
     pub fn job_exists(&self, job: &str, rg: &str) -> Result<bool> {
         let result = Command::new("az")
             .args([
@@ -27,12 +26,10 @@ impl StreamAnalyticsCli {
                 rg,
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to execute Azure CLI to check if Stream Analytics job '{}' exists in resource group '{}'",
-                    job, rg
-                )
-            })?;
+            .context(format!(
+                "Failed to check if job '{}' exists in '{}'",
+                job, rg
+            ))?;
 
         if result.status.success() {
             return Ok(true);
@@ -60,7 +57,6 @@ impl StreamAnalyticsCli {
         );
     }
 
-    /// Get Stream Analytics job state
     pub fn get_job_state(&self, job: &str, rg: &str) -> Result<String> {
         let output = Command::new("az")
             .args([
@@ -77,12 +73,7 @@ impl StreamAnalyticsCli {
                 "tsv",
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to get state for Stream Analytics job '{}' in resource group '{}'",
-                    job, rg
-                )
-            })?;
+            .context(format!("Failed to get job state for '{}' in '{}'", job, rg))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8(output.stderr)
@@ -95,7 +86,6 @@ impl StreamAnalyticsCli {
         Ok(stdout.trim().to_string())
     }
 
-    /// Create Stream Analytics job
     pub fn create_job(&self, job: &str, rg: &str) -> Result<()> {
         let output = Command::new("az")
             .args([
@@ -118,12 +108,7 @@ impl StreamAnalyticsCli {
                 "5",
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to create Stream Analytics job '{}' in resource group '{}'",
-                    job, rg
-                )
-            })?;
+            .context(format!("Failed to create job '{}' in '{}'", job, rg))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8(output.stderr)
@@ -134,7 +119,6 @@ impl StreamAnalyticsCli {
         Ok(())
     }
 
-    /// Start Stream Analytics job
     pub fn start_job(&self, job: &str, rg: &str) -> Result<()> {
         let output = Command::new("az")
             .args([
@@ -149,12 +133,7 @@ impl StreamAnalyticsCli {
                 "JobStartTime",
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to start Stream Analytics job '{}' in resource group '{}'",
-                    job, rg
-                )
-            })?;
+            .context(format!("Failed to start job '{}' in '{}'", job, rg))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8(output.stderr)
@@ -165,7 +144,6 @@ impl StreamAnalyticsCli {
         Ok(())
     }
 
-    /// Stop Stream Analytics job
     pub fn stop_job(&self, job: &str, rg: &str) -> Result<()> {
         let output = Command::new("az")
             .args([
@@ -178,12 +156,7 @@ impl StreamAnalyticsCli {
                 rg,
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to stop Stream Analytics job '{}' in resource group '{}'",
-                    job, rg
-                )
-            })?;
+            .context(format!("Failed to stop job '{}' in '{}'", job, rg))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8(output.stderr)
@@ -194,7 +167,6 @@ impl StreamAnalyticsCli {
         Ok(())
     }
 
-    /// Delete Stream Analytics job
     pub fn delete_job(&self, job: &str, rg: &str) -> Result<()> {
         let output = Command::new("az")
             .args([
@@ -208,12 +180,7 @@ impl StreamAnalyticsCli {
                 "--yes",
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to delete Stream Analytics job '{}' in resource group '{}'",
-                    job, rg
-                )
-            })?;
+            .context(format!("Failed to delete job '{}' in '{}'", job, rg))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8(output.stderr)
@@ -224,7 +191,6 @@ impl StreamAnalyticsCli {
         Ok(())
     }
 
-    /// Create Event Hub input
     pub fn create_input(&self, job: &str, rg: &str, config: &EventHubInputConfig) -> Result<()> {
         let eventhub_key = extract_key(config.connection_string(), "SharedAccessKey=")?;
 
@@ -276,8 +242,7 @@ impl StreamAnalyticsCli {
         Ok(())
     }
 
-    /// Create Parquet output for a specific container
-    /// Uses Azure REST API directly to avoid CLI extension bugs with type conversion
+    /// Create Parquet output (uses REST API to work around Azure CLI extension type bug)
     pub fn create_output(&self, job: &str, rg: &str, config: &ParquetOutputConfig) -> Result<()> {
         let account_key = extract_key(config.connection_string(), "AccountKey=")?;
 
@@ -343,8 +308,10 @@ impl StreamAnalyticsCli {
                     "type": "Parquet",
                     "properties": {}
                 },
-                "timeWindow": "00:05:00",
-                "sizeWindow": 2000
+                // Batching configuration: Files created every 5 minutes OR 2000 rows (whichever first)
+                // Smaller windows = lower latency but more files; larger = higher latency but fewer files
+                "timeWindow": "00:05:00",   // 5 minute time window
+                "sizeWindow": 2000           // 2000 row size window
             }
         });
 
@@ -368,13 +335,11 @@ impl StreamAnalyticsCli {
                 "rest", "--method", "put", "--url", &url, "--body", &body_arg,
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to create Stream Analytics output '{}' for job '{}'",
-                    config.output_name(),
-                    job
-                )
-            })?;
+            .context(format!(
+                "Failed to create output '{}' for job '{}'",
+                config.output_name(),
+                job
+            ))?;
 
         // Clean up temp file containing credentials - CRITICAL for security
         std::fs::remove_file(&body_path).with_context(|| {
@@ -399,7 +364,6 @@ impl StreamAnalyticsCli {
         Ok(())
     }
 
-    /// Set Stream Analytics transformation query
     pub fn set_query(&self, job: &str, rg: &str, query: &str) -> Result<()> {
         let output = Command::new("az")
             .args([
@@ -418,12 +382,7 @@ impl StreamAnalyticsCli {
                 "1",
             ])
             .output()
-            .with_context(|| {
-                format!(
-                    "Failed to set query for Stream Analytics job '{}' in resource group '{}'",
-                    job, rg
-                )
-            })?;
+            .context(format!("Failed to set query for job '{}' in '{}'", job, rg))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8(output.stderr)
@@ -435,7 +394,6 @@ impl StreamAnalyticsCli {
     }
 }
 
-/// Event Hub input configuration
 pub struct EventHubInputConfig {
     eventhub_namespace: String,
     eventhub_name: String,
@@ -443,16 +401,13 @@ pub struct EventHubInputConfig {
 }
 
 impl EventHubInputConfig {
-    /// Create a new EventHubInputConfig with validation
     pub fn new(
         eventhub_namespace: String,
         eventhub_name: String,
         eventhub_connection_string: String,
     ) -> Result<Self> {
-        // Validate connection string contains SharedAccessKey
         extract_key(&eventhub_connection_string, "SharedAccessKey=")
             .context("Invalid Event Hub connection string: missing SharedAccessKey")?;
-        // Validate namespace and hub name are non-empty
         if eventhub_namespace.trim().is_empty() {
             anyhow::bail!("Event Hub namespace cannot be empty");
         }
@@ -479,7 +434,6 @@ impl EventHubInputConfig {
     }
 }
 
-/// Parquet output configuration
 pub struct ParquetOutputConfig {
     output_name: String,
     storage_account: String,
@@ -488,32 +442,23 @@ pub struct ParquetOutputConfig {
 }
 
 impl ParquetOutputConfig {
-    /// Create a new ParquetOutputConfig with validation
     pub fn new(
         output_name: String,
         storage_account: String,
         container: String,
         storage_connection_string: String,
     ) -> Result<Self> {
-        // Validate connection string contains AccountKey
         extract_key(&storage_connection_string, "AccountKey=")
             .context("Invalid storage connection string: missing AccountKey")?;
-
-        // Validate output name is non-empty
         if output_name.trim().is_empty() {
             anyhow::bail!("Output name cannot be empty");
         }
-
-        // Validate storage account name
         if storage_account.trim().is_empty() {
             anyhow::bail!("Storage account name cannot be empty");
         }
-
-        // Validate container name is non-empty
         if container.trim().is_empty() {
             anyhow::bail!("Container name cannot be empty");
         }
-
         Ok(Self {
             output_name,
             storage_account,
