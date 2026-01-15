@@ -30,6 +30,12 @@ npx wrangler dev
 # Build for Lambda (ARM64)
 pip3 install cargo-lambda  # one-time setup
 cargo lambda build --release --arm64 --features lambda --bin lambda
+
+# Build for Azure Functions (container)
+docker build -f Dockerfile.azure -t otlp2pipeline-azure .
+
+# Local development (run without Azure)
+cargo run --features azure-function --bin azure_function
 ```
 
 ## CLI Tool
