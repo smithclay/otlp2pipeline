@@ -53,6 +53,17 @@ pub fn execute_plan(args: PlanArgs) -> Result<()> {
     eprintln!("  - Query: Route by signal_type field");
     eprintln!();
 
+    eprintln!("Function App:");
+    eprintln!("  - Name: {}", ctx.function_app_name);
+    eprintln!("  - Plan: {} (Consumption)", ctx.app_service_plan_name);
+    eprintln!("  - Runtime: Custom Handler (Linux container)");
+    eprintln!("  - Image: {} (from ghcr.io)", ctx.container_image);
+    eprintln!("  - Endpoints:");
+    eprintln!("    - POST /v1/logs");
+    eprintln!("    - POST /v1/traces");
+    eprintln!("    - POST /v1/metrics");
+    eprintln!();
+
     eprintln!("To create these resources, run:");
     eprintln!(
         "  otlp2pipeline azure create --env {} --region {}",
