@@ -311,10 +311,15 @@ impl StreamAnalyticsCli {
                 )
             })?;
 
-        // Clean up temp file
-        if let Err(e) = std::fs::remove_file(&body_path) {
-            eprintln!("    Warning: Failed to clean up temp file: {}", e);
-        }
+        // Clean up temp file containing credentials - CRITICAL for security
+        std::fs::remove_file(&body_path).with_context(|| {
+            format!(
+                "Failed to clean up temporary file containing Azure credentials at {}. \
+                 For security, this file must be removed before continuing. \
+                 Please manually delete this file and try again.",
+                body_path.display()
+            )
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
