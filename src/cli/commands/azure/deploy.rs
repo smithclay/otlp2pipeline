@@ -164,9 +164,17 @@ pub fn deploy_bicep_template(cli: &AzureCli, ctx: &DeployContext) -> Result<()> 
     let template_path = temp_dir.join(format!("otlp-azure-{}.bicep", ctx.env_name));
     fs::write(&template_path, BICEP_TEMPLATE)?;
 
+    let template_path_str = template_path.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Temporary file path contains invalid UTF-8: {:?}. \
+                 This may indicate a system configuration issue.",
+            template_path
+        )
+    })?;
+
     let result = cli.resource().deploy_bicep(
         &ctx.resource_group,
-        template_path.to_str().unwrap(),
+        template_path_str,
         &[
             ("location", &ctx.region),
             ("envName", &ctx.env_name),
