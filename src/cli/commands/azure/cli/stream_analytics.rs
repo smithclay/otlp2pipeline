@@ -226,15 +226,15 @@ impl StreamAnalyticsCli {
 
     /// Create Event Hub input
     pub fn create_input(&self, job: &str, rg: &str, config: &EventHubInputConfig) -> Result<()> {
-        let eventhub_key = extract_key(&config.eventhub_connection_string, "SharedAccessKey=")?;
+        let eventhub_key = extract_key(config.connection_string(), "SharedAccessKey=")?;
 
         let input_json = json!({
             "type": "Stream",
             "datasource": {
                 "type": "Microsoft.ServiceBus/EventHub",
                 "properties": {
-                    "serviceBusNamespace": config.eventhub_namespace,
-                    "eventHubName": config.eventhub_name,
+                    "serviceBusNamespace": config.namespace(),
+                    "eventHubName": config.name(),
                     "sharedAccessPolicyName": "RootManageSharedAccessKey",
                     "sharedAccessPolicyKey": eventhub_key,
                     "consumerGroupName": "$Default"
@@ -279,7 +279,7 @@ impl StreamAnalyticsCli {
     /// Create Parquet output for a specific container
     /// Uses Azure REST API directly to avoid CLI extension bugs with type conversion
     pub fn create_output(&self, job: &str, rg: &str, config: &ParquetOutputConfig) -> Result<()> {
-        let account_key = extract_account_key(&config.storage_connection_string)?;
+        let account_key = extract_key(&config.storage_connection_string, "AccountKey=")?;
 
         // Get subscription ID
         let subscription_output = Command::new("az")
@@ -436,9 +436,46 @@ impl StreamAnalyticsCli {
 
 /// Event Hub input configuration
 pub struct EventHubInputConfig {
-    pub eventhub_namespace: String,
-    pub eventhub_name: String,
-    pub eventhub_connection_string: String,
+    eventhub_namespace: String,
+    eventhub_name: String,
+    eventhub_connection_string: String,
+}
+
+impl EventHubInputConfig {
+    /// Create a new EventHubInputConfig with validation
+    pub fn new(
+        eventhub_namespace: String,
+        eventhub_name: String,
+        eventhub_connection_string: String,
+    ) -> Result<Self> {
+        // Validate connection string contains SharedAccessKey
+        extract_key(&eventhub_connection_string, "SharedAccessKey=")
+            .context("Invalid Event Hub connection string: missing SharedAccessKey")?;
+        // Validate namespace and hub name are non-empty
+        if eventhub_namespace.trim().is_empty() {
+            anyhow::bail!("Event Hub namespace cannot be empty");
+        }
+        if eventhub_name.trim().is_empty() {
+            anyhow::bail!("Event Hub name cannot be empty");
+        }
+        Ok(Self {
+            eventhub_namespace,
+            eventhub_name,
+            eventhub_connection_string,
+        })
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.eventhub_namespace
+    }
+
+    pub fn name(&self) -> &str {
+        &self.eventhub_name
+    }
+
+    pub fn connection_string(&self) -> &str {
+        &self.eventhub_connection_string
+    }
 }
 
 /// Parquet output configuration
@@ -449,7 +486,7 @@ pub struct ParquetOutputConfig {
     pub storage_connection_string: String,
 }
 
-/// Extract SharedAccessKey from Event Hub connection string
+/// Extract key from connection string by prefix (e.g., "SharedAccessKey=", "AccountKey=")
 fn extract_key(connection_string: &str, prefix: &str) -> Result<String> {
     connection_string
         .split(';')
@@ -460,9 +497,4 @@ fn extract_key(connection_string: &str, prefix: &str) -> Result<String> {
             "Failed to extract {} from connection string",
             prefix
         ))
-}
-
-/// Extract account key from storage connection string
-fn extract_account_key(connection_string: &str) -> Result<String> {
-    extract_key(connection_string, "AccountKey=")
 }

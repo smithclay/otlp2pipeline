@@ -225,11 +225,11 @@ pub fn create_stream_analytics_job(cli: &AzureCli, ctx: &DeployContext) -> Resul
 
     // Configure input
     eprintln!("    Configuring Event Hub input...");
-    let input_config = EventHubInputConfig {
-        eventhub_namespace: ctx.eventhub_namespace.clone(),
-        eventhub_name: ctx.eventhub_name.clone(),
-        eventhub_connection_string: eventhub_conn,
-    };
+    let input_config = EventHubInputConfig::new(
+        ctx.eventhub_namespace.clone(),
+        ctx.eventhub_name.clone(),
+        eventhub_conn,
+    )?;
     sa.create_input(
         &ctx.stream_analytics_job,
         &ctx.resource_group,
