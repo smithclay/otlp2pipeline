@@ -24,12 +24,35 @@ impl StorageCli {
             .output()
             .with_context(|| {
                 format!(
-                    "Failed to check if storage account '{}' exists in resource group '{}'",
+                    "Failed to execute Azure CLI to check if storage account '{}' exists in resource group '{}'",
                     name, rg
                 )
             })?;
 
-        Ok(result.status.success())
+        if result.status.success() {
+            return Ok(true);
+        }
+
+        // Parse stderr to distinguish "not found" from other errors
+        let stderr = String::from_utf8(result.stderr)
+            .context("Azure CLI returned invalid UTF-8 in error output")?;
+
+        // Storage account not found is the expected "doesn't exist" case
+        if stderr.contains("StorageAccountNotFound")
+            || stderr.contains("ResourceNotFound")
+            || stderr.contains("could not be found")
+            || stderr.to_lowercase().contains("not found")
+        {
+            return Ok(false);
+        }
+
+        // Any other error should propagate with context
+        anyhow::bail!(
+            "Failed to check if storage account '{}' exists in resource group '{}': {}",
+            name,
+            rg,
+            stderr.trim()
+        );
     }
 
     /// Check if container exists
@@ -49,12 +72,36 @@ impl StorageCli {
             .output()
             .with_context(|| {
                 format!(
-                    "Failed to check if container '{}' exists in storage account '{}'",
+                    "Failed to execute Azure CLI to check if container '{}' exists in storage account '{}'",
                     container, account
                 )
             })?;
 
-        Ok(result.status.success())
+        if result.status.success() {
+            return Ok(true);
+        }
+
+        // Parse stderr to distinguish "not found" from other errors
+        let stderr = String::from_utf8(result.stderr)
+            .context("Azure CLI returned invalid UTF-8 in error output")?;
+
+        // Container not found is the expected "doesn't exist" case
+        if stderr.contains("ContainerNotFound")
+            || stderr.contains("ResourceNotFound")
+            || stderr.contains("could not be found")
+            || stderr.contains("can not be found")
+            || stderr.to_lowercase().contains("not found")
+        {
+            return Ok(false);
+        }
+
+        // Any other error should propagate with context
+        anyhow::bail!(
+            "Failed to check if container '{}' exists in storage account '{}': {}",
+            container,
+            account,
+            stderr.trim()
+        );
     }
 
     /// Get storage account connection string

@@ -24,12 +24,35 @@ impl EventHubCli {
             .output()
             .with_context(|| {
                 format!(
-                    "Failed to check if Event Hub namespace '{}' exists in resource group '{}'",
+                    "Failed to execute Azure CLI to check if Event Hub namespace '{}' exists in resource group '{}'",
                     namespace, rg
                 )
             })?;
 
-        Ok(result.status.success())
+        if result.status.success() {
+            return Ok(true);
+        }
+
+        // Parse stderr to distinguish "not found" from other errors
+        let stderr = String::from_utf8(result.stderr)
+            .context("Azure CLI returned invalid UTF-8 in error output")?;
+
+        // Namespace not found is the expected "doesn't exist" case
+        if stderr.contains("NamespaceNotFound")
+            || stderr.contains("ResourceNotFound")
+            || stderr.contains("could not be found")
+            || stderr.to_lowercase().contains("not found")
+        {
+            return Ok(false);
+        }
+
+        // Any other error should propagate with context
+        anyhow::bail!(
+            "Failed to check if Event Hub namespace '{}' exists in resource group '{}': {}",
+            namespace,
+            rg,
+            stderr.trim()
+        );
     }
 
     /// Check if Event Hub exists
@@ -49,12 +72,36 @@ impl EventHubCli {
             .output()
             .with_context(|| {
                 format!(
-                    "Failed to check if Event Hub '{}' exists in namespace '{}' (resource group '{}')",
+                    "Failed to execute Azure CLI to check if Event Hub '{}' exists in namespace '{}' (resource group '{}')",
                     hub, namespace, rg
                 )
             })?;
 
-        Ok(result.status.success())
+        if result.status.success() {
+            return Ok(true);
+        }
+
+        // Parse stderr to distinguish "not found" from other errors
+        let stderr = String::from_utf8(result.stderr)
+            .context("Azure CLI returned invalid UTF-8 in error output")?;
+
+        // Event Hub not found is the expected "doesn't exist" case
+        if stderr.contains("EventHubNotFound")
+            || stderr.contains("ResourceNotFound")
+            || stderr.contains("could not be found")
+            || stderr.to_lowercase().contains("not found")
+        {
+            return Ok(false);
+        }
+
+        // Any other error should propagate with context
+        anyhow::bail!(
+            "Failed to check if Event Hub '{}' exists in namespace '{}' (resource group '{}'): {}",
+            hub,
+            namespace,
+            rg,
+            stderr.trim()
+        );
     }
 
     /// Get Event Hub connection string

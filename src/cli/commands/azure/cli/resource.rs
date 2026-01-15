@@ -18,9 +18,35 @@ impl ResourceCli {
         let result = Command::new("az")
             .args(["group", "show", "--name", name])
             .output()
-            .with_context(|| format!("Failed to check if resource group '{}' exists", name))?;
+            .with_context(|| {
+                format!(
+                    "Failed to execute Azure CLI to check if resource group '{}' exists",
+                    name
+                )
+            })?;
 
-        Ok(result.status.success())
+        if result.status.success() {
+            return Ok(true);
+        }
+
+        // Parse stderr to distinguish "not found" from other errors
+        let stderr = String::from_utf8(result.stderr)
+            .context("Azure CLI returned invalid UTF-8 in error output")?;
+
+        // Resource not found is the expected "doesn't exist" case
+        if stderr.contains("ResourceGroupNotFound")
+            || stderr.contains("could not be found")
+            || stderr.to_lowercase().contains("not found")
+        {
+            return Ok(false);
+        }
+
+        // Any other error should propagate with context
+        anyhow::bail!(
+            "Failed to check if resource group '{}' exists: {}",
+            name,
+            stderr.trim()
+        );
     }
 
     /// Create resource group

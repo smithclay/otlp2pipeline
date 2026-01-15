@@ -29,12 +29,35 @@ impl StreamAnalyticsCli {
             .output()
             .with_context(|| {
                 format!(
-                    "Failed to check if Stream Analytics job '{}' exists in resource group '{}'",
+                    "Failed to execute Azure CLI to check if Stream Analytics job '{}' exists in resource group '{}'",
                     job, rg
                 )
             })?;
 
-        Ok(result.status.success())
+        if result.status.success() {
+            return Ok(true);
+        }
+
+        // Parse stderr to distinguish "not found" from other errors
+        let stderr = String::from_utf8(result.stderr)
+            .context("Azure CLI returned invalid UTF-8 in error output")?;
+
+        // Stream Analytics job not found is the expected "doesn't exist" case
+        if stderr.contains("JobNotFound")
+            || stderr.contains("ResourceNotFound")
+            || stderr.contains("could not be found")
+            || stderr.to_lowercase().contains("not found")
+        {
+            return Ok(false);
+        }
+
+        // Any other error should propagate with context
+        anyhow::bail!(
+            "Failed to check if Stream Analytics job '{}' exists in resource group '{}': {}",
+            job,
+            rg,
+            stderr.trim()
+        );
     }
 
     /// Get Stream Analytics job state
