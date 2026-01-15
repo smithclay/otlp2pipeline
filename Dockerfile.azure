@@ -1,5 +1,5 @@
 # Stage 1: Build Rust binary
-FROM rust:1.83-slim AS builder
+FROM rust:1.88-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,9 +12,10 @@ WORKDIR /app
 # Copy manifests first for layer caching
 COPY Cargo.toml Cargo.lock ./
 
-# Copy source
+# Copy source and templates (templates needed for include_str! macros)
 COPY src/ src/
 COPY build.rs ./
+COPY templates/ templates/
 
 # Build release binary
 RUN cargo build --release --features azure-function --bin azure_function
