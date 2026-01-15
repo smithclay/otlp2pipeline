@@ -50,7 +50,7 @@ impl DeployContext {
             containers: CONTAINERS.iter().map(|s| s.to_string()).collect(),
             function_app_name: function_app_name(env_name),
             app_service_plan_name: app_service_plan_name(env_name),
-            container_image: ghcr_image("claygorman", "otlp2pipeline", "latest"),
+            container_image: ghcr_image("smithclay", "otlp2pipeline", "latest"),
         })
     }
 }
