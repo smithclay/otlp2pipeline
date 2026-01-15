@@ -3,8 +3,9 @@ use anyhow::Result;
 
 use super::cli::AzureCli;
 use super::helpers::{
-    eventhub_namespace, resource_group_name, storage_account_name, stream_analytics_job_name,
-    validate_name_lengths, CONTAINERS, EVENTHUB_NAME,
+    app_service_plan_name, eventhub_namespace, function_app_name, ghcr_image, resource_group_name,
+    storage_account_name, stream_analytics_job_name, validate_name_lengths, CONTAINERS,
+    EVENTHUB_NAME,
 };
 
 /// Deployment context containing all resource names and IDs
@@ -18,6 +19,9 @@ pub struct DeployContext {
     pub eventhub_name: String,
     pub stream_analytics_job: String,
     pub containers: Vec<String>,
+    pub function_app_name: String,
+    pub app_service_plan_name: String,
+    pub container_image: String,
 }
 
 impl DeployContext {
@@ -44,6 +48,9 @@ impl DeployContext {
             eventhub_name: EVENTHUB_NAME.to_string(),
             stream_analytics_job: stream_analytics_job_name(env_name),
             containers: CONTAINERS.iter().map(|s| s.to_string()).collect(),
+            function_app_name: function_app_name(env_name),
+            app_service_plan_name: app_service_plan_name(env_name),
+            container_image: ghcr_image("claygorman", "otlp2pipeline", "latest"),
         })
     }
 }
