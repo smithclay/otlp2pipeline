@@ -62,11 +62,14 @@ impl StreamAnalyticsCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!("Failed to get state for job '{}': {}", job, stderr.trim());
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let stdout = String::from_utf8(output.stdout)
+            .context("Azure CLI returned invalid UTF-8 in output")?;
+        Ok(stdout.trim().to_string())
     }
 
     /// Create Stream Analytics job
@@ -100,7 +103,8 @@ impl StreamAnalyticsCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!("Failed to create job '{}': {}", job, stderr.trim());
         }
 
@@ -130,7 +134,8 @@ impl StreamAnalyticsCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!("Failed to start job '{}': {}", job, stderr.trim());
         }
 
@@ -158,7 +163,8 @@ impl StreamAnalyticsCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!("Failed to stop job '{}': {}", job, stderr.trim());
         }
 
@@ -187,7 +193,8 @@ impl StreamAnalyticsCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!("Failed to delete job '{}': {}", job, stderr.trim());
         }
 
@@ -238,7 +245,8 @@ impl StreamAnalyticsCli {
             .context("Failed to create Stream Analytics input")?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!("Failed to create input: {}", stderr);
         }
 
@@ -260,7 +268,8 @@ impl StreamAnalyticsCli {
             )?;
 
         if !subscription_output.status.success() {
-            let stderr = String::from_utf8_lossy(&subscription_output.stderr);
+            let stderr = String::from_utf8(subscription_output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!(
                 "Failed to retrieve subscription ID: {}. \
                  Please run 'az login' to authenticate.",
@@ -354,7 +363,8 @@ impl StreamAnalyticsCli {
         })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!(
                 "Failed to create output '{}': {}",
                 config.output_name,
@@ -392,7 +402,8 @@ impl StreamAnalyticsCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!("Failed to set query: {}", stderr.trim());
         }
 

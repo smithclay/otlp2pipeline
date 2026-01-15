@@ -43,7 +43,8 @@ impl ResourceCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!(
                 "Failed to create resource group '{}': {}",
                 name,
@@ -67,7 +68,8 @@ impl ResourceCli {
             .with_context(|| format!("Failed to delete resource group '{}'", name))?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!(
                 "Failed to delete resource group '{}': {}",
                 name,
@@ -111,7 +113,8 @@ impl ResourceCli {
         })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!(
                 "Bicep deployment failed for resource group '{}': {}",
                 rg,

@@ -10,11 +10,18 @@ fn run_az(args: &[&str]) -> Result<String> {
         .context("Failed to execute az command. Is Azure CLI installed?")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("az command failed: {}", stderr);
+        let stderr = String::from_utf8(output.stderr).context(
+            "Azure CLI returned invalid UTF-8 in error output. \
+             This may indicate a CLI version incompatibility.",
+        )?;
+        anyhow::bail!("az command failed: {}", stderr.trim());
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let stdout = String::from_utf8(output.stdout).context(
+        "Azure CLI returned invalid UTF-8 in output. \
+         This may indicate a CLI version incompatibility or system encoding issue.",
+    )?;
+    Ok(stdout.trim().to_string())
 }
 
 /// Azure CLI wrapper struct

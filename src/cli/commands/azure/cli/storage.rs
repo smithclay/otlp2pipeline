@@ -82,7 +82,8 @@ impl StorageCli {
             })?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8(output.stderr)
+                .context("Azure CLI returned invalid UTF-8 in error output")?;
             anyhow::bail!(
                 "Failed to get connection string for storage account '{}': {}",
                 account,
@@ -90,6 +91,8 @@ impl StorageCli {
             );
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let stdout = String::from_utf8(output.stdout)
+            .context("Azure CLI returned invalid UTF-8 in output")?;
+        Ok(stdout.trim().to_string())
     }
 }
