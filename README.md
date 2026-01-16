@@ -113,12 +113,12 @@ flowchart TB
         OTLP[OTLP] --> W[Worker]
         W --> P[Pipelines]
         W --> DOs[(Durable Objects)]
-        P --> R2[(R2 Data Catalog)]
+        P --> R2[(R2 Data Catalog / Iceberg)]
     end
 
     subgraph Query["Query"]
         CLI[CLI / WebSocket] -->|real-time| W
-        DuckDB[🦆 DuckDB] -->|batch| R2
+        DuckDB[🦆 DuckDB] --> R2
     end
 ```
 
@@ -152,8 +152,8 @@ flowchart TB
     end
 
     subgraph Query["Query"]
-        DuckDB[🦆 DuckDB] -->|batch| S3
-        Athena[Athena / Trino] -->|batch| S3
+        DuckDB[🦆 DuckDB] --> S3
+        Athena[Athena / Trino] --> S3
     end
 ```
 
@@ -164,14 +164,15 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Ingest["Ingest + Store"]
-        OTLP[OTLP] --> EH[Event Hub]
+        OTLP[OTLP] --> CA[Container App]
+        CA --> EH[Event Hub]
         EH --> SA[Stream Analytics]
         SA --> ADLS[(ADLS Gen2 / Parquet)]
     end
 
     subgraph Query["Query"]
-        DuckDB[🦆 DuckDB] -->|batch| ADLS
-        Synapse[Synapse / Spark] -->|batch| ADLS
+        DuckDB[🦆 DuckDB] --> ADLS
+        Synapse[Synapse / Spark] --> ADLS
     end
 ```
 
