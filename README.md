@@ -57,7 +57,7 @@ Requires the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/i
 #    Permissions: Admin Read & Write
 
 #3. Create pipelines
-otlp2pipeline create --r2-token $R2_API_TOKEN --auth --output wrangler.toml
+otlp2pipeline create --auth --r2-token $R2_API_TOKEN --output wrangler.toml
 
 # 3a. Set token for worker to write to pipeline
 # Go to https://dash.cloudflare.com/?to=/:account/api-tokens
@@ -73,7 +73,7 @@ npx wrangler deploy
 Requires the [AWS CLI](https://aws.amazon.com/cli/) configured with appropiate credentials to create resources.
 
 ```bash
-# 1. `init` an AWS project as described above using `init`
+# 1. `init` an AWS project as described above
 
 # 2. Deploy with authentication turned on
 otlp2pipeline create --auth
@@ -84,7 +84,7 @@ otlp2pipeline create --auth
 Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) installed and authenticated.
 
 ```bash
-# 1. Create an Azure project as described above using `init`
+# 1. `init` an Azure project as described above
 
 # 2. Deploy with authentication turned on
 otlp2pipeline create --auth

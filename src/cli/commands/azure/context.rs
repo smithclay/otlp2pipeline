@@ -20,6 +20,7 @@ pub struct DeployContext {
     pub containers: Vec<String>,
     pub container_app_name: String,
     pub container_image: String,
+    pub auth_token: Option<String>,
 }
 
 impl DeployContext {
@@ -48,6 +49,7 @@ impl DeployContext {
             containers: CONTAINERS.iter().map(|s| s.to_string()).collect(),
             container_app_name: container_app_name(env_name),
             container_image: "ghcr.io/smithclay/otlp2pipeline:v1-amd64".to_string(),
+            auth_token: None,
         })
     }
 }

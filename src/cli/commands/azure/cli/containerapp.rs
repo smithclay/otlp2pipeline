@@ -79,4 +79,43 @@ impl ContainerAppCli {
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
+
+    /// Update Container App environment variables
+    pub fn update_environment_variables(
+        &self,
+        name: &str,
+        rg: &str,
+        env_vars: &[(&str, &str)],
+    ) -> Result<()> {
+        let mut args = vec![
+            "containerapp",
+            "update",
+            "--name",
+            name,
+            "--resource-group",
+            rg,
+        ];
+
+        // Build --set-env-vars argument
+        let env_pairs: Vec<String> = env_vars
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
+        let env_arg = env_pairs.join(" ");
+
+        args.push("--set-env-vars");
+        args.push(&env_arg);
+
+        let output = Command::new("az")
+            .args(&args)
+            .output()
+            .context("Failed to update Container App environment variables")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to update environment variables: {}", stderr);
+        }
+
+        Ok(())
+    }
 }
