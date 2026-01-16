@@ -55,6 +55,14 @@ impl AzureCli {
     pub fn stream_analytics(&self) -> StreamAnalyticsCli {
         StreamAnalyticsCli::new(&self.region)
     }
+
+    pub fn functionapp(&self) -> FunctionAppCli {
+        FunctionAppCli::new()
+    }
+
+    pub fn containerapp(&self) -> ContainerAppCli {
+        ContainerAppCli::new()
+    }
 }
 
 /// Account operations (subscription info)
@@ -72,4 +80,6 @@ impl AccountCli {
     }
 }
 
-use super::{EventHubCli, ResourceCli, StorageCli, StreamAnalyticsCli};
+use super::{
+    ContainerAppCli, EventHubCli, FunctionAppCli, ResourceCli, StorageCli, StreamAnalyticsCli,
+};

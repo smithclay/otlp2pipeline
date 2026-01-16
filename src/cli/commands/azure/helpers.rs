@@ -105,6 +105,11 @@ pub fn stream_analytics_job_name(env: &str) -> String {
 /// Container names for ADLS Gen2
 pub const CONTAINERS: &[&str] = &["logs", "traces", "metrics-gauge", "metrics-sum"];
 
+/// Generate Container App name
+pub fn container_app_name(env: &str) -> String {
+    format!("otlp-{}-app", naming::normalize(env))
+}
+
 /// Validate name lengths before deployment
 pub fn validate_name_lengths(env: &str, _region: &str) -> Result<()> {
     let _storage = storage_account_name(env).context("Storage account name validation failed")?;

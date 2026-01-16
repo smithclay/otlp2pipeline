@@ -3,8 +3,8 @@ use anyhow::Result;
 
 use super::cli::AzureCli;
 use super::helpers::{
-    eventhub_namespace, resource_group_name, storage_account_name, stream_analytics_job_name,
-    validate_name_lengths, CONTAINERS, EVENTHUB_NAME,
+    container_app_name, eventhub_namespace, resource_group_name, storage_account_name,
+    stream_analytics_job_name, validate_name_lengths, CONTAINERS, EVENTHUB_NAME,
 };
 
 /// Deployment context containing all resource names and IDs
@@ -18,6 +18,8 @@ pub struct DeployContext {
     pub eventhub_name: String,
     pub stream_analytics_job: String,
     pub containers: Vec<String>,
+    pub container_app_name: String,
+    pub container_image: String,
 }
 
 impl DeployContext {
@@ -44,6 +46,8 @@ impl DeployContext {
             eventhub_name: EVENTHUB_NAME.to_string(),
             stream_analytics_job: stream_analytics_job_name(env_name),
             containers: CONTAINERS.iter().map(|s| s.to_string()).collect(),
+            container_app_name: container_app_name(env_name),
+            container_image: "ghcr.io/smithclay/otlp2pipeline:v1-amd64".to_string(),
         })
     }
 }

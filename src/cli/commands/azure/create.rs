@@ -28,14 +28,15 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
         ctx.eventhub_namespace, ctx.eventhub_name
     );
     eprintln!("    Stream Analytics: {}", ctx.stream_analytics_job);
+    eprintln!("    Container App: {}", ctx.container_app_name);
 
-    // Phase 1: Deploy Bicep template (storage + Event Hub)
+    // Phase 1: Deploy Bicep template (storage + Event Hub + Container App)
     deploy_bicep_template(&cli, &ctx)?;
 
     // Phase 2: Create Stream Analytics job
     create_stream_analytics_job(&cli, &ctx)?;
 
-    // Phase 3: Start Stream Analytics job
+    // Phase 4: Start Stream Analytics job
     start_stream_analytics_job(&cli, &ctx)?;
 
     // Output connection string for example script

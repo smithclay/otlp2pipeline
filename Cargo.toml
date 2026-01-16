@@ -20,10 +20,16 @@ name = "lambda"
 path = "src/bin/lambda.rs"
 required-features = ["lambda"]
 
+[[bin]]
+name = "azure_function"
+path = "src/bin/azure_function.rs"
+required-features = ["azure-function"]
+
 [features]
 default = []
 lambda = ["dep:lambda_http", "dep:aws-sdk-firehose", "dep:aws-config", "dep:rand"]
 azure = ["dep:azeventhubs"]
+azure-function = ["dep:azeventhubs", "dep:rand"]
 
 [dependencies]
 worker = "0.7"
@@ -36,7 +42,7 @@ async-trait = "0.1"
 base64 = { version = "0.21", default-features = false, features = ["alloc"] }
 urlencoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
-otlp2records = "0.1"
+otlp2records = "0.2.2"
 
 # Lambda dependencies (optional, gated by lambda feature)
 # Using rustls for cross-compilation support (avoids OpenSSL linking issues)
@@ -82,7 +88,7 @@ opentelemetry-proto = { version = "0.31", default-features = false, features = [
 prost = "0.14"
 
 [build-dependencies]
-otlp2records = "0.1"
+otlp2records = "0.2.2"
 
 [profile.release]
 opt-level = "z"

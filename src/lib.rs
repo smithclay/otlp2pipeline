@@ -29,6 +29,9 @@ pub mod cloudflare;
 #[cfg(feature = "lambda")]
 pub mod lambda;
 
+#[cfg(feature = "azure-function")]
+pub mod azure;
+
 // Re-export for tests
 pub use handler::{
     handle_signal, HandleError, HandleResponse, LogsHandler, MetricsHandler, SignalHandler,

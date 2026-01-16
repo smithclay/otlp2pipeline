@@ -87,8 +87,62 @@ resource eventHub 'Microsoft.EventHub/namespaces/eventhubs@2023-01-01-preview' =
   }
 }
 
+// Container Apps Environment
+resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
+  name: 'otlp-${envName}-env'
+  location: location
+  properties: {
+    zoneRedundant: false
+  }
+}
+
+// Container App - pulls from ghcr.io (public image)
+resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: 'otlp-${envName}-app'
+  location: location
+  properties: {
+    managedEnvironmentId: containerAppEnv.id
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 80
+        transport: 'http'
+        allowInsecure: false
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'otlp2pipeline'
+          image: 'ghcr.io/smithclay/otlp2pipeline:v2-amd64'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'EVENTHUB_CONNECTION_STRING'
+              value: listKeys(resourceId('Microsoft.EventHub/namespaces/authorizationRules', eventHubNamespace, 'RootManageSharedAccessKey'), '2023-01-01-preview').primaryConnectionString
+            }
+            {
+              name: 'EVENTHUB_NAME'
+              value: 'otlp-ingestion'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 10
+      }
+    }
+  }
+}
+
 // Outputs
 output storageAccountId string = storageAccount.id
 output storageAccountName string = storageAccount.name
 output eventHubNamespaceId string = eventHubNamespaceResource.id
 output eventHubName string = eventHub.name
+output containerAppName string = containerApp.name
+output containerAppUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
