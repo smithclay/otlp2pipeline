@@ -67,8 +67,9 @@ pub fn validate_provider(provider: &str) -> Result<&'static str> {
     match provider.to_lowercase().as_str() {
         "cloudflare" | "cf" => Ok("cloudflare"),
         "aws" => Ok("aws"),
+        "azure" => Ok("azure"),
         other => anyhow::bail!(
-            "Provider '{}' not supported. Available: cloudflare, aws",
+            "Provider '{}' not supported. Available: cloudflare, aws, azure",
             other
         ),
     }

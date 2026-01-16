@@ -53,11 +53,12 @@ pub fn execute_plan(args: PlanArgs) -> Result<()> {
     eprintln!("  - Query: Route by signal_type field");
     eprintln!();
 
-    eprintln!("Function App:");
-    eprintln!("  - Name: {}", ctx.function_app_name);
-    eprintln!("  - Plan: {} (Consumption)", ctx.app_service_plan_name);
-    eprintln!("  - Runtime: Custom Handler (Linux container)");
+    eprintln!("Container App:");
+    eprintln!("  - Name: {}", ctx.container_app_name);
+    eprintln!("  - Environment: otlp-{}-env", env_name);
     eprintln!("  - Image: {} (from ghcr.io)", ctx.container_image);
+    eprintln!("  - Resources: 0.5 CPU, 1Gi memory");
+    eprintln!("  - Scaling: 1-10 replicas");
     eprintln!("  - Endpoints:");
     eprintln!("    - POST /v1/logs");
     eprintln!("    - POST /v1/traces");

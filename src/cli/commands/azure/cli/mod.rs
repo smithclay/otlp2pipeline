@@ -1,5 +1,6 @@
 // src/cli/commands/azure/cli/mod.rs
 mod az;
+mod containerapp;
 mod eventhub;
 mod functionapp;
 mod resource;
@@ -7,6 +8,7 @@ mod storage;
 mod stream_analytics;
 
 pub use az::AzureCli;
+pub use containerapp::ContainerAppCli;
 pub use eventhub::EventHubCli;
 #[allow(unused_imports)]
 pub use functionapp::FunctionAppCli;

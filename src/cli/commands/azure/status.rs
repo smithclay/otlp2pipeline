@@ -95,25 +95,25 @@ pub fn execute_status(args: StatusArgs) -> Result<()> {
         eprintln!("  [missing] Job: {}", ctx.stream_analytics_job);
     }
 
-    // Check Function App
+    // Check Container App
     eprintln!();
-    eprintln!("Function App:");
+    eprintln!("Container App:");
     if cli
-        .functionapp()
-        .exists(&ctx.function_app_name, &ctx.resource_group)?
+        .containerapp()
+        .exists(&ctx.container_app_name, &ctx.resource_group)?
     {
         let state = cli
-            .functionapp()
-            .get_state(&ctx.function_app_name, &ctx.resource_group)?;
+            .containerapp()
+            .get_state(&ctx.container_app_name, &ctx.resource_group)?;
         let url = cli
-            .functionapp()
-            .get_url(&ctx.function_app_name, &ctx.resource_group)?;
-        eprintln!("  [ok] {}", ctx.function_app_name);
+            .containerapp()
+            .get_url(&ctx.container_app_name, &ctx.resource_group)?;
+        eprintln!("  [ok] {}", ctx.container_app_name);
         eprintln!("  [ok] State: {}", state);
         eprintln!("  [ok] URL: {}", url);
         eprintln!("  [ok] Image: {}", ctx.container_image);
     } else {
-        eprintln!("  [missing] {}", ctx.function_app_name);
+        eprintln!("  [missing] {}", ctx.container_app_name);
     }
 
     eprintln!();

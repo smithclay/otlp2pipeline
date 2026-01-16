@@ -66,6 +66,15 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         }
 
         (Some(region), account_id)
+    } else if provider == "azure" {
+        let region = args.region.clone().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Azure provider requires --region flag.\n\
+                Example: otlp2pipeline init --provider azure --env prod --region westus"
+            )
+        })?;
+
+        (Some(region), None)
     } else {
         (None, None)
     };
@@ -104,6 +113,9 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         }
         "aws" => {
             eprintln!("Next: otlp2pipeline create");
+        }
+        "azure" => {
+            eprintln!("Next: otlp2pipeline create --local");
         }
         _ => {
             eprintln!("Next: otlp2pipeline create");

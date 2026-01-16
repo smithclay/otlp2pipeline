@@ -105,19 +105,9 @@ pub fn stream_analytics_job_name(env: &str) -> String {
 /// Container names for ADLS Gen2
 pub const CONTAINERS: &[&str] = &["logs", "traces", "metrics-gauge", "metrics-sum"];
 
-/// Generate Function App name
-pub fn function_app_name(env: &str) -> String {
-    format!("otlp-{}-func", naming::normalize(env))
-}
-
-/// Generate App Service Plan name
-pub fn app_service_plan_name(env: &str) -> String {
-    format!("otlp-{}-plan", naming::normalize(env))
-}
-
-/// Generate ghcr.io image path
-pub fn ghcr_image(org: &str, repo: &str, tag: &str) -> String {
-    format!("ghcr.io/{}/{}:{}", org, repo, tag)
+/// Generate Container App name
+pub fn container_app_name(env: &str) -> String {
+    format!("otlp-{}-app", naming::normalize(env))
 }
 
 /// Validate name lengths before deployment
@@ -177,24 +167,6 @@ mod tests {
         assert_eq!(
             stream_analytics_job_name("prod"),
             "otlp-prod-stream-processor"
-        );
-    }
-
-    #[test]
-    fn test_function_app_name() {
-        assert_eq!(function_app_name("prod"), "otlp-prod-func");
-    }
-
-    #[test]
-    fn test_app_service_plan_name() {
-        assert_eq!(app_service_plan_name("prod"), "otlp-prod-plan");
-    }
-
-    #[test]
-    fn test_ghcr_image() {
-        assert_eq!(
-            ghcr_image("myorg", "myrepo", "latest"),
-            "ghcr.io/myorg/myrepo:latest"
         );
     }
 }

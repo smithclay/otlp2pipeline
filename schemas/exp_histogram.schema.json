@@ -1,0 +1,31 @@
+{
+  "fields": [
+    { "name": "timestamp", "type": "timestamp", "required": true },
+    { "name": "start_timestamp", "type": "int64", "required": false },
+    { "name": "metric_name", "type": "string", "required": true },
+    { "name": "metric_description", "type": "string", "required": false },
+    { "name": "metric_unit", "type": "string", "required": false },
+    { "name": "count", "type": "int64", "required": true },
+    { "name": "sum", "type": "float64", "required": false },
+    { "name": "min", "type": "float64", "required": false },
+    { "name": "max", "type": "float64", "required": false },
+    { "name": "scale", "type": "int32", "required": true },
+    { "name": "zero_count", "type": "int64", "required": true },
+    { "name": "zero_threshold", "type": "float64", "required": false },
+    { "name": "positive_offset", "type": "int32", "required": false },
+    { "name": "positive_bucket_counts", "type": "json", "required": false },
+    { "name": "negative_offset", "type": "int32", "required": false },
+    { "name": "negative_bucket_counts", "type": "json", "required": false },
+    { "name": "service_name", "type": "string", "required": true },
+    { "name": "service_namespace", "type": "string", "required": false },
+    { "name": "service_instance_id", "type": "string", "required": false },
+    { "name": "resource_attributes", "type": "json", "required": false },
+    { "name": "scope_name", "type": "string", "required": false },
+    { "name": "scope_version", "type": "string", "required": false },
+    { "name": "scope_attributes", "type": "json", "required": false },
+    { "name": "metric_attributes", "type": "json", "required": false },
+    { "name": "flags", "type": "int32", "required": false },
+    { "name": "exemplars_json", "type": "json", "required": false },
+    { "name": "aggregation_temporality", "type": "int32", "required": true }
+  ]
+}

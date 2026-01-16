@@ -28,33 +28,12 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
         ctx.eventhub_namespace, ctx.eventhub_name
     );
     eprintln!("    Stream Analytics: {}", ctx.stream_analytics_job);
-    eprintln!("    Function App: {}", ctx.function_app_name);
+    eprintln!("    Container App: {}", ctx.container_app_name);
 
-    // Phase 1: Deploy Bicep template (storage + Event Hub + Function App)
+    // Phase 1: Deploy Bicep template (storage + Event Hub + Container App)
     deploy_bicep_template(&cli, &ctx)?;
 
-    // Phase 2: Configure Function App
-    eprintln!("Configuring Function App...");
-    cli.functionapp().set_container_image(
-        &ctx.function_app_name,
-        &ctx.resource_group,
-        &ctx.container_image,
-    )?;
-
-    // Set Event Hub connection string
-    let eventhub_conn = cli
-        .eventhub()
-        .get_connection_string(&ctx.eventhub_namespace, &ctx.resource_group)?;
-    cli.functionapp().set_config(
-        &ctx.function_app_name,
-        &ctx.resource_group,
-        &[
-            ("EVENTHUB_CONNECTION_STRING", &eventhub_conn),
-            ("EVENTHUB_NAME", &ctx.eventhub_name),
-        ],
-    )?;
-
-    // Phase 3: Create Stream Analytics job
+    // Phase 2: Create Stream Analytics job
     create_stream_analytics_job(&cli, &ctx)?;
 
     // Phase 4: Start Stream Analytics job

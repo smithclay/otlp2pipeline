@@ -87,49 +87,55 @@ resource eventHub 'Microsoft.EventHub/namespaces/eventhubs@2023-01-01-preview' =
   }
 }
 
-// App Service Plan (Consumption/Dynamic for Functions)
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
-  name: 'otlp-${envName}-plan'
+// Container Apps Environment
+resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
+  name: 'otlp-${envName}-env'
   location: location
-  sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
-  }
-  kind: 'linux'
   properties: {
-    reserved: true
+    zoneRedundant: false
   }
 }
 
-// Function App - pulls from ghcr.io (public image)
-resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
-  name: 'otlp-${envName}-func'
+// Container App - pulls from ghcr.io (public image)
+resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: 'otlp-${envName}-app'
   location: location
-  kind: 'functionapp,linux,container'
   properties: {
-    serverFarmId: appServicePlan.id
-    siteConfig: {
-      linuxFxVersion: 'DOCKER|ghcr.io/claygorman/otlp2pipeline:latest'
-      appSettings: [
+    managedEnvironmentId: containerAppEnv.id
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 80
+        transport: 'http'
+        allowInsecure: false
+      }
+    }
+    template: {
+      containers: [
         {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'custom'
-        }
-        {
-          name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE'
-          value: 'false'
-        }
-        {
-          name: 'DOCKER_REGISTRY_SERVER_URL'
-          value: 'https://ghcr.io'
+          name: 'otlp2pipeline'
+          image: 'ghcr.io/smithclay/otlp2pipeline:v2-amd64'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'EVENTHUB_CONNECTION_STRING'
+              value: listKeys(resourceId('Microsoft.EventHub/namespaces/authorizationRules', eventHubNamespace, 'RootManageSharedAccessKey'), '2023-01-01-preview').primaryConnectionString
+            }
+            {
+              name: 'EVENTHUB_NAME'
+              value: 'otlp-ingestion'
+            }
+          ]
         }
       ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 10
+      }
     }
-    httpsOnly: true
   }
 }
 
@@ -138,5 +144,5 @@ output storageAccountId string = storageAccount.id
 output storageAccountName string = storageAccount.name
 output eventHubNamespaceId string = eventHubNamespaceResource.id
 output eventHubName string = eventHub.name
-output functionAppName string = functionApp.name
-output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
+output containerAppName string = containerApp.name
+output containerAppUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'

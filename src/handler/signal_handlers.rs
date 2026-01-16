@@ -72,8 +72,6 @@ impl SignalHandler for MetricsHandler {
         let skipped = if metric_values.skipped.has_skipped() {
             warn!(
                 skipped_total = metric_values.skipped.total(),
-                histograms = metric_values.skipped.histograms,
-                exponential_histograms = metric_values.skipped.exponential_histograms,
                 summaries = metric_values.skipped.summaries,
                 nan_values = metric_values.skipped.nan_values,
                 infinity_values = metric_values.skipped.infinity_values,
@@ -83,8 +81,8 @@ impl SignalHandler for MetricsHandler {
             Some(SkippedMetricsWarning {
                 message: "some metrics were skipped",
                 skipped_total: metric_values.skipped.total(),
-                histograms: metric_values.skipped.histograms,
-                exponential_histograms: metric_values.skipped.exponential_histograms,
+                histograms: 0,
+                exponential_histograms: 0,
                 summaries: metric_values.skipped.summaries,
                 nan_values: metric_values.skipped.nan_values,
                 infinity_values: metric_values.skipped.infinity_values,
@@ -101,6 +99,16 @@ impl SignalHandler for MetricsHandler {
             metric_values.gauge,
         );
         Self::insert_if_not_empty(&mut grouped, Signal::Sum.table_name(), metric_values.sum);
+        Self::insert_if_not_empty(
+            &mut grouped,
+            Signal::Histogram.table_name(),
+            metric_values.histogram,
+        );
+        Self::insert_if_not_empty(
+            &mut grouped,
+            Signal::ExpHistogram.table_name(),
+            metric_values.exp_histogram,
+        );
 
         Ok(TransformResult { grouped, skipped })
     }
