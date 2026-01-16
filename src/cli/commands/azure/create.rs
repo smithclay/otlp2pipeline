@@ -1,5 +1,5 @@
 // src/cli/commands/azure/create.rs
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::cli::AzureCli;
 use super::context::DeployContext;
@@ -55,10 +55,9 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     // Phase 2: Create Stream Analytics job
     create_stream_analytics_job(&cli, &ctx)?;
 
-    // Phase 4: Start Stream Analytics job
+    // Phase 3: Start Stream Analytics job
     start_stream_analytics_job(&cli, &ctx)?;
 
-    // Save config (auth token if enabled)
     {
         let mut config = Config::load()?;
         if let Some(ref token) = auth_token {
@@ -68,16 +67,14 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("    Config saved to .otlp2pipeline.toml");
     }
 
-    // Output connection string for example script
     eprintln!("\n==========================================");
     eprintln!("[ok] Deployment complete!");
     eprintln!("==========================================\n");
 
-    // Get Container App URL
     let container_url = cli
         .containerapp()
         .get_url(&ctx.container_app_name, &ctx.resource_group)
-        .unwrap_or_else(|_| "unknown".to_string());
+        .context("Failed to retrieve Container App URL after deployment")?;
 
     eprintln!("OTLP Endpoints:");
     eprintln!("  POST {}/v1/logs", container_url);
@@ -85,15 +82,15 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     eprintln!("  POST {}/v1/metrics", container_url);
     eprintln!();
 
-    // Print auth token if generated
-    if let Some(ref token) = auth_token {
+    if auth_token.is_some() {
         eprintln!("Authentication:");
-        eprintln!("  Token: {}", token);
-        eprintln!("  Header: Authorization: Bearer {}", token);
+        eprintln!("  Status: Enabled");
+        eprintln!("  Token saved to: .otlp2pipeline.toml");
+        eprintln!("  Header format: Authorization: Bearer <token>");
         eprintln!();
-        eprintln!("  IMPORTANT: Keep this token secure. Do not commit it to version control");
-        eprintln!("  or share it in logs. The token is saved to .otlp2pipeline.toml and will");
-        eprintln!("  be included automatically when using 'otlp2pipeline connect'.");
+        eprintln!("  The auth token will be included automatically when using");
+        eprintln!("  'otlp2pipeline connect'. To view the token:");
+        eprintln!("    cat .otlp2pipeline.toml | grep auth_token");
         eprintln!();
     }
 

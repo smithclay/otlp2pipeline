@@ -48,7 +48,13 @@ impl ContainerAppCli {
             .context("Failed to get Container App URL")?;
 
         if !output.status.success() {
-            return Ok("unknown".to_string());
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "Failed to get Container App URL for '{}' in '{}': {}",
+                name,
+                rg,
+                stderr.trim()
+            );
         }
 
         let fqdn = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -74,7 +80,13 @@ impl ContainerAppCli {
             .context("Failed to get Container App state")?;
 
         if !output.status.success() {
-            return Ok("Unknown".to_string());
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "Failed to get Container App state for '{}' in '{}': {}",
+                name,
+                rg,
+                stderr.trim()
+            );
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -94,17 +106,18 @@ impl ContainerAppCli {
             name,
             "--resource-group",
             rg,
+            "--set-env-vars",
         ];
 
-        // Build --set-env-vars argument
+        // Azure CLI expects each KEY=VALUE pair as a separate argument
         let env_pairs: Vec<String> = env_vars
             .iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
-        let env_arg = env_pairs.join(" ");
 
-        args.push("--set-env-vars");
-        args.push(&env_arg);
+        for pair in &env_pairs {
+            args.push(pair);
+        }
 
         let output = Command::new("az")
             .args(&args)
