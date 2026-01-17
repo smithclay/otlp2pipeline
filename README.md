@@ -1,5 +1,5 @@
 # otlp2pipeline
-
+[![CI](https://github.com/smithclay/otlp2pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/smithclay/otlp2pipeline/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/otlp2pipeline.svg)](https://crates.io/crates/otlp2pipeline)
 [![License](https://img.shields.io/crates/l/otlp2pipeline.svg)](https://github.com/smithclay/otlp2pipeline/blob/main/LICENSE)
 

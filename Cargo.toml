@@ -1,9 +1,9 @@
 [package]
 name = "otlp2pipeline"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "OTLP ingestion worker for Cloudflare Pipelines and AWS"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/smithclay/otlp2pipeline"
 keywords = ["opentelemetry", "otlp", "cloudflare", "observability"]
 categories = ["web-programming"]
