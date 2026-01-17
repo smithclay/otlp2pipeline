@@ -24,11 +24,11 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     // Validate name lengths before proceeding
     validate_name_lengths(&stack, &region)?;
 
-    // Generate auth token if requested
-    let auth_token = if args.auth {
-        Some(generate_auth_token())
-    } else {
+    // Generate auth token by default (unless --no-auth is specified)
+    let auth_token = if args.no_auth {
         None
+    } else {
+        Some(generate_auth_token())
     };
 
     let cli = AwsCli::new(&region);
@@ -41,7 +41,9 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     eprintln!("    Stack:     {}", stack);
     eprintln!("    Bucket:    {}", ctx.bucket_name);
     eprintln!("    Namespace: {}", ctx.namespace);
-    if auth_token.is_some() {
+    if auth_token.is_none() {
+        eprintln!("    Auth:      DISABLED (--no-auth)");
+    } else {
         eprintln!("    Auth:      enabled");
     }
 

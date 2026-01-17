@@ -16,11 +16,11 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     let region = resolve_region(args.region, &config);
     let resource_group = resolve_resource_group(&None, &env_name);
 
-    // Generate auth token if requested
-    let auth_token = if args.auth {
-        Some(generate_auth_token())
-    } else {
+    // Generate auth token by default (unless --no-auth is specified)
+    let auth_token = if args.no_auth {
         None
+    } else {
+        Some(generate_auth_token())
     };
 
     let cli = AzureCli::new(&region);
@@ -44,7 +44,9 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     );
     eprintln!("    Stream Analytics: {}", ctx.stream_analytics_job);
     eprintln!("    Container App: {}", ctx.container_app_name);
-    if auth_token.is_some() {
+    if auth_token.is_none() {
+        eprintln!("    Auth:         DISABLED (--no-auth)");
+    } else {
         eprintln!("    Auth:         enabled");
     }
 

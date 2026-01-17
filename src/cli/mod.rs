@@ -311,12 +311,13 @@ pub struct CreateArgs {
     pub image: String,
 
     // --- Shared options ---
-    /// Generate and configure bearer token authentication (recommended)
+    /// Disable bearer token authentication (NOT recommended for production)
     ///
-    /// Generates a secure random token and configures it on the Lambda/Worker.
+    /// By default, a secure random token is generated and configured on the Lambda/Worker.
     /// The token is saved to .otlp2pipeline.toml for use with the connect command.
+    /// Use --no-auth to skip token generation.
     #[arg(long)]
-    pub auth: bool,
+    pub no_auth: bool,
 }
 
 #[derive(clap::Args)]
