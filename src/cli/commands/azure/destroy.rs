@@ -16,7 +16,7 @@ pub fn execute_destroy(args: DestroyArgs) -> Result<()> {
     let resource_group = resolve_resource_group(&None, &env_name);
 
     let cli = AzureCli::new(&region);
-    let ctx = DeployContext::new(&cli, &env_name, &region, Some(resource_group))?;
+    let ctx = DeployContext::new(&cli, &env_name, &region, Some(resource_group), None)?;
 
     eprintln!("Destroying otlp2pipeline deployment\n");
     eprintln!("Subscription: {}", ctx.subscription_id);

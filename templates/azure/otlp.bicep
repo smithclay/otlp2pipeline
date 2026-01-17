@@ -5,6 +5,7 @@ param location string = 'westus'
 param envName string
 param storageAccountName string
 param eventHubNamespace string
+param containerImage string = 'ghcr.io/smithclay/otlp2pipeline:v0.3.0-rc1-amd64'
 
 // Storage Account with ADLS Gen2 enabled
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -114,7 +115,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
       containers: [
         {
           name: 'otlp2pipeline'
-          image: 'ghcr.io/smithclay/otlp2pipeline:v2-amd64'
+          image: containerImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'

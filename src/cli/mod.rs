@@ -302,6 +302,14 @@ pub struct CreateArgs {
     #[arg(long)]
     pub local: bool,
 
+    // --- Azure-specific options ---
+    /// Container image to deploy (Azure)
+    #[arg(
+        long,
+        default_value = "ghcr.io/smithclay/otlp2pipeline:v0.3.0-rc1-amd64"
+    )]
+    pub image: String,
+
     // --- Shared options ---
     /// Generate and configure bearer token authentication (recommended)
     ///

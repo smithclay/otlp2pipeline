@@ -48,7 +48,13 @@ impl ContainerAppCli {
             .context("Failed to get Container App URL")?;
 
         if !output.status.success() {
-            return Ok("unknown".to_string());
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "Failed to get Container App URL for '{}' in '{}': {}",
+                name,
+                rg,
+                stderr.trim()
+            );
         }
 
         let fqdn = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -74,9 +80,55 @@ impl ContainerAppCli {
             .context("Failed to get Container App state")?;
 
         if !output.status.success() {
-            return Ok("Unknown".to_string());
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "Failed to get Container App state for '{}' in '{}': {}",
+                name,
+                rg,
+                stderr.trim()
+            );
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Update Container App environment variables
+    pub fn update_environment_variables(
+        &self,
+        name: &str,
+        rg: &str,
+        env_vars: &[(&str, &str)],
+    ) -> Result<()> {
+        let mut args = vec![
+            "containerapp",
+            "update",
+            "--name",
+            name,
+            "--resource-group",
+            rg,
+            "--set-env-vars",
+        ];
+
+        // Azure CLI expects each KEY=VALUE pair as a separate argument
+        let env_pairs: Vec<String> = env_vars
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
+
+        for pair in &env_pairs {
+            args.push(pair);
+        }
+
+        let output = Command::new("az")
+            .args(&args)
+            .output()
+            .context("Failed to update Container App environment variables")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to update environment variables: {}", stderr);
+        }
+
+        Ok(())
     }
 }
