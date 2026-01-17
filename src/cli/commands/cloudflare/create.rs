@@ -1,4 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use crate::cli::auth;
 use crate::cli::commands::naming::{bucket_name, normalize, pipeline_name, sink_name, stream_name};
@@ -71,11 +73,11 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     eprintln!("==> Creating pipeline environment: {}", env_name);
 
-    // Generate auth token if requested
-    let auth_token = if args.auth {
-        Some(generate_auth_token())
-    } else {
+    // Generate auth token by default (unless --no-auth is specified)
+    let auth_token = if args.no_auth {
         None
+    } else {
+        Some(generate_auth_token())
     };
 
     // Resolve auth
@@ -86,7 +88,9 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
 
     let bucket = bucket_name(&env_name);
     let signals = enabled_signals(&args);
-    if auth_token.is_some() {
+    if auth_token.is_none() {
+        eprintln!("    Auth: DISABLED (--no-auth)");
+    } else {
         eprintln!("    Auth: enabled");
     }
 
@@ -221,44 +225,73 @@ pub async fn execute_create(args: CreateArgs) -> Result<()> {
         eprintln!("\n==> Auth token saved to .otlp2pipeline.toml");
     }
 
+    // Set wrangler secret if auth token was generated
+    if let Some(ref token) = auth_token {
+        eprintln!("\n==> Setting AUTH_TOKEN secret via wrangler...");
+        set_wrangler_secret(token)?;
+        eprintln!("    AUTH_TOKEN configured");
+    }
+
     // Summary
     eprintln!("\n==========================================");
     eprintln!("ENVIRONMENT CREATED");
     eprintln!("==========================================\n");
 
-    // Print auth instructions if token was generated
-    if let Some(ref token) = auth_token {
+    // Print auth info if token was generated
+    if auth_token.is_some() {
         eprintln!("Authentication:");
-        eprintln!("  Token: {}", token);
+        eprintln!("  Status: enabled");
+        eprintln!("  Token saved to: .otlp2pipeline.toml");
+        eprintln!("  Secret configured via: wrangler secret put AUTH_TOKEN");
         eprintln!();
-        eprintln!("  Set the secret before deploying:");
-        eprintln!("    echo '{}' | npx wrangler secret put AUTH_TOKEN", token);
-        eprintln!();
-        eprintln!("  IMPORTANT: Keep this token secure. Do not commit it to version control");
-        eprintln!("  or share it in logs. The token is saved to .otlp2pipeline.toml and will");
-        eprintln!("  be included automatically when using 'otlp2pipeline connect'.");
+        eprintln!("  The auth token will be included automatically when using");
+        eprintln!("  'otlp2pipeline connect'. To view the token:");
+        eprintln!("    cat .otlp2pipeline.toml | grep auth_token");
         eprintln!();
     }
 
     eprintln!("Next steps:");
     if auth_token.is_none() {
-        eprintln!("  1. (Optional) Set auth token for ingestion:");
-        eprintln!("     npx wrangler secret put AUTH_TOKEN");
-        eprintln!();
-        eprintln!("  2. Deploy:");
+        eprintln!("  1. Deploy (WARNING: no authentication configured):");
     } else {
-        eprintln!("  1. Set the auth secret (see above), then deploy:");
+        eprintln!("  1. Deploy:");
     }
     eprintln!("     npx wrangler deploy");
     eprintln!();
-    eprintln!(
-        "  {}. IMPORTANT: After ingesting data, add partitioning for query performance:",
-        if auth_token.is_some() { "2" } else { "3" }
-    );
+    eprintln!("  2. IMPORTANT: After ingesting data, add partitioning for query performance:");
     eprintln!("     otlp2pipeline catalog partition --r2-token $R2_API_TOKEN");
     eprintln!();
     eprintln!("     This adds service_name partitioning to Iceberg tables. Without it,");
     eprintln!("     queries will scan all data instead of pruning by service.");
+
+    Ok(())
+}
+
+/// Set AUTH_TOKEN secret via wrangler CLI
+fn set_wrangler_secret(token: &str) -> Result<()> {
+    let mut child = Command::new("npx")
+        .args(["wrangler", "secret", "put", "AUTH_TOKEN"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to run 'npx wrangler secret put AUTH_TOKEN'. Is wrangler installed?")?;
+
+    // Write the token to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(token.as_bytes())
+            .context("Failed to write token to wrangler stdin")?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .context("Failed to wait for wrangler command")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("wrangler secret put failed: {}", stderr);
+    }
 
     Ok(())
 }

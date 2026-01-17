@@ -60,7 +60,7 @@ Requires the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/i
 #    https://dash.cloudflare.com/?to=/:account/r2/api-token
 
 #3. Create pipelines
-otlp2pipeline create --auth --r2-token $R2_API_TOKEN --output wrangler.toml
+otlp2pipeline create --r2-token $R2_API_TOKEN --output wrangler.toml
 
 # 3a. Set token for worker to write to pipeline
 # Go to https://dash.cloudflare.com/?to=/:account/api-tokens
@@ -78,8 +78,8 @@ Requires the [AWS CLI](https://aws.amazon.com/cli/) or [Azure CLI](https://learn
 ```bash
 # 1. `init` an AWS/Azure project as described above
 
-# 2. Deploy with authentication turned on
-otlp2pipeline create --auth
+# 2. Deploy (authentication is enabled by default)
+otlp2pipeline create
 ```
 
 ### Check status and connect Claude Code, Collectors, or Codex
@@ -182,7 +182,7 @@ Schemas come from the [`otlp2records` library](https://github.com/smithclay/otlp
 
 ### Authentication
 
-No built-in authentication. Use `--auth` flag (see Quickstart).
+Bearer token authentication is enabled by default. Use `--no-auth` to disable (not recommended for production).
 
 ### Input Validation
 
