@@ -3,21 +3,77 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.3.0)'
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Run all CI checks first
+  # Determine the tag to use (from push or workflow_dispatch)
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          # Validate tag format
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+            echo "::error::Invalid tag format: $TAG (expected vX.Y.Z)"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Cargo.toml version matches tag
+        run: |
+          CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if [ "$CARGO_VERSION" != "${{ steps.tag.outputs.version }}" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match tag (${{ steps.tag.outputs.version }})"
+            exit 1
+          fi
+          echo "Version verified: $CARGO_VERSION"
+
+  # Run all CI checks
   ci:
+    needs: prepare
     uses: ./.github/workflows/ci.yml
 
-  # Full WASM build with worker-build
-  wasm-build:
-    name: WASM Build
+  # Cargo publish dry run
+  publish-check:
+    name: Cargo Publish (Dry Run)
     runs-on: ubuntu-latest
-    needs: ci
+    needs: [prepare, ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Cargo publish dry run
+        run: cargo publish --dry-run
+
+  # WASM build (Cloudflare Workers)
+  wasm-build:
+    name: Cloudflare WASM Build
+    runs-on: ubuntu-latest
+    needs: [prepare, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -41,7 +97,6 @@ jobs:
         run: |
           WASM_SIZE=$(stat -c%s build/index_bg.wasm)
           echo "WASM bundle size: $((WASM_SIZE / 1024)) KB"
-          # Fail if over 5MB (Cloudflare Workers limit is 10MB)
           if [ "$WASM_SIZE" -gt 5242880 ]; then
             echo "::error::WASM bundle exceeds 5MB limit"
             exit 1
@@ -53,14 +108,14 @@ jobs:
       - name: Upload worker artifact
         uses: actions/upload-artifact@v4
         with:
-          name: worker-zip
+          name: cloudflare-worker
           path: otlp2pipeline-worker.zip
 
-  # Lambda ARM64 build
+  # Lambda ARM64 build (AWS)
   lambda-build:
-    name: Lambda ARM64 Build
+    name: AWS Lambda Build
     runs-on: ubuntu-latest
-    needs: ci
+    needs: [prepare, ci]
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -72,7 +127,6 @@ jobs:
         run: cargo lambda build --release --arm64 --features lambda --bin lambda
       - name: Package Lambda
         run: |
-          # cargo-lambda produces a bootstrap binary, we need to zip it
           cd target/lambda/lambda
           zip ../../../otlp2pipeline-lambda-arm64.zip bootstrap
       - name: Generate checksum
@@ -80,35 +134,97 @@ jobs:
       - name: Upload Lambda artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lambda-zip
+          name: aws-lambda
           path: |
             otlp2pipeline-lambda-arm64.zip
             otlp2pipeline-lambda-arm64.zip.sha256
 
-  # Create GitHub Release with worker artifact
-  release:
-    name: Publish Release
+  # Azure container image build
+  azure-build:
+    name: Azure Container Build
     runs-on: ubuntu-latest
-    needs: [wasm-build, lambda-build]
+    needs: [prepare, ci]
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.tag }}
+            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.tag }}
+            type=raw,value=azure-latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.azure
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Create GitHub Release with all artifacts
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [prepare, publish-check, wasm-build, lambda-build, azure-build]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Download worker artifact
+
+      - name: Download Cloudflare artifact
         uses: actions/download-artifact@v4
         with:
-          name: worker-zip
+          name: cloudflare-worker
+
       - name: Download Lambda artifact
         uses: actions/download-artifact@v4
         with:
-          name: lambda-zip
+          name: aws-lambda
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create ${{ github.ref_name }} \
-            --title "${{ github.ref_name }}" \
+          gh release create ${{ needs.prepare.outputs.tag }} \
+            --title "${{ needs.prepare.outputs.tag }}" \
             --generate-notes \
             otlp2pipeline-worker.zip \
             otlp2pipeline-lambda-arm64.zip \
             otlp2pipeline-lambda-arm64.zip.sha256
+
+  # Publish to crates.io
+  publish:
+    name: Cargo Publish
+    runs-on: ubuntu-latest
+    needs: [prepare, release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
