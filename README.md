@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/otlp2pipeline.svg)](https://crates.io/crates/otlp2pipeline)
 [![License](https://img.shields.io/crates/l/otlp2pipeline.svg)](https://github.com/smithclay/otlp2pipeline/blob/main/LICENSE)
 
-> Stream OpenTelemetry metrics, logs or traces to Cloudflare R2 Data Catalog (Apache Iceberg), Amazon S3 Tables (Apache Iceberg), or Azure ADLS Gen2 (Parquet).
+> Stream OpenTelemetry data to Cloudflare R2 Data Catalog, Amazon S3 Tables, or Azure ADLS Gen2.
 
 ## Table of Contents
 
@@ -19,14 +19,14 @@
 
 ## What it does
 
-Receives OpenTelemetry logs, traces, and metrics and forwards via cloud-specific pipelines to object storage. The data is stored in compressed and efficient Parquet files using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
+Receives OpenTelemetry data and routes it to object storage via cloud-native pipelines. Data lands in Parquet format using a [Clickhouse-inspired schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
-Cloudflare Pipelines, Amazon Data Firehose, or Azure Data Analytics manage most of the complexity around batching and converting data to parquet format. Catalog maintenence features, like compaction of parquet files, are enabled by default for performance.
+Cloud services handle batching and format conversion. Catalog maintenance (compaction, snapshot expiration) runs automatically. Only want to do some simple OTLP->Parquet conversion without the cloud bells and whistles? Check out [otlp2parquet](https://github.com/smithclay/otlp2parquet).
 
 ## Why?
 
-- Get a cheap and fully-managed Iceberg-compatible observability storage backend with a single command
-- Do meaningful analytics on your metrics, logs, or traces using any any tool—or AI agent—that can connect to Iceberg data sources (duckdb, pandas, Trino, Athena, etc)
+- Deploy a managed Iceberg observability backend with one command
+- Query with any tool that reads Iceberg: DuckDB, Pandas, Trino, Athena, AI agents
 
 ## Quickstart
 
@@ -56,8 +56,8 @@ Requires the [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/i
 ```bash
 # 1. `init` a Cloudflare project as described above
 
-# 2. Create R2 API token at https://dash.cloudflare.com/?to=/:account/r2/api-token
-#    Permissions: Admin Read & Write
+# 2. Create R2 API token (Admin Read & Write)
+#    https://dash.cloudflare.com/?to=/:account/r2/api-token
 
 #3. Create pipelines
 otlp2pipeline create --auth --r2-token $R2_API_TOKEN --output wrangler.toml
@@ -151,7 +151,7 @@ flowchart TB
 
 ## Azure
 
-> Note: If you are a [Microsoft Fabric](https://www.microsoft.com/en-us/microsoft-fabric) customer, you could alternately use [Fabric eventstreams](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/event-streams/overview?tabs=enhancedcapabilities) instead of Stream Analytics to store data in your Azure Data Lake.
+> **Fabric users:** [Eventstreams](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/event-streams/overview?tabs=enhancedcapabilities) can replace Stream Analytics for Azure Data Lake ingestion.
 
 ### Stream Analytics Architecture
 
@@ -172,17 +172,17 @@ flowchart TB
 
 ## Schema
 
-Schema definitions are sourced from `otlp2records` and written to the data source at build time. The schemas are defined in the `otlp2records` repostiory.
+Schemas come from the [`otlp2records` library](https://github.com/smithclay/otlp2records) and generate at build time. The same schema is used by the [otlp2parquet](https://github.com/smithclay/otlp2parquet) and [duckdb-otlp](https://github.com/smithclay/duckdb-otlp) projects.
 
 ## Performance
 
-Iceberg Catalog features like [automatic compaction and snapshot expiration](https://developers.cloudflare.com/r2/data-catalog/table-maintenance/) are enabled by default for performance reasons (where they exist)
+[Compaction and snapshot expiration](https://developers.cloudflare.com/r2/data-catalog/table-maintenance/) run automatically where supported.
 
 ## Security
 
 ### Authentication
 
-This worker does **not** implement application-level authentication.
+No built-in authentication. Use `--auth` flag (see Quickstart).
 
 ### Input Validation
 
