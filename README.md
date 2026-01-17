@@ -30,20 +30,23 @@ Cloudflare Pipelines, Amazon Data Firehose, or Azure Data Analytics pipelines ar
 
 ## Quickstart
 
-Install the CLI and choose a cloud:
+Install the CLI for your favorite cloud provider:
 
 ```bash
 # requires rust toolchain: `curl https://sh.rustup.rs -sSf | sh`
 cargo install otlp2pipeline
 
-# Create a new project to deploy on aws
+# Create a new project to deploy on AWS (requires AWS CLI)
 otlp2pipeline init --provider aws --env awstest01 --region us-east-1
 
-# or create a new project with Cloudflare (requires the wrangler CLI configured)
+# or create a new project with Cloudflare (requires the wrangler CLI)
 otlp2pipeline init --provider cf --env cftest01
 
-# or create a new project with Azure (requires Azure CLI configured)
+# or create a new project with Azure (requires Azure CLI)
 otlp2pipeline init --provider azure --env azuretest01 --region westus
+
+# see what will be created automatically
+otlp2pipeline plan
 ```
 
 ### Deploy to Cloudflare
@@ -158,6 +161,8 @@ flowchart TB
 ```
 
 ## Azure
+
+> Note: If you are a [Microsoft Fabric](https://www.microsoft.com/en-us/microsoft-fabric) customer, you could alternately use [Fabric eventstreams](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/event-streams/overview?tabs=enhancedcapabilities) instead of Stream Analytics to store data in your Azure Data Lake.
 
 ### Stream Analytics Architecture
 
