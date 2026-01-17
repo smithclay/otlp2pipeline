@@ -13,7 +13,7 @@ pub fn execute_plan(args: PlanArgs) -> Result<()> {
     let resource_group = resolve_resource_group(&None, &env_name);
 
     let cli = AzureCli::new(&region);
-    let ctx = DeployContext::new(&cli, &env_name, &region, Some(resource_group))?;
+    let ctx = DeployContext::new(&cli, &env_name, &region, Some(resource_group), None)?;
 
     eprintln!("==> Azure Deployment Plan\n");
     eprintln!("Subscription:  {}", ctx.subscription_id);

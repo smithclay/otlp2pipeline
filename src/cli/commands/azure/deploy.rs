@@ -55,7 +55,11 @@ WHERE
 "#;
 
 /// Deploy Bicep template for storage and Event Hub
-pub fn deploy_bicep_template(cli: &AzureCli, ctx: &DeployContext) -> Result<()> {
+pub fn deploy_bicep_template(
+    cli: &AzureCli,
+    ctx: &DeployContext,
+    container_image: &str,
+) -> Result<()> {
     eprintln!("\n==> Phase 1: Deploying Bicep template");
 
     // Create resource group if not exists
@@ -90,6 +94,7 @@ pub fn deploy_bicep_template(cli: &AzureCli, ctx: &DeployContext) -> Result<()> 
             ("envName", &ctx.env_name),
             ("storageAccountName", &ctx.storage_account),
             ("eventHubNamespace", &ctx.eventhub_namespace),
+            ("containerImage", container_image),
         ],
     );
 

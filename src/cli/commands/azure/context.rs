@@ -30,12 +30,15 @@ impl DeployContext {
         env_name: &str,
         region: &str,
         resource_group: Option<String>,
+        container_image: Option<String>,
     ) -> Result<Self> {
         // Validate names before proceeding
         validate_name_lengths(env_name, region)?;
 
         let subscription_id = cli.account().get_subscription_id()?;
         let rg = resource_group.unwrap_or_else(|| resource_group_name(env_name));
+
+        let default_image = "ghcr.io/smithclay/otlp2pipeline:v0.3.0-rc1-amd64".to_string();
 
         Ok(Self {
             subscription_id,
@@ -48,7 +51,7 @@ impl DeployContext {
             stream_analytics_job: stream_analytics_job_name(env_name),
             containers: CONTAINERS.iter().map(|s| s.to_string()).collect(),
             container_app_name: container_app_name(env_name),
-            container_image: "ghcr.io/smithclay/otlp2pipeline:v1-amd64".to_string(),
+            container_image: container_image.unwrap_or(default_image),
             auth_token: None,
         })
     }

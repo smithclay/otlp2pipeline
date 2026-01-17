@@ -24,7 +24,13 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     };
 
     let cli = AzureCli::new(&region);
-    let mut ctx = DeployContext::new(&cli, &env_name, &region, Some(resource_group))?;
+    let mut ctx = DeployContext::new(
+        &cli,
+        &env_name,
+        &region,
+        Some(resource_group),
+        Some(args.image.clone()),
+    )?;
     ctx.auth_token = auth_token.clone();
 
     eprintln!("==> Deploying otlp2pipeline to Azure");
@@ -43,7 +49,7 @@ pub fn execute_create(args: CreateArgs) -> Result<()> {
     }
 
     // Phase 1: Deploy Bicep template (storage + Event Hub + Container App)
-    deploy_bicep_template(&cli, &ctx)?;
+    deploy_bicep_template(&cli, &ctx, &args.image)?;
 
     // Phase 1.5: Configure auth token on Container App (if --auth)
     if auth_token.is_some() {

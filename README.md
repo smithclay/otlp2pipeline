@@ -19,9 +19,9 @@
 
 ## What it does
 
-Receives OpenTelemetry logs, traces, and metrics and forwards via cloud pipelines for storage in AWS or Cloudflare R2 tables using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
+Receives OpenTelemetry logs, traces, and metrics and forwards via cloud-specific pipelines to object storage. The data is stored in compressed and efficient Parquet files using a [Clickhouse-inspired OpenTelemetry table schema](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter#traces).
 
-Cloudflare Pipelines, Amazon Data Firehose, or Azure Data Analytics pipelines are used for batching and converting data to parquet format. Catalog maintenence features, where they exist, (compaction, snapshot pruning, partitioning by day) are enabled by default for performance.
+Cloudflare Pipelines, Amazon Data Firehose, or Azure Data Analytics manage most of the complexity around batching and converting data to parquet format. Catalog maintenence features, like compaction of parquet files, are enabled by default for performance.
 
 ## Why?
 
@@ -71,23 +71,12 @@ npx wrangler secret put PIPELINE_AUTH_TOKEN
 npx wrangler deploy
 ```
 
-### Deploy to AWS
+### Deploy to AWS or Azure
 
-Requires the [AWS CLI](https://aws.amazon.com/cli/) configured with appropiate credentials to create resources.
-
-```bash
-# 1. `init` an AWS project as described above
-
-# 2. Deploy with authentication turned on
-otlp2pipeline create --auth
-```
-
-### Deploy to Azure
-
-Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) installed and authenticated.
+Requires the [AWS CLI](https://aws.amazon.com/cli/) or [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) configured with appropiate credentials to create resources.
 
 ```bash
-# 1. `init` an Azure project as described above
+# 1. `init` an AWS/Azure project as described above
 
 # 2. Deploy with authentication turned on
 otlp2pipeline create --auth

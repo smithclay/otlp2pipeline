@@ -125,6 +125,9 @@ For installation details, see: https://learn.microsoft.com/cli/azure/install-azu
 # Azure deployment (full orchestration)
 otlp2pipeline azure create --env prod --region westus
 
+# Azure deployment with custom container image
+otlp2pipeline azure create --env prod --region westus --image ghcr.io/smithclay/otlp2pipeline:v0.4.0-amd64
+
 # Azure dry-run (show what would be created)
 otlp2pipeline azure plan --env prod
 

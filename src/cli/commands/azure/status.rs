@@ -14,7 +14,7 @@ pub fn execute_status(args: StatusArgs) -> Result<()> {
     let resource_group = resolve_resource_group(&None, &env_name);
 
     let cli = AzureCli::new(&region);
-    let ctx = DeployContext::new(&cli, &env_name, &region, Some(resource_group))?;
+    let ctx = DeployContext::new(&cli, &env_name, &region, Some(resource_group), None)?;
 
     eprintln!("Checking deployment status...\n");
     eprintln!("Subscription: {}", ctx.subscription_id);
