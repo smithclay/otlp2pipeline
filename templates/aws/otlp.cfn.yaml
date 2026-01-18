@@ -114,7 +114,7 @@ Parameters:
   GitHubRepo:
     Description: GitHub repository (owner/repo format)
     Type: String
-    Default: your-org/otlp2pipeline
+    Default: smithclay/otlp2pipeline
 
   LambdaMemoryMB:
     Description: Lambda memory size in MB
