@@ -1,6 +1,6 @@
 [package]
 name = "otlp2pipeline"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 description = "OTLP ingestion worker for Cloudflare Pipelines and AWS"
 license = "Apache-2.0"
@@ -42,7 +42,7 @@ async-trait = "0.1"
 base64 = { version = "0.21", default-features = false, features = ["alloc"] }
 urlencoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
-otlp2records = "0.2.2"
+otlp2records = "0.3.0"
 
 # Lambda dependencies (optional, gated by lambda feature)
 # Using rustls for cross-compilation support (avoids OpenSSL linking issues)
@@ -88,7 +88,7 @@ opentelemetry-proto = { version = "0.31", default-features = false, features = [
 prost = "0.14"
 
 [build-dependencies]
-otlp2records = "0.2.2"
+otlp2records = "0.3.0"
 
 [profile.release]
 opt-level = "z"
