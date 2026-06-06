@@ -5,6 +5,8 @@
 
 > Stream OpenTelemetry data to Cloudflare R2 Data Catalog, Amazon S3 Tables, or Azure ADLS Gen2.
 
+**otlp2pipeline deprecation notice:** As of June 2026, using [duckdb-otlp](https://github.com/smithclay/duckdb-otlp) is preferred for writing to Iceberg catalogs. See the [duckdb-otlp docs](https://smithclay.github.io/duckdb-otlp/guides/) for more information.
+
 ## Table of Contents
 
 - [What it does](#what-it-does)
